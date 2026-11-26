@@ -4,6 +4,7 @@ import com.example.data.local.VocabEntity
 import com.example.data.seed.KoreanGrammarSeed
 import com.example.domain.fsrs.FsrsScheduler
 import com.example.domain.hangul.HangulUnicodeEngine
+import com.example.domain.hangul.KoreanLinguisticsEngine
 import com.example.domain.scoring.JamoAnswerEvaluation
 import com.example.domain.scoring.LearningScoringEngine
 import kotlin.math.abs
@@ -162,6 +163,59 @@ object AdaptiveQuizEngine {
                 )
             }
         }
+    }
+
+    /**
+     * Aligns a distractor [VocabEntity] to the exact particle or conjugation morphology of [tokenInSentence]
+     * so cloze questions test Korean meaning rather than leaking the answer via bare dictionary forms.
+     */
+    internal fun alignDistractorToClozeToken(
+        target: VocabEntity,
+        tokenInSentence: String,
+        distractor: VocabEntity
+    ): String? {
+        if (tokenInSentence == target.hangul) return distractor.hangul
+
+        // Case 1: Particle attached directly after target.hangul (e.g., 학교에, 친구를, 서울로)
+        if (tokenInSentence.startsWith(target.hangul)) {
+            val suffix = tokenInSentence.removePrefix(target.hangul)
+            if (suffix.isEmpty()) return distractor.hangul
+            val aligned = when (suffix) {
+                "은", "는" -> KoreanLinguisticsEngine.attachParticle(distractor.hangul, "은", "는")
+                "이", "가" -> KoreanLinguisticsEngine.attachParticle(distractor.hangul, "이", "가")
+                "을", "를" -> KoreanLinguisticsEngine.attachParticle(distractor.hangul, "을", "를")
+                "과", "와" -> KoreanLinguisticsEngine.attachParticle(distractor.hangul, "과", "와")
+                "으로", "로" -> KoreanLinguisticsEngine.attachParticle(distractor.hangul, "으로", "로")
+                "이나", "나" -> KoreanLinguisticsEngine.attachParticle(distractor.hangul, "이나", "나")
+                "이랑", "랑" -> KoreanLinguisticsEngine.attachParticle(distractor.hangul, "이랑", "랑")
+                "에", "에서", "도", "의", "부터", "까지", "보다", "하고", "에게", "한테", "처럼", "만" ->
+                    distractor.hangul + suffix
+                else -> null
+            }
+            if (aligned != null) return aligned
+        }
+
+        // Case 2: Conjugated verb/adjective matching one of target's parsed conjugations
+        val targetForms = target.parsedConjugations().ifEmpty {
+            KoreanLinguisticsEngine.buildConjugationsSerialized(target.hangul, target.partOfSpeech)
+                .split("||").mapNotNull { entry ->
+                    val parts = entry.split("::")
+                    if (parts.size == 2) parts[0].trim() to parts[1].trim() else null
+                }
+        }
+        val matchedForm = targetForms.firstOrNull { (form, _) -> form == tokenInSentence }
+        if (matchedForm != null) {
+            val distractorForms = distractor.parsedConjugations().ifEmpty {
+                KoreanLinguisticsEngine.buildConjugationsSerialized(distractor.hangul, distractor.partOfSpeech)
+                    .split("||").mapNotNull { entry ->
+                        val parts = entry.split("::")
+                        if (parts.size == 2) parts[0].trim() to parts[1].trim() else null
+                    }
+            }
+            return distractorForms.firstOrNull { (_, label) -> label == matchedForm.second }?.first
+        }
+
+        return null
     }
 
     private fun difficultyForVocab(vocab: VocabEntity): Pair<Int, Int> {
@@ -413,15 +467,38 @@ object AdaptiveQuizEngine {
 
         val candidates = ArrayList<Pair<VocabEntity, Char>>(maxCount)
         val usedSyllables = HashSet<Char>()
+
+        // Pass 1: Strongly prefer word-final syllables (always undergo clean 7-coda neutralization)
         for (vocab in pool) {
-            val firstWithBatchim = vocab.hangul.firstOrNull { ch ->
-                val b = HangulUnicodeEngine.getBatchim(ch)
-                b != null && batchimSounds.containsKey(b) && ch !in usedSyllables
-            }
-            if (firstWithBatchim != null) {
-                usedSyllables.add(firstWithBatchim)
-                candidates.add(vocab to firstWithBatchim)
+            val word = vocab.hangul.trim()
+            if (word.isEmpty()) continue
+            val lastChar = word.last()
+            val b = HangulUnicodeEngine.getBatchim(lastChar)
+            if (b != null && batchimSounds.containsKey(b) && lastChar !in usedSyllables) {
+                usedSyllables.add(lastChar)
+                candidates.add(vocab to lastChar)
                 if (candidates.size >= maxCount) break
+            }
+        }
+
+        // Pass 2: Assimilation-free non-final syllables (no liaison, nasalization, liquidization, or aspiration)
+        if (candidates.size < maxCount) {
+            for (vocab in pool) {
+                val word = vocab.hangul.trim()
+                val cleanIdx = word.indices.firstOrNull { idx ->
+                    val ch = word[idx]
+                    val b = HangulUnicodeEngine.getBatchim(ch)
+                    b != null &&
+                        batchimSounds.containsKey(b) &&
+                        ch !in usedSyllables &&
+                        !KoreanLinguisticsEngine.undergoesCodaAssimilationAt(word, idx)
+                }
+                if (cleanIdx != null) {
+                    val ch = word[cleanIdx]
+                    usedSyllables.add(ch)
+                    candidates.add(vocab to ch)
+                    if (candidates.size >= maxCount) break
+                }
             }
         }
 
@@ -461,47 +538,54 @@ object AdaptiveQuizEngine {
         rng: Random
     ): List<QuizQuestion> {
         val isId = lang.equals("ID", ignoreCase = true)
-        val candidates = ArrayList<VocabEntity>(maxCount)
-        for (v in pool) {
-            val stem = v.hangul.removeSuffix("다")
-            if (stem.length >= 2 && v.exampleKo.contains(stem)) {
-                candidates.add(v)
-                if (candidates.size >= maxCount) break
-            }
-        }
+        val questions = ArrayList<QuizQuestion>(maxCount)
 
-        return candidates.mapIndexed { idx, target ->
-            val (diff, pts) = difficultyForVocab(target)
+        for (target in pool) {
+            if (questions.size >= maxCount) break
             val stem = target.hangul.removeSuffix("다")
+            if (stem.length < 2 || !target.exampleKo.contains(stem)) continue
+
             val tokenInSentence = target.exampleKo
-                .split(" ")
+                .split(Regex("\\s+"))
                 .firstOrNull { it.contains(stem) }
                 ?.trimEnd('.', '?', '!', ',')
-                ?: target.hangul
+                ?: continue
+
+            val alignedDistractors = sampleDistractors(allVocab, target, 3, rng) { cand ->
+                alignDistractorToClozeToken(target, tokenInSentence, cand).orEmpty()
+            }.filter { it.isNotBlank() && it != tokenInSentence }
+
+            if (alignedDistractors.size < 3) continue
+
+            val (diff, pts) = difficultyForVocab(target)
             val blanked = target.exampleKo.replaceFirst(tokenInSentence, "( ____ )")
-            val distractors = sampleDistractors(allVocab, target, 3, rng) { it.hangul }
-                .filter { it != tokenInSentence }
-            val options = (distractors + tokenInSentence).distinct().shuffled(rng)
-            QuizQuestion(
-                id = "sen_${target.id}_$idx",
-                vocabId = target.id,
-                mode = QuizMode.SENTENCE,
-                promptLabel = if (isId) "Lengkapi kalimat bahasa Korea berikut" else "Complete the Korean sentence",
-                stimulusText = "$blanked\n\n\"${target.exampleFor(lang)}\"",
-                audioTextKo = target.exampleKo,
-                options = options,
-                correctAnswer = tokenInSentence,
-                explanationKo = target.exampleKo,
-                explanationTranslation = if (isId) {
-                    "${target.hangul} (${target.meaningFor(lang)}) sesuai dengan makna dan tata bahasa kalimat."
-                } else {
-                    "${target.hangul} (${target.meaningFor(lang)}) fits the sentence meaning and grammar."
-                },
-                difficultyLevel = diff.coerceAtLeast(2),
-                points = pts.coerceAtLeast(15),
-                skillTag = if (isId) "Konteks Kalimat" else "Sentence Context"
+            val options = (alignedDistractors.take(3) + tokenInSentence).distinct().shuffled(rng)
+            if (options.size < 4) continue
+
+            val idx = questions.size
+            questions.add(
+                QuizQuestion(
+                    id = "sen_${target.id}_$idx",
+                    vocabId = target.id,
+                    mode = QuizMode.SENTENCE,
+                    promptLabel = if (isId) "Lengkapi kalimat bahasa Korea berikut" else "Complete the Korean sentence",
+                    stimulusText = "$blanked\n\n\"${target.exampleFor(lang)}\"",
+                    audioTextKo = target.exampleKo,
+                    options = options,
+                    correctAnswer = tokenInSentence,
+                    explanationKo = target.exampleKo,
+                    explanationTranslation = if (isId) {
+                        "${target.hangul} (${target.meaningFor(lang)}) sesuai dengan makna dan tata bahasa kalimat."
+                    } else {
+                        "${target.hangul} (${target.meaningFor(lang)}) fits the sentence meaning and grammar."
+                    },
+                    difficultyLevel = diff.coerceAtLeast(2),
+                    points = pts.coerceAtLeast(15),
+                    skillTag = if (isId) "Konteks Kalimat" else "Sentence Context"
+                )
             )
         }
+        return questions
     }
 
     private fun buildGrammarQuestions(maxCount: Int, focusGrammarId: String?, lang: String = "EN"): List<QuizQuestion> {
@@ -583,37 +667,47 @@ object AdaptiveQuizEngine {
         }
         if (verbsWithForms.isEmpty()) return emptyList()
 
-        val formsPool = LinkedHashSet<String>(96)
-        val size = allVocab.size
-        var attempts = 0
-        while (formsPool.size < 64 && attempts < 240) {
-            attempts++
-            val cand = allVocab[rng.nextInt(size)]
-            if (cand.conjugationsSerialized.isNotBlank()) {
-                cand.parsedConjugations().forEach { formsPool.add(it.first) }
+        val fallbackFormsPool = LinkedHashSet<String>(64)
+        for (v in allVocab) {
+            if (v.conjugationsSerialized.isNotBlank()) {
+                v.parsedConjugations().forEach { fallbackFormsPool.add(it.first) }
+                if (fallbackFormsPool.size >= 40) break
             }
         }
-        if (formsPool.size < 8) {
-            for (v in allVocab) {
-                if (v.conjugationsSerialized.isNotBlank()) {
-                    v.parsedConjugations().forEach { formsPool.add(it.first) }
-                    if (formsPool.size >= 40) break
-                }
-            }
-        }
-        val formsList = formsPool.toList()
+        val fallbackFormsList = fallbackFormsPool.toList()
 
         return verbsWithForms.mapIndexed { idx, verb ->
             val (diff, pts) = difficultyForVocab(verb)
-            val forms = verb.parsedConjugations()
-            val chosen = forms[idx % forms.size]
+            val parsedForms = verb.parsedConjugations()
+            val generatedForms = KoreanLinguisticsEngine.buildConjugationsSerialized(verb.hangul, verb.partOfSpeech)
+                .split("||")
+                .mapNotNull { entry ->
+                    val parts = entry.split("::")
+                    if (parts.size == 2) parts[0].trim() to parts[1].trim() else null
+                }
+            val allVerbForms = (parsedForms + generatedForms).distinctBy { it.first }
+            val chosen = parsedForms[idx % parsedForms.size]
             val targetForm = chosen.first
             val targetLabel = chosen.second
-            val distractors = formsList
+
+            // Prioritize same-verb inflections so the learner truly distinguishes tense/speech level
+            val sameVerbDistractors = allVerbForms
+                .map { it.first }
                 .filter { it != targetForm && it != verb.hangul }
+                .distinct()
                 .shuffled(rng)
                 .take(3)
-            val options = (distractors + targetForm).shuffled(rng)
+                .toMutableList()
+
+            if (sameVerbDistractors.size < 3) {
+                val needed = 3 - sameVerbDistractors.size
+                sameVerbDistractors += fallbackFormsList
+                    .filter { it != targetForm && it != verb.hangul && it !in sameVerbDistractors }
+                    .shuffled(rng)
+                    .take(needed)
+            }
+
+            val options = (sameVerbDistractors + targetForm).distinct().shuffled(rng)
             QuizQuestion(
                 id = "cnj_${verb.id}_$idx",
                 vocabId = verb.id,

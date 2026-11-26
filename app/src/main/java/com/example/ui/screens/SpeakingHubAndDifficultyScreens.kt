@@ -79,80 +79,41 @@ fun SpeakingHubScreen(
     val extended = LocalBaeumColors.current
     val primary = MaterialTheme.colorScheme.primary
 
-    val wavePhase = if (extended.reducedMotion) {
-        0f
-    } else {
-        val infiniteTransition = rememberInfiniteTransition(label = "speak_crest")
-        val p by infiniteTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = (2f * PI).toFloat(),
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 3600, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "crest_phase"
-        )
-        p
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .widthIn(max = 680.dp)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter
     ) {
-        StaggeredEntrance(index = 0) {
-            BaeumBrandHeader(
-                title = bText("Speak Korean", "Bicara Korea"),
-                subtitle = bText("Find your voice in Korean.", "Temukan kefasihan Anda dalam bahasa Korea."),
-                onSettingsClick = onOpenSettings
-            )
-        }
+        Column(
+            modifier = Modifier
+                .widthIn(max = 680.dp)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            StaggeredEntrance(index = 0) {
+                BaeumBrandHeader(
+                    title = bText("Speak Korean", "Bicara Korea"),
+                    subtitle = bText("Find your voice in Korean.", "Temukan kefasihan Anda dalam bahasa Korea."),
+                    onSettingsClick = onOpenSettings
+                )
+            }
 
-        // Hero Korean Conversation Card (Blueprint Screen 16)
-        StaggeredEntrance(index = 1) {
-            BaeumGlassCard(
-                modifier = Modifier.fillMaxWidth(),
-                style = BaeumGlassStyle.HERO,
-                accentGlowColor = primary,
-                contentPadding = PaddingValues(24.dp)
-            ) {
-                // Gently breathing silk acoustic crest (ambient visual emblem)
-                val crestHeights = listOf(0.28f, 0.45f, 0.72f, 0.40f, 0.88f, 0.56f, 0.96f, 0.62f, 0.82f, 0.44f, 0.68f, 0.35f, 0.52f, 0.25f)
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
+            // Hero Korean Conversation Card (Blueprint Screen 16)
+            StaggeredEntrance(index = 1) {
+                BaeumGlassCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    style = BaeumGlassStyle.HERO,
+                    accentGlowColor = primary,
+                    contentPadding = PaddingValues(24.dp)
                 ) {
-                    val count = crestHeights.size
-                    val slot = size.width / (count + 4)
-                    val startX = slot * 2f
-                    val barW = slot * 0.44f
-                    crestHeights.forEachIndexed { i, base ->
-                        val pulse = if (extended.reducedMotion) 1f else (0.86f + 0.14f * sin(wavePhase + i * 0.55f))
-                        val h = (size.height * base * pulse).coerceAtLeast(8f)
-                        val x = startX + i * slot
-                        val y = (size.height - h) / 2f
-                        val barBrush = Brush.verticalGradient(
-                            colors = if (i % 3 == 0) {
-                                listOf(extended.mint, primary.copy(alpha = 0.75f))
-                            } else {
-                                listOf(primary, extended.mint.copy(alpha = 0.65f))
-                            },
-                            startY = y,
-                            endY = y + h
-                        )
-                        drawRoundRect(
-                            brush = barBrush,
-                            topLeft = Offset(x, y),
-                            size = Size(barW, h),
-                            cornerRadius = CornerRadius(barW / 2f, barW / 2f)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(18.dp))
+                    // Gently breathing silk acoustic crest isolated in its own composable to avoid 60fps parent recomposition
+                    SpeakingWaveCrest(
+                        primary = primary,
+                        mint = extended.mint,
+                        reducedMotion = extended.reducedMotion
+                    )
+                    Spacer(modifier = Modifier.height(18.dp))
                 Text(
                     text = bText("Korean Conversation", "Percakapan Bahasa Korea"),
                     style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
@@ -221,6 +182,64 @@ fun SpeakingHubScreen(
             )
         }
         Spacer(modifier = Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun SpeakingWaveCrest(
+    primary: Color,
+    mint: Color,
+    reducedMotion: Boolean
+) {
+    val wavePhaseState = if (reducedMotion) {
+        androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    } else {
+        val infiniteTransition = rememberInfiniteTransition(label = "speak_crest")
+        infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = (2f * PI).toFloat(),
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 3600, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "crest_phase"
+        )
+    }
+    val crestHeights = androidx.compose.runtime.remember {
+        floatArrayOf(0.28f, 0.45f, 0.72f, 0.40f, 0.88f, 0.56f, 0.96f, 0.62f, 0.82f, 0.44f, 0.68f, 0.35f, 0.52f, 0.25f)
+    }
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+    ) {
+        val phase = wavePhaseState.value
+        val count = crestHeights.size
+        val slot = size.width / (count + 4)
+        val startX = slot * 2f
+        val barW = slot * 0.44f
+        crestHeights.forEachIndexed { i, base ->
+            val pulse = if (reducedMotion) 1f else (0.86f + 0.14f * sin(phase + i * 0.55f))
+            val h = (size.height * base * pulse).coerceAtLeast(8f)
+            val x = startX + i * slot
+            val y = (size.height - h) / 2f
+            val barBrush = Brush.verticalGradient(
+                colors = if (i % 3 == 0) {
+                    listOf(mint, primary.copy(alpha = 0.75f))
+                } else {
+                    listOf(primary, mint.copy(alpha = 0.65f))
+                },
+                startY = y,
+                endY = y + h
+            )
+            drawRoundRect(
+                brush = barBrush,
+                topLeft = Offset(x, y),
+                size = Size(barW, h),
+                cornerRadius = CornerRadius(barW / 2f, barW / 2f)
+            )
+        }
     }
 }
 
@@ -300,7 +319,8 @@ fun DifficultySelectionScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("Select difficulty", "Pilih tingkat kesulitan"),
@@ -310,8 +330,8 @@ fun DifficultySelectionScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 640.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -381,7 +401,8 @@ fun SpeakingHistoryScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("Session History", "Riwayat Sesi"),
@@ -391,8 +412,8 @@ fun SpeakingHistoryScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 660.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {

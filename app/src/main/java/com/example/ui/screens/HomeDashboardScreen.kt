@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -73,11 +74,9 @@ import com.example.ui.components.CircularGoalRing
 import com.example.ui.components.ProgressBarSlim
 import com.example.ui.components.SevenDayForecastChart
 import com.example.ui.theme.BaeumMotion
-import com.example.ui.theme.EditorialSerifFamily
 import com.example.ui.theme.LocalBaeumColors
 import com.example.ui.theme.StaggeredEntrance
 import com.example.ui.theme.bText
-import com.example.ui.theme.luxuryShimmer
 import com.example.ui.theme.rememberAnimatedInt
 import com.example.ui.theme.tactileClickable
 import com.example.viewmodel.DashboardSummary
@@ -175,59 +174,59 @@ fun HomeDashboardScreen(
 
     val targetPalette = when (activeSky) {
         SeoulSkyAtmosphere.MORNING -> HeroSkyPalette(
-            scrimColors = listOf(Color(0xE8FFF6F3), Color(0xC2F7EDFB), Color(0x52F6DDD5)),
+            scrimColors = listOf(Color(0xEBFFF7F4), Color(0xC8F7EEFB), Color(0x58F6DDD5)),
             borderColors = listOf(Color(0xD8FFFFFF), Color(0x88E5B8D8), Color(0x66F5CBA7)),
-            eyebrowColor = Color(0xFF6B4CB5),
-            countColor = Color(0xFF1A1730),
-            subCountColor = Color(0xFF534D6E),
+            eyebrowColor = Color(0xFF5B46C8),
+            countColor = Color(0xFF192138),
+            subCountColor = Color(0xFF4E5A74),
             streakBg = Color(0x30D97B29),
             streakBorder = Color(0x66D97B29),
-            streakText = Color(0xFF964704),
-            dueIconTint = Color(0xFF0F7A70),
-            dueText = Color(0xFF1A5B56),
-            ringAccent = Color(0xFF7A5AE0),
-            ringTrack = Color(0x281A1730),
-            skyPillBg = Color(0x99FFFFFF),
-            skyPillBorder = Color(0xCCFFFFFF),
-            skyPillContent = Color(0xFF5A3F9E)
+            streakText = Color(0xFF8C4600),
+            dueIconTint = Color(0xFF0B7469),
+            dueText = Color(0xFF165650),
+            ringAccent = Color(0xFF5B46C8),
+            ringTrack = Color(0x28192138),
+            skyPillBg = Color(0xB8FFFFFF),
+            skyPillBorder = Color(0xE0FFFFFF),
+            skyPillContent = Color(0xFF4B37B0)
         )
         SeoulSkyAtmosphere.DAY -> HeroSkyPalette(
-            scrimColors = listOf(Color(0xE8F3FAFF), Color(0xC0E8F4FD), Color(0x4AD4ECFA)),
+            scrimColors = listOf(Color(0xEBF3FAFF), Color(0xC6E8F4FD), Color(0x50D4ECFA)),
             borderColors = listOf(Color(0xE6FFFFFF), Color(0x887AC4F0), Color(0x667CE0D3)),
-            eyebrowColor = Color(0xFF1F5D99),
+            eyebrowColor = Color(0xFF1A548E),
             countColor = Color(0xFF102238),
-            subCountColor = Color(0xFF445D78),
+            subCountColor = Color(0xFF3E5670),
             streakBg = Color(0x30DF941A),
             streakBorder = Color(0x66D98B14),
-            streakText = Color(0xFF8C5100),
-            dueIconTint = Color(0xFF0A7D72),
-            dueText = Color(0xFF125A55),
-            ringAccent = Color(0xFF1D80C4),
+            streakText = Color(0xFF824B00),
+            dueIconTint = Color(0xFF0B7469),
+            dueText = Color(0xFF12544F),
+            ringAccent = Color(0xFF1D74B8),
             ringTrack = Color(0x26102238),
-            skyPillBg = Color(0x9EFFFFFF),
-            skyPillBorder = Color(0xD6FFFFFF),
-            skyPillContent = Color(0xFF1B578F)
+            skyPillBg = Color(0xB8FFFFFF),
+            skyPillBorder = Color(0xE0FFFFFF),
+            skyPillContent = Color(0xFF184F84)
         )
         SeoulSkyAtmosphere.NIGHT -> HeroSkyPalette(
-            scrimColors = listOf(Color(0xEA080D1C), Color(0xC60D142A), Color(0x82151E3A)),
-            borderColors = listOf(Color(0x55D7CEFF), Color(0x66B5A5FF), Color(0x406BE3D5)),
-            eyebrowColor = Color(0xFFC8C1F5),
-            countColor = Color(0xFFF8F9FE),
-            subCountColor = Color(0xFFC4CBE0),
-            streakBg = Color(0x2EF6D38A),
-            streakBorder = Color(0x55F6D38A),
-            streakText = Color(0xFFFCE2A6),
-            dueIconTint = Color(0xFF6BE3D5),
-            dueText = Color(0xFFD6F7F2),
-            ringAccent = Color(0xFFB5A5FF),
-            ringTrack = Color(0x5A283454),
-            skyPillBg = Color(0x66131C36),
-            skyPillBorder = Color(0x4AD7CEFF),
+            scrimColors = listOf(Color(0xEE0B1020), Color(0xCC111930), Color(0x8818223E)),
+            borderColors = listOf(Color(0x50D8D0FF), Color(0x5CA99BFF), Color(0x3867D8CB)),
+            eyebrowColor = Color(0xFFC4BAFF),
+            countColor = Color(0xFFF4F5FC),
+            subCountColor = Color(0xFFBAC4DF),
+            streakBg = Color(0x2CF3C77B),
+            streakBorder = Color(0x55F3C77B),
+            streakText = Color(0xFFF9DC9E),
+            dueIconTint = Color(0xFF67D8CB),
+            dueText = Color(0xFFD5F5F0),
+            ringAccent = Color(0xFFA99BFF),
+            ringTrack = Color(0x5A2E3C5C),
+            skyPillBg = Color(0x78151D32),
+            skyPillBorder = Color(0x4AD8D0FF),
             skyPillContent = Color(0xFFE5DFFF)
         )
     }
 
-    val colorMs = if (extended.reducedMotion) 0 else 420
+    val colorMs = if (extended.reducedMotion) 0 else 400
     val eyebrowColor by animateColorAsState(targetPalette.eyebrowColor, tween(colorMs), label = "hero_eyebrow")
     val countColor by animateColorAsState(targetPalette.countColor, tween(colorMs), label = "hero_count")
     val subCountColor by animateColorAsState(targetPalette.subCountColor, tween(colorMs), label = "hero_subcount")
@@ -244,8 +243,8 @@ fun HomeDashboardScreen(
 
     Column(
         modifier = Modifier
-            .fillMaxSize()
             .widthIn(max = 680.dp)
+            .fillMaxWidth()
             .verticalScroll(scrollState)
             .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
@@ -261,16 +260,16 @@ fun HomeDashboardScreen(
 
         // Bespoke Living Seoul Sky Hero Card (Morning / Day / Night) with smooth Crossfade & Parallax
         StaggeredEntrance(index = 1) {
-            val heroShape = RoundedCornerShape(32.dp)
+            val heroShape = RoundedCornerShape(26.dp)
             val heroShadow = when {
-                activeSky == SeoulSkyAtmosphere.NIGHT -> Color(0x90000000)
-                extended.isDark -> Color(0x66000000)
-                else -> Color(0x281B254A)
+                activeSky == SeoulSkyAtmosphere.NIGHT -> Color(0x80000000)
+                extended.isDark -> Color(0x55000000)
+                else -> Color(0x22192138)
             }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .shadow(elevation = 18.dp, shape = heroShape, ambientColor = heroShadow, spotColor = heroShadow)
+                    .shadow(elevation = 14.dp, shape = heroShape, ambientColor = heroShadow, spotColor = heroShadow)
                     .clip(heroShape)
                     .tactileClickable(pressedScale = 0.985f, onClick = onReviewDue)
                     .border(
@@ -281,7 +280,7 @@ fun HomeDashboardScreen(
             ) {
                 Crossfade(
                     targetState = activeSky,
-                    animationSpec = tween(if (extended.reducedMotion) 0 else 560, easing = BaeumMotion.SilkEasing),
+                    animationSpec = tween(if (extended.reducedMotion) 0 else 500, easing = BaeumMotion.SilkEasing),
                     modifier = Modifier.matchParentSize(),
                     label = "seoul_sky_banner_crossfade"
                 ) { sky ->
@@ -307,15 +306,14 @@ fun HomeDashboardScreen(
                     modifier = Modifier
                         .matchParentSize()
                         .background(Brush.horizontalGradient(colors = targetPalette.scrimColors))
-                        .luxuryShimmer(durationMillis = 6400, shimmerAlpha = if (activeSky == SeoulSkyAtmosphere.NIGHT) 0.09f else 0.14f)
                 )
 
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 22.dp, vertical = 20.dp)
+                        .padding(horizontal = 22.dp, vertical = 18.dp)
                 ) {
-                    // Top header row: DAILY GOAL eyebrow + Interactive Sky Mood Pill (Morning / Day / Night)
+                    // Top header row: DAILY GOAL eyebrow + Interactive Sky Mood Pill (>= 48dp touch target)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -324,40 +322,47 @@ fun HomeDashboardScreen(
                         Text(
                             text = bText("DAILY GOAL", "TARGET HARIAN"),
                             style = MaterialTheme.typography.labelSmall.copy(
-                                letterSpacing = 1.9.sp,
+                                letterSpacing = 1.8.sp,
                                 fontWeight = FontWeight.Bold
                             ),
                             color = eyebrowColor
                         )
                         val activeSkyLabel = bText(activeSky.labelEn, activeSky.labelId)
-                        Row(
+                        Box(
                             modifier = Modifier
+                                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                                 .clip(RoundedCornerShape(18.dp))
-                                .background(skyPillBg)
-                                .border(1.dp, skyPillBorder, RoundedCornerShape(18.dp))
-                                .tactileClickable(pressedScale = 0.92f) {
+                                .tactileClickable(pressedScale = 0.94f) {
                                     skyOverride = activeSky.next()
                                 }
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
                                 .testTag("home_sky_atmosphere_toggle"),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            contentAlignment = Alignment.CenterEnd
                         ) {
-                            Icon(
-                                imageVector = activeSky.icon,
-                                contentDescription = bText("Switch sky atmosphere ($activeSkyLabel)", "Ganti suasana langit ($activeSkyLabel)"),
-                                tint = skyPillContent,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = "${activeSky.labelKo} • $activeSkyLabel",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                                color = skyPillContent
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(skyPillBg)
+                                    .border(1.dp, skyPillBorder, RoundedCornerShape(16.dp))
+                                    .padding(horizontal = 11.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = activeSky.icon,
+                                    contentDescription = bText("Switch sky atmosphere ($activeSkyLabel)", "Ganti suasana langit ($activeSkyLabel)"),
+                                    tint = skyPillContent,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "${activeSky.labelKo} · $activeSkyLabel",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                    color = skyPillContent
+                                )
+                            }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -380,7 +385,7 @@ fun HomeDashboardScreen(
                             }
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // Glowing Streak Pill Badge
+                            // Streak Pill Badge
                             Row(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(20.dp))
@@ -400,15 +405,15 @@ fun HomeDashboardScreen(
                                     text = when {
                                         summary.streakDays > 0 && summary.longestStreakDays > summary.streakDays ->
                                             bText(
-                                                "${summary.streakDays}-day streak • Best ${summary.longestStreakDays}d",
-                                                "Runtutan ${summary.streakDays} hari • Rekor ${summary.longestStreakDays}h"
+                                                "${summary.streakDays}-day streak · Best ${summary.longestStreakDays}d",
+                                                "Runtutan ${summary.streakDays} hari · Rekor ${summary.longestStreakDays}h"
                                             )
                                         summary.streakDays > 0 ->
                                             bText("${summary.streakDays}-day streak", "Runtutan ${summary.streakDays} hari")
                                         summary.longestStreakDays > 0 ->
                                             bText(
-                                                "Best ${summary.longestStreakDays}d • Start today",
-                                                "Rekor ${summary.longestStreakDays}h • Mulai hari ini"
+                                                "Best ${summary.longestStreakDays}d · Start today",
+                                                "Rekor ${summary.longestStreakDays}h · Mulai hari ini"
                                             )
                                         else -> bText("Start your streak today", "Mulai runtutan hari ini")
                                     },
@@ -433,13 +438,13 @@ fun HomeDashboardScreen(
                                 Text(
                                     text = if (summary.dueTodayCount > 0) {
                                         bText(
-                                            "${summary.dueTodayCount} review${if (summary.dueTodayCount == 1) "" else "s"} ready • Tap to begin",
-                                            "${summary.dueTodayCount} ulasan siap • Ketuk untuk mulai"
+                                            "${summary.dueTodayCount} review${if (summary.dueTodayCount == 1) "" else "s"} ready · Tap to begin",
+                                            "${summary.dueTodayCount} ulasan siap · Ketuk untuk mulai"
                                         )
                                     } else {
                                         bText(
-                                            "All due reviews complete • Tap to study",
-                                            "Semua ulasan selesai • Ketuk untuk belajar"
+                                            "All due reviews complete · Tap to study",
+                                            "Semua ulasan selesai · Ketuk untuk belajar"
                                         )
                                     },
                                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
@@ -526,11 +531,8 @@ fun HomeDashboardScreen(
                     )
                     Text(
                         text = "오늘도 한 걸음",
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontFamily = EditorialSerifFamily,
-                            fontWeight = FontWeight.Medium
-                        ),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
                 Spacer(modifier = Modifier.height(10.dp))
@@ -560,12 +562,12 @@ fun HomeDashboardScreen(
                         }
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f))
                                 .border(
                                     1.dp,
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                                    RoundedCornerShape(16.dp)
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.32f),
+                                    RoundedCornerShape(14.dp)
                                 )
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
@@ -633,30 +635,37 @@ fun HomeDashboardScreen(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }
-                        Row(
+                        Box(
                             modifier = Modifier
+                                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-                                .border(
-                                    1.dp,
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
-                                    RoundedCornerShape(14.dp)
-                                )
-                                .tactileClickable(pressedScale = 0.94f, onClick = onOpenReviewPlanner)
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .tactileClickable(pressedScale = 0.94f, onClick = onOpenReviewPlanner),
+                            contentAlignment = Alignment.CenterEnd
                         ) {
-                            Text(
-                                text = bText("Planner", "Jadwal"),
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = bText("Open review planner", "Buka perencana ulasan"),
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
+                                    .border(
+                                        1.dp,
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.25f),
+                                        RoundedCornerShape(14.dp)
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = bText("Planner", "Jadwal"),
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = bText("Open review planner", "Buka perencana ulasan"),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.height(14.dp))

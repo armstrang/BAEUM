@@ -65,8 +65,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -83,7 +83,6 @@ import com.example.domain.speaking.PronunciationAttemptResult
 import com.example.domain.speaking.PronunciationDrillCategory
 import com.example.domain.speaking.PronunciationDrillItem
 import com.example.domain.speaking.SyllableMatchLevel
-import com.example.ui.components.AiCoachFeedbackCard
 import com.example.ui.components.BaeumGlassCard
 import com.example.ui.components.BaeumGlassStyle
 import com.example.ui.components.BaeumSecondaryButton
@@ -157,7 +156,8 @@ fun PronunciationLabScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 28.dp)
+            .padding(bottom = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("Pronunciation Lab", "Lab Pelafalan"),
@@ -170,8 +170,8 @@ fun PronunciationLabScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 680.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -191,7 +191,9 @@ fun PronunciationLabScreen(
                             selectedContainerColor = primary.copy(alpha = 0.2f),
                             selectedLabelColor = primary
                         ),
-                        modifier = Modifier.testTag("pron_filter_all")
+                        modifier = Modifier
+                            .defaultMinSize(minHeight = 48.dp)
+                            .testTag("pron_filter_all")
                     )
                     PronunciationDrillCategory.entries.forEach { cat ->
                         FilterChip(
@@ -202,7 +204,9 @@ fun PronunciationLabScreen(
                                 selectedContainerColor = primary.copy(alpha = 0.2f),
                                 selectedLabelColor = primary
                             ),
-                            modifier = Modifier.testTag("pron_filter_${cat.name.lowercase()}")
+                            modifier = Modifier
+                                .defaultMinSize(minHeight = 48.dp)
+                                .testTag("pron_filter_${cat.name.lowercase()}")
                         )
                     }
                 }
@@ -358,11 +362,11 @@ fun PronunciationLabScreen(
                         )
 
                         if (isListening || isProcessing) {
-                            val pulseScale = if (extended.reducedMotion) {
-                                1f
+                            val pulseScaleState = if (extended.reducedMotion) {
+                                remember { mutableStateOf(1f) }
                             } else {
                                 val inf = rememberInfiniteTransition(label = "mic_pulse")
-                                val s by inf.animateFloat(
+                                inf.animateFloat(
                                     initialValue = 0.98f,
                                     targetValue = 1.03f,
                                     animationSpec = infiniteRepeatable(
@@ -371,19 +375,22 @@ fun PronunciationLabScreen(
                                     ),
                                     label = "pulse_scale"
                                 )
-                                s
                             }
                             Button(
                                 onClick = onStopListening,
                                 modifier = Modifier
                                     .weight(1.25f)
                                     .height(54.dp)
-                                    .scale(pulseScale)
+                                    .graphicsLayer {
+                                        val s = pulseScaleState.value
+                                        scaleX = s
+                                        scaleY = s
+                                    }
                                     .testTag("pron_stop_button"),
                                 shape = RoundedCornerShape(18.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = extended.cherryPink,
-                                    contentColor = Color.White
+                                    contentColor = MaterialTheme.colorScheme.onError
                                 )
                             ) {
                                 Icon(Icons.Filled.Stop, contentDescription = bText("Stop listening", "Berhenti mendengarkan"), modifier = Modifier.size(20.dp))
@@ -469,23 +476,15 @@ fun PronunciationLabScreen(
             val attempt = state.lastAttempt
             AnimatedVisibility(visible = attempt != null) {
                 if (attempt != null) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        PronunciationResultCard(
-                            attempt = attempt,
-                            isIndonesian = isId,
-                            onRetry = {
-                                onRetryDrill()
-                                requestMicAndStart()
-                            },
-                            onNext = onNextDrill
-                        )
-                        state.aiCoachFeedback?.let { coach ->
-                            AiCoachFeedbackCard(
-                                feedback = coach,
-                                onSpeakKorean = onSpeakKorean
-                            )
-                        }
-                    }
+                    PronunciationResultCard(
+                        attempt = attempt,
+                        isIndonesian = isId,
+                        onRetry = {
+                            onRetryDrill()
+                            requestMicAndStart()
+                        },
+                        onNext = onNextDrill
+                    )
                 }
             }
 
@@ -844,7 +843,7 @@ private fun PronunciationResultCard(
                 shape = RoundedCornerShape(18.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (attempt.passed) extended.mint else primary,
-                    contentColor = Color.White
+                    contentColor = MaterialTheme.colorScheme.onPrimary
                 )
             ) {
                 Text(bText("Next drill", "Berikutnya"), fontWeight = FontWeight.SemiBold)

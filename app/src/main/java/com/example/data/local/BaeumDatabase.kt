@@ -16,7 +16,7 @@ import androidx.room.RoomDatabase
         GrammarBookmarkEntity::class
     ],
     version = 1,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class BaeumDatabase : RoomDatabase() {
     abstract fun vocabDao(): VocabDao

@@ -37,14 +37,13 @@ class MainActivity : ComponentActivity() {
         val db = BaeumDatabase.getInstance(applicationContext)
         val userPreferencesRepository = DataStoreUserPreferencesRepository.create(applicationContext)
         val repository = BaeumRepository(db, userPreferencesRepository, applicationContext.assets)
-        val audioController = KoreanAudioController(applicationContext)
         StudyReminderScheduler.ensureNotificationChannel(applicationContext)
 
         viewModel = ViewModelProvider(
             this,
             BaeumViewModel.Factory(
                 repository = repository,
-                audioController = audioController,
+                audioControllerFactory = { KoreanAudioController(applicationContext) },
                 userPreferencesRepository = userPreferencesRepository,
                 reminderScheduler = { enabled, hour, minute, isId ->
                     if (enabled) {
@@ -99,6 +98,13 @@ class MainActivity : ComponentActivity() {
                     flashcardViewModel = flashcardViewModel
                 )
             }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations && ::viewModel.isInitialized) {
+            viewModel.onHostStop()
         }
     }
 }

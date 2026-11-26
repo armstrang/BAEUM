@@ -63,11 +63,28 @@ object KoreanLinguisticsEngine {
     }
 
     /**
+     * Attaches a Korean particle pair with accurate batchim and ㄹ-batchim (으로/로) harmony.
+     */
+    fun attachParticle(word: String, withBatchim: String, withoutBatchim: String): String {
+        val trimmed = word.trim()
+        if (trimmed.isEmpty()) return trimmed
+        if (withBatchim == "으로" && withoutBatchim == "로") {
+            return if (endsWithBatchim(trimmed) && !endsWithRieulBatchim(trimmed)) {
+                "${trimmed}으로"
+            } else {
+                "${trimmed}로"
+            }
+        }
+        return if (endsWithBatchim(trimmed)) "$trimmed$withBatchim" else "$trimmed$withoutBatchim"
+    }
+
+    /**
      * Revised Romanization of Korean with common phonological assimilation rules
-     * (liaison, nasalization, liquidization, palatalization, aspiration).
+     * (palatalization, double-batchim & single-batchim liaison, ㅎ-drop, nasalization,
+     * ㄹ-nasalization, liquidization, and 2-way aspiration).
      */
     fun romanize(text: String): String {
-        val words = text.trim().split(Regex("\\s+"))
+        val words = text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
         return words.joinToString(" ") { word -> romanizeWord(word) }
     }
 
@@ -97,6 +114,32 @@ object KoreanLinguisticsEngine {
                         nextOverrideCho = if (jong == 7) 12 else 14
                         jong = 0
                     }
+                    // ㅎ / ㄶ / ㅀ silent drop before vowel (좋아요 -> jo-a-yo, 많아요 -> ma-na-yo, 싫어요 -> si-reo-yo)
+                    nCho == 11 && jong == 27 -> {
+                        jong = 0
+                    }
+                    nCho == 11 && jong == 6 -> {
+                        jong = 0
+                        nextOverrideCho = 2 // ㄴ liaises
+                    }
+                    nCho == 11 && jong == 15 -> {
+                        jong = 0
+                        nextOverrideCho = 5 // ㄹ liaises
+                    }
+                    // Double-batchim liaison before silent ㅇ (앉아요, 읽어요, 삶이, 넓어요, 없어요)
+                    nCho == 11 && jong in setOf(3, 5, 9, 10, 11, 12, 13, 14, 18) -> {
+                        when (jong) {
+                            3 -> { jong = 1; nextOverrideCho = 10 }  // ㄳ -> ㄱ + ㅆ
+                            5 -> { jong = 4; nextOverrideCho = 12 }  // ㄵ -> ㄴ + ㅈ
+                            9 -> { jong = 8; nextOverrideCho = 0 }   // ㄺ -> ㄹ + ㄱ
+                            10 -> { jong = 8; nextOverrideCho = 6 }  // ㄻ -> ㄹ + ㅁ
+                            11 -> { jong = 8; nextOverrideCho = 7 }  // ㄼ -> ㄹ + ㅂ
+                            12 -> { jong = 8; nextOverrideCho = 10 } // ㄽ -> ㄹ + ㅆ
+                            13 -> { jong = 8; nextOverrideCho = if (nJung == 20) 14 else 16 } // ㄾ -> ㄹ + ㅌ/ㅊ
+                            14 -> { jong = 8; nextOverrideCho = 17 } // ㄿ -> ㄹ + ㅍ
+                            18 -> { jong = 17; nextOverrideCho = 10 } // ㅄ -> ㅂ + ㅆ
+                        }
+                    }
                     // Liaison: single batchim (except ㅇ, ㅎ) before silent ㅇ
                     nCho == 11 && jong in setOf(1, 2, 4, 7, 8, 16, 17, 19, 20, 22, 23, 24, 25, 26) -> {
                         nextOverrideCho = when (jong) {
@@ -105,6 +148,49 @@ object KoreanLinguisticsEngine {
                             else -> nCho
                         }
                         jong = 0
+                    }
+                    // Two-way Aspiration: ㅎ / ㄶ / ㅀ + ㄱ/ㄷ/ㅈ -> ㅋ/ㅌ/ㅊ (좋다 -> jo-ta, 많다 -> man-ta, 싫다 -> sil-ta)
+                    jong in setOf(27, 6, 15) && nCho in setOf(0, 3, 12) -> {
+                        nextOverrideCho = when (nCho) {
+                            0 -> 15  // ㅋ
+                            3 -> 16  // ㅌ
+                            12 -> 14 // ㅊ
+                            else -> nCho
+                        }
+                        jong = when (jong) {
+                            6 -> 4  // ㄶ -> ㄴ
+                            15 -> 8 // ㅀ -> ㄹ
+                            else -> 0
+                        }
+                    }
+                    // ㅎ + ㅅ -> ㅆ
+                    jong == 27 && nCho == 9 -> {
+                        jong = 0
+                        nextOverrideCho = 10
+                    }
+                    // Aspiration: ㄱ/ㄷ/ㅂ/ㅈ (and ㄺ/ㄼ/ㄵ) + ㅎ -> ㅋ/ㅌ/ㅍ/ㅊ
+                    nCho == 18 && jong in setOf(1, 5, 7, 9, 11, 17, 22) -> {
+                        nextOverrideCho = when (jong) {
+                            1, 9 -> 15   // ㅋ
+                            7 -> 16      // ㅌ
+                            17, 11 -> 17 // ㅍ
+                            22, 5 -> 14  // ㅊ
+                            else -> 18
+                        }
+                        jong = when (jong) {
+                            5 -> 4
+                            9, 11 -> 8
+                            else -> 0
+                        }
+                    }
+                    // ㄹ-nasalization after ㅁ/ㅇ (음료수 -> eum-nyo-su, 종로 -> jong-no)
+                    (jong == 16 || jong == 21) && nCho == 5 -> {
+                        nextOverrideCho = 2
+                    }
+                    // Mutual nasalization: ㄱ/ㅂ + ㄹ -> ㅇ/ㅁ + ㄴ (독립 -> dong-nip, 협력 -> hyeom-nyeok)
+                    jong in setOf(1, 2, 24, 17, 26) && nCho == 5 -> {
+                        jong = if (jong in setOf(1, 2, 24)) 21 else 16
+                        nextOverrideCho = 2
                     }
                     // Nasalization: ㄱ/ㄷ/ㅂ coda before ㄴ/ㅁ -> ㅇ/ㄴ/ㅁ
                     (nCho == 2 || nCho == 6) && jong in setOf(1, 2, 24, 7, 19, 20, 22, 23, 25, 17, 26) -> {
@@ -115,7 +201,7 @@ object KoreanLinguisticsEngine {
                             else -> jong
                         }
                     }
-                    // Liquidization: ㄴ+ㄹ or ㄹ+ㄴ -> ll
+                    // Liquidization: ㄴ+ㄹ or ㄹ+ㄴ -> ll (신라 -> sil-la, 설날 -> seol-lal)
                     (jong == 4 && nCho == 5) -> {
                         jong = 8
                         nextOverrideCho = 5
@@ -123,14 +209,8 @@ object KoreanLinguisticsEngine {
                     (jong == 8 && nCho == 2) -> {
                         nextOverrideCho = 5
                     }
-                    // Aspiration: ㄱ/ㄷ/ㅂ/ㅈ + ㅎ -> ㅋ/ㅌ/ㅍ/ㅊ
-                    nCho == 18 && jong in setOf(1, 7, 17, 22) -> {
-                        nextOverrideCho = when (jong) {
-                            1 -> 15; 7 -> 16; 17 -> 17; 22 -> 14 else -> 18
-                        }
-                        jong = 0
-                    }
                 }
+                syllables[i] = Triple(cho, jung, jong)
                 if (nextOverrideCho != null) {
                     syllables[i + 1] = Triple(nextOverrideCho, nJung, nJong)
                 }
@@ -162,14 +242,18 @@ object KoreanLinguisticsEngine {
             when {
                 (jong == 7 || jong == 25) && nCho == 11 && nJung == 20 ->
                     notes.add("Palatalization (구개음화): final ㄷ/ㅌ before 이 shifts to [지/치].")
-                nCho == 11 && jong != 21 && jong != 27 ->
+                nCho == 11 && jong in setOf(6, 15, 27) ->
+                    notes.add("ㅎ-weakening (ㅎ 탈락): final ㅎ drops silently before a vowel.")
+                nCho == 11 && jong != 21 ->
                     notes.add("Liaison (연음): final consonant carries smoothly into the following vowel.")
-                (nCho == 2 || nCho == 6) && jong in setOf(1, 2, 7, 17, 19, 20, 22, 23, 24, 25, 26) ->
-                    notes.add("Nasalization (비음화): obstruent batchim assimilates nasally before ㄴ/ㅁ.")
+                (jong in setOf(27, 6, 15) && nCho in setOf(0, 3, 12)) ||
+                    (nCho == 18 && jong in setOf(1, 5, 7, 9, 11, 17, 22)) ->
+                    notes.add("Aspiration (격음화): consonant merges with ㅎ into an aspirated stop [ㅋ/ㅌ/ㅍ/ㅊ].")
+                (jong in setOf(1, 2, 16, 17, 21, 24, 26) && nCho == 5) ||
+                    ((nCho == 2 || nCho == 6) && jong in setOf(1, 2, 7, 17, 19, 20, 22, 23, 24, 25, 26)) ->
+                    notes.add("Nasalization (비음화): consonant boundary assimilates nasally (ㅁ/ㄴ/ㅇ).")
                 (jong == 4 && nCho == 5) || (jong == 8 && nCho == 2) ->
                     notes.add("Liquidization (유음화): ㄴ + ㄹ / ㄹ + ㄴ assimilates to flowing [ll].")
-                nCho == 18 && jong in setOf(1, 7, 17, 22) ->
-                    notes.add("Aspiration (격음화): batchim merges with ㅎ into an aspirated stop.")
                 jong in setOf(1, 7, 17) && nCho in setOf(0, 3, 7, 9, 12) ->
                     notes.add("Tensification (경음화): following consonant tenses after stop batchim.")
             }
@@ -179,8 +263,69 @@ object KoreanLinguisticsEngine {
     }
 
     /**
+     * Checks whether a Hangul syllable at [index] inside [word] undergoes phonological assimilation
+     * with the following syllable (used to pick clean representative-coda batchim quiz items).
+     */
+    fun undergoesCodaAssimilationAt(word: String, index: Int): Boolean {
+        if (index !in word.indices || index == word.lastIndex) return false
+        val cur = decomposeIndices(word[index]) ?: return false
+        val next = decomposeIndices(word[index + 1]) ?: return false
+        val jong = cur.third
+        val nCho = next.first
+        if (jong == 0) return false
+        return when {
+            nCho == 11 -> true // Liaison or ㅎ-drop
+            (jong in setOf(27, 6, 15) && nCho in setOf(0, 3, 9, 12)) -> true // Aspiration
+            (nCho == 18 && jong in setOf(1, 5, 7, 9, 11, 17, 22)) -> true // Aspiration
+            (nCho == 2 || nCho == 6) && jong in setOf(1, 2, 7, 17, 19, 20, 22, 23, 24, 25, 26) -> true // Nasalization
+            nCho == 5 && jong in setOf(1, 2, 4, 16, 17, 21, 24, 26) -> true // ㄹ-nasalization / liquidization
+            jong == 8 && nCho == 2 -> true // Liquidization
+            else -> false
+        }
+    }
+
+    private val BIEUP_IRREGULARS = setOf(
+        "돕다", "곱다", "춥다", "덥다", "쉽다", "어렵다", "가깝다", "무겁다", "가볍다",
+        "맵다", "아름답다", "고맙다", "반갑다", "부럽다", "무섭다", "귀엽다", "뜨겁다",
+        "차갑다", "부드럽다", "시끄럽다", "어지럽다", "외롭다", "즐겁다", "새롭다",
+        "어둡다", "눕다", "굽다", "줍다", "더럽다", "싱겁다", "그립다", "부끄럽다"
+    )
+    private val DIGEUT_IRREGULARS = setOf("듣다", "걷다", "묻다", "싣다", "깨닫다", "일컫다")
+    private val SIOT_IRREGULARS = setOf("짓다", "낫다", "붓다", "젓다", "긋다", "잇다")
+    private val REU_IRREGULARS = setOf(
+        "모르다", "다르다", "빠르다", "부르다", "고르다", "오르다", "자르다", "기르다",
+        "흐르다", "누르다", "마르다", "나르다", "서두르다", "서투르다", "게으르다",
+        "바르다", "가르다", "어우르다", "이르다", "구르다"
+    )
+    private val HIEUT_IRREGULARS = setOf(
+        "그렇다", "이렇다", "저렇다", "어떻다", "빨갛다", "파랗다",
+        "노랗다", "하얗다", "까맣다", "동그랗다", "커다랗다"
+    )
+    private val SUPPLETIVE_HONORIFICS = mapOf(
+        "먹다" to "드세요",
+        "마시다" to "드세요",
+        "자다" to "주무세요",
+        "있다" to "계세요",
+        "말하다" to "말씀하세요",
+        "죽다" to "돌아가세요"
+    )
+
+    private fun resolveIrregularTag(hangul: String, explicitTag: String): String {
+        if (explicitTag.isNotBlank()) return explicitTag
+        return when {
+            hangul in BIEUP_IRREGULARS || hangul.endsWith("스럽다") -> "ㅂ"
+            hangul in DIGEUT_IRREGULARS -> "ㄷ"
+            hangul in SIOT_IRREGULARS -> "ㅅ"
+            hangul in REU_IRREGULARS -> "르"
+            hangul in HIEUT_IRREGULARS -> "ㅎ"
+            else -> ""
+        }
+    }
+
+    /**
      * Conjugates Korean verbs and adjectives ending in 다 into standard polite/formal/past/future forms.
-     * Supports regular stems, 하다 predicates, vowel contraction, ㅡ-drop, ㄹ-drop, and marked irregulars (ㅂ, ㄷ, ㅅ, 르, ㅎ).
+     * Supports regular stems, 하다 predicates, vowel contraction (including ㅚ -> ㅙ), ㅡ-drop, ㄹ-drop,
+     * suppletive honorifics, and both marked and auto-detected irregulars (ㅂ, ㄷ, ㅅ, 르, ㅎ).
      */
     fun buildConjugationsSerialized(
         hangul: String,
@@ -190,16 +335,17 @@ object KoreanLinguisticsEngine {
         if ((pos != "Verb" && pos != "Adjective") || !hangul.endsWith("다") || hangul.length < 2) {
             return ""
         }
+        val effectiveIrregular = resolveIrregularTag(hangul, irregularTag)
         val stem = hangul.dropLast(1)
         val lastChar = stem.last()
         val lastDecomp = decomposeIndices(lastChar) ?: return ""
         val (cho, jung, jong) = lastDecomp
         val prefix = stem.dropLast(1)
 
-        val politePresent = conjugatePolitePresent(stem, prefix, cho, jung, jong, irregularTag)
+        val politePresent = conjugatePolitePresent(stem, prefix, cho, jung, jong, effectiveIrregular)
         val politePast = conjugatePolitePast(politePresent)
         val formalPresent = conjugateFormalPresent(stem, prefix, cho, jung, jong)
-        val politeFuture = conjugatePoliteFuture(stem, prefix, cho, jung, jong, irregularTag)
+        val politeFuture = conjugatePoliteFuture(stem, prefix, cho, jung, jong, effectiveIrregular)
 
         val entries = mutableListOf(
             "$politePresent::Polite present (해요체)",
@@ -208,13 +354,15 @@ object KoreanLinguisticsEngine {
             "$politeFuture::Polite future"
         )
         if (pos == "Verb") {
-            val honorific = conjugateHonorific(stem, prefix, cho, jung, jong, irregularTag)
+            val honorific = SUPPLETIVE_HONORIFICS[hangul]
+                ?: conjugateHonorific(stem, prefix, cho, jung, jong, effectiveIrregular)
             entries.add("$honorific::Honorific polite (-(으)세요)")
         }
         return entries.joinToString("||")
     }
 
-    private fun isBrightVowel(jung: Int): Boolean = jung == 0 || jung == 8 || jung == 2 || jung == 12 // ㅏ, ㅗ, ㅑ, ㅛ
+    // Standard Korean vowel harmony bright vowels (양성모음): ㅏ(0), ㅗ(8)
+    private fun isBrightVowel(jung: Int): Boolean = jung == 0 || jung == 8
 
     private fun conjugatePolitePresent(
         stem: String,
@@ -226,7 +374,7 @@ object KoreanLinguisticsEngine {
     ): String {
         if (stem.endsWith("하")) return stem.dropLast(1) + "해요"
 
-        // Marked irregulars
+        // Marked or auto-detected irregulars
         when (irregularTag) {
             "ㅂ" -> if (jong == 17) {
                 val base = prefix + composeIndices(cho, jung, 0)
@@ -254,15 +402,17 @@ object KoreanLinguisticsEngine {
             }
         }
 
-        // With batchim (regular)
+        // With batchim (regular; includes standard 얇아요/얕아요 bright harmony)
         if (jong != 0) {
-            return stem + if (isBrightVowel(jung)) "아요" else "어요"
+            val bright = isBrightVowel(jung) || stem == "얇" || stem == "얕"
+            return stem + if (bright) "아요" else "어요"
         }
 
         // Open vowel stems
         return when (jung) {
             0, 1, 2, 3, 4, 5, 6, 7 -> stem + "요" // 가요, 보내요, 서요, 세요, 켜요
             8 -> prefix + composeIndices(cho, 9, 0) + "요" // 오 -> 와요
+            11 -> prefix + composeIndices(cho, 10, 0) + "요" // 되 -> 돼요, 뵈 -> 봬요
             13 -> prefix + composeIndices(cho, 14, 0) + "요" // 배우 -> 배워요
             20 -> prefix + composeIndices(cho, 6, 0) + "요" // 마시 -> 마셔요
             18 -> { // ㅡ drop
@@ -337,6 +487,188 @@ object KoreanLinguisticsEngine {
         }
     }
 
+    // ==================== TOKEN-BOUNDARY & JAMO DISCOURSE / REGISTER ANALYZERS ====================
+
+    private val NON_PARTICLE_NOUNS = setOf(
+        "휴가", "화가", "작가", "국가", "가격", "사과", "결과", "효과", "통과", "교과", "학과", "치과", "내과", "외과",
+        "포도", "지도", "속도", "온도", "정도", "태도", "제도", "기도", "수도", "복도", "각도", "밀도", "한도",
+        "의미", "주의", "회의", "동의", "강의", "편의", "정의", "예의", "문의", "선의", "호의",
+        "도로", "서로", "따로", "바로", "새로", "수로", "경로", "진로", "통로", "항로", "선로", "가로", "세로", "피로", "위로",
+        "어머니", "아버지", "할머니", "할아버지", "고양이", "강아지", "어린이", "나비", "커피", "요리", "소리", "자리", "머리", "다리", "허리",
+        "가을", "마을", "거울", "겨울", "서울", "하늘", "구름", "이름", "기분", "질문", "주문", "소문", "방문", "신분"
+    )
+
+    private val NON_CONNECTOR_NOUNS = setOf(
+        "라면", "화면", "표면", "측면", "장면", "정면", "이면", "단면", "수면", "방면", "전면", "후면", "지면에", "냉면",
+        "사고", "창고", "참고", "경고", "광고", "보고", "원고", "재고", "중고", "최고", "초고", "공고", "선고", "망고", "빙고"
+    )
+
+    private val NON_POLITE_YO_NOUNS = setOf(
+        "필요", "중요", "개요", "주요", "소요", "수요", "동요", "민요", "가요", "도요"
+    )
+
+    private val MULTI_CHAR_PARTICLES = listOf(
+        "에서", "으로", "하고", "부터", "까지", "보다", "에게", "한테", "처럼", "만큼", "밖에", "이랑", "이나", "라도"
+    )
+
+    private val STANDALONE_CONNECTORS = setOf(
+        "그러나", "따라서", "또한", "그래서", "하지만", "그런데", "그러므로", "반면에",
+        "그리고", "왜냐하면", "게다가", "결국", "우선", "반면"
+    )
+
+    private val MULTI_CHAR_CONNECTOR_ENDINGS = listOf(
+        "때문에", "으면서", "더라도", "으려고", "으니까", "으므로", "이지만",
+        "았는데", "었는데", "했는데", "위해서", "통해서", "따라서",
+        "아서", "어서", "해서", "지만", "는데", "으면", "면서", "거나",
+        "도록", "려고", "니까", "므로", "위해", "통해", "따라", "아도", "어도", "해도"
+    )
+
+    private val WRITTEN_PLAIN_ENDINGS = listOf(
+        "는다", "이다", "된다", "있다", "없다", "한다", "겠다",
+        "필요하다", "중요하다", "가능하다", "어렵다", "쉽다", "크다", "작다",
+        "많다", "적다", "좋다", "높다", "낮다", "같다", "다르다"
+    )
+
+    private fun cleanKoreanTokens(text: String): List<String> =
+        text.trim()
+            .split(Regex("\\s+"))
+            .map { token -> token.trim { !isHangulSyllable(it) && !it.isLetterOrDigit() } }
+            .filter { it.isNotEmpty() }
+
+    /**
+     * Counts distinct Korean word-final particles using token boundaries and phonological batchim rules
+     * so bare noun lists (e.g., "사과 고기 라면 가방") do not produce false positives.
+     */
+    fun countWordFinalParticles(text: String): Int {
+        val tokens = cleanKoreanTokens(text)
+        val matched = HashSet<String>()
+        for (token in tokens) {
+            if (token.length < 2) continue
+            if (token in NON_PARTICLE_NOUNS) continue
+            val last = token.last()
+            if (!isHangulSyllable(last)) continue
+            // Skip clear sentence-final predicate endings
+            if (last == '요' || last == '다' || last == '까') continue
+
+            val multi = MULTI_CHAR_PARTICLES.firstOrNull { p ->
+                token.length >= p.length + 1 && token.endsWith(p)
+            }
+            if (multi != null) {
+                val stem = token.dropLast(multi.length)
+                if (multi == "으로" && (!endsWithBatchim(stem) || endsWithRieulBatchim(stem))) {
+                    continue
+                }
+                matched.add(multi)
+                continue
+            }
+
+            val stem = token.dropLast(1)
+            val prev = stem.lastOrNull() ?: continue
+            if (!isHangulSyllable(prev)) continue
+            val stemHasBatchim = endsWithBatchim(stem)
+
+            val particle: String? = when (last) {
+                '은' -> if (stemHasBatchim) "은" else null
+                '는' -> if (!stemHasBatchim) "는" else null
+                '이' -> if (stemHasBatchim) "이" else null
+                '가' -> if (!stemHasBatchim) "가" else null
+                '을' -> if (stemHasBatchim) "을" else null
+                '를' -> if (!stemHasBatchim) "를" else null
+                '과' -> if (stemHasBatchim) "과" else null
+                '와' -> if (!stemHasBatchim) "와" else null
+                '로' -> if (!stemHasBatchim || endsWithRieulBatchim(stem)) "로" else null
+                '에', '도', '의' -> last.toString()
+                else -> null
+            }
+            if (particle != null) {
+                matched.add(particle)
+            }
+        }
+        return matched.size
+    }
+
+    /**
+     * Counts distinct Korean discourse connectors and clause-linking endings using token boundaries.
+     */
+    fun countDiscourseConnectors(text: String): Int {
+        val tokens = cleanKoreanTokens(text)
+        val matched = HashSet<String>()
+        for (token in tokens) {
+            if (token in STANDALONE_CONNECTORS) {
+                matched.add(token)
+                continue
+            }
+            if (token.length < 2 || token in NON_CONNECTOR_NOUNS) continue
+
+            val multi = MULTI_CHAR_CONNECTOR_ENDINGS.firstOrNull { ending ->
+                token.endsWith(ending) && (token == ending || token.length >= ending.length + 1)
+            }
+            if (multi != null) {
+                matched.add(multi)
+                continue
+            }
+
+            val last = token.last()
+            if ((last == '고' || last == '면') && token.length >= 2 && token !in NON_CONNECTOR_NOUNS) {
+                // Require preceding Hangul syllable to avoid non-Korean artifacts
+                val prev = token[token.length - 2]
+                if (isHangulSyllable(prev)) {
+                    matched.add(last.toString())
+                }
+            }
+        }
+        return matched.size
+    }
+
+    /**
+     * Detects formal polite Korean endings (합니다체), including both consonant-stem (-습니다/-습니까)
+     * and open/ㄹ-stem composed ㅂ-batchim endings (갑니다, 합니다, 됩니다, 감사합니다, 가십니까).
+     */
+    fun hasFormalPoliteEnding(text: String): Boolean {
+        val tokens = cleanKoreanTokens(text)
+        return tokens.any { token ->
+            if (token.length < 3) return@any false
+            if (token.endsWith("습니다") || token.endsWith("습니까") ||
+                token.endsWith("읍니다") || token.endsWith("읍니까")
+            ) {
+                return@any true
+            }
+            if (token.endsWith("니다") || token.endsWith("니까")) {
+                val beforeEnding = token[token.length - 3]
+                decomposeIndices(beforeEnding)?.third == 17 // ㅂ batchim (e.g., 갑니다, 합니다, 됩니다)
+            } else {
+                false
+            }
+        }
+    }
+
+    /**
+     * Detects polite everyday Korean endings (해요체: -아요/어요/해요/예요/이에요/세요/주세요/죠/네요).
+     */
+    fun hasPoliteHaeyoEnding(text: String): Boolean {
+        val tokens = cleanKoreanTokens(text)
+        return tokens.any { token ->
+            if (token.length < 2) return@any false
+            if (token in NON_POLITE_YO_NOUNS) return@any false
+            token.endsWith("요") || token.endsWith("죠")
+        }
+    }
+
+    /**
+     * Detects formal written plain-style endings (해라체 / 문어체: -는다, composed -ㄴ다 like 간다/한다/줄어든다,
+     * past -았다/-었다/-했다 via ㅆ-batchim + 다, and descriptive -이다/-있다/-없다).
+     */
+    fun hasWrittenPlainEnding(text: String): Boolean {
+        val tokens = cleanKoreanTokens(text)
+        return tokens.any { token ->
+            if (token.length < 2 || !token.endsWith("다")) return@any false
+            if (WRITTEN_PLAIN_ENDINGS.any { token.endsWith(it) }) return@any true
+            val beforeDa = decomposeIndices(token[token.length - 2]) ?: return@any false
+            // Composed -ㄴ다 (jong == 4: 간다, 본다, 한다, 줄어든다) or past -았다/었다/했다 (jong == 20: 갔다, 늘었다)
+            beforeDa.third == 4 || beforeDa.third == 20
+        }
+    }
+
     /**
      * Generates a grammatically natural Korean example sentence using correct Korean
      * particles (이/가, 을/를, 은/는) and proper conjugated forms matched to TOPIK level.
@@ -403,7 +735,7 @@ object KoreanLinguisticsEngine {
                 "Ucapkan \"$shortId\" sesuai dengan situasinya."
             )
             "Number", "Counter" -> Triple(
-                "이 표현은 '$hangul'을(를) 세거나 나타낼 때 써요.",
+                "이 표현은 '$hangul'${objParticle} 세거나 나타낼 때 써요.",
                 "Use '$hangul' ($shortEn) when counting or expressing quantity.",
                 "Gunakan '$hangul' ($shortId) saat menghitung atau menyatakan jumlah."
             )

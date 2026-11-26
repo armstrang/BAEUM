@@ -8,6 +8,7 @@ import com.example.domain.fsrs.CardMemoryStage
 import com.example.domain.fsrs.FsrsRating
 import com.example.domain.fsrs.FsrsScheduler
 import com.example.domain.hangul.HangulUnicodeEngine
+import com.example.domain.hangul.KoreanLinguisticsEngine
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -133,15 +134,6 @@ data class LearnerReadinessProfile(
  */
 object LearningScoringEngine {
 
-    private val KOREAN_PARTICLES = listOf(
-        "은", "는", "이", "가", "을", "를", "에", "에서", "으로", "로", "도", "의", "와", "과", "하고", "부터", "까지", "보다"
-    )
-
-    private val KOREAN_CONNECTORS = listOf(
-        "어서", "아서", "해서", "지만", "는데", "으면", "면", "기 때문", "때문에", "므로", "면서",
-        "고", "거나", "도록", "려고", "위해", "통해", "따라", "반면", "그러나", "따라서", "또한", "그래서"
-    )
-
     /**
      * 4-Axis Korean Open-Response Rubric used by TOPIK II Writing and TOPIK Speaking exams:
      * - Relevance & Keyword Coverage (35%)
@@ -201,22 +193,19 @@ object LearningScoringEngine {
             min(1.0, sentenceCount / 2.0) * 10.0)
         val completenessScore = (completenessRaw * spamPenalty).roundToInt().coerceIn(0, 100)
 
-        // 3. Grammar, Particles & Cohesion (0..100)
-        val particleHits = KOREAN_PARTICLES.count { cleaned.contains(it) }
-        val connectorHits = KOREAN_CONNECTORS.count { cleaned.contains(it) }
+        // 3. Grammar, Particles & Cohesion (0..100) — token-boundary & batchim-verified
+        val particleHits = KoreanLinguisticsEngine.countWordFinalParticles(cleaned)
+        val connectorHits = KoreanLinguisticsEngine.countDiscourseConnectors(cleaned)
         val grammarRaw = (
             min(1.0, particleHits / 3.0) * 55.0 +
             min(1.0, connectorHits / 2.0) * 45.0
         )
         val grammarScore = (grammarRaw * spamPenalty).roundToInt().coerceIn(0, 100)
 
-        // 4. Register & Style Appropriateness (0..100)
-        val hasWrittenPlain = listOf("는다", "ㄴ다", "이다", "된다", "있다", "없다", "한다", "겠다", "필요하다", "중요하다")
-            .any { cleaned.contains(it) }
-        val hasFormalPolite = listOf("습니다", "습니까", "입니다", "드립니다", "겠습니다")
-            .any { cleaned.contains(it) }
-        val hasPolite = listOf("아요", "어요", "해요", "예요", "이에요", "세요", "주세요")
-            .any { cleaned.contains(it) }
+        // 4. Register & Style Appropriateness (0..100) — Unicode Jamo ending recognition
+        val hasWrittenPlain = KoreanLinguisticsEngine.hasWrittenPlainEnding(cleaned)
+        val hasFormalPolite = KoreanLinguisticsEngine.hasFormalPoliteEnding(cleaned)
+        val hasPolite = KoreanLinguisticsEngine.hasPoliteHaeyoEnding(cleaned)
 
         val registerRaw = when (expectedRegister) {
             KoreanRegisterTarget.FORMAL_WRITTEN -> when {

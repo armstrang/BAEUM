@@ -165,7 +165,8 @@ object StudyReminderScheduler {
         )
 
         val notification = NotificationCompat.Builder(appContext, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_baeum_reminder)
+            .setColor(0xFF5B46C8.toInt())
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -180,8 +181,12 @@ object StudyReminderScheduler {
         }.getOrDefault(false)
     }
 
+    const val ACTION_DAILY_STUDY_REMINDER = "com.example.action.DAILY_STUDY_REMINDER"
+
     private fun buildAlarmPendingIntent(context: Context): PendingIntent {
-        val intent = Intent(context, StudyReminderReceiver::class.java)
+        val intent = Intent(context, StudyReminderReceiver::class.java).apply {
+            action = ACTION_DAILY_STUDY_REMINDER
+        }
         return PendingIntent.getBroadcast(
             context,
             REQUEST_CODE_ALARM,

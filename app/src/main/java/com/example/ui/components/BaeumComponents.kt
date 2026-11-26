@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -28,7 +29,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -55,21 +55,20 @@ import com.example.R
 import com.example.data.repository.DayForecastPoint
 import com.example.ui.theme.BaeumMotion
 import com.example.ui.theme.LocalBaeumColors
-import com.example.ui.theme.luxuryShimmer
 import com.example.ui.theme.tactileClickable
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Sculpted frosted-glass luxury surface with vertical silk gradient, diagonal specular top-edge
- * rim highlight, generous rounded corners, and tactile spring press physics when interactive.
+ * Sculpted Seoul Atelier surface card with cached silk gradient, crisp hairline rim,
+ * balanced rounded corners, and tactile spring press physics when interactive.
  */
 @Composable
 fun SeoulCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
-    cornerRadius: Dp = 28.dp,
+    cornerRadius: Dp = 24.dp,
     containerColor: Color = Color.Unspecified,
     borderColor: Color = Color.Unspecified,
     contentPadding: PaddingValues = PaddingValues(20.dp),
@@ -88,8 +87,8 @@ fun SeoulCard(
 }
 
 /**
- * Luminous full-pill luxury CTA button with multi-stop silk amethyst gradient, top specular edge,
- * soft colored glow, and tactile spring compression.
+ * Refined Seoul Atelier primary CTA button with smooth amethyst gradient, hairline specular top edge,
+ * calm colored elevation, and tactile spring compression.
  */
 @Composable
 fun BaeumPrimaryButton(
@@ -100,7 +99,7 @@ fun BaeumPrimaryButton(
     testTag: String = ""
 ) {
     val extended = LocalBaeumColors.current
-    val shape = RoundedCornerShape(26.dp)
+    val shape = RoundedCornerShape(18.dp)
 
     val bgBrush = if (enabled) {
         Brush.horizontalGradient(
@@ -117,38 +116,37 @@ fun BaeumPrimaryButton(
 
     val rimBrush = if (enabled) {
         Brush.verticalGradient(
-            listOf(Color.White.copy(alpha = 0.42f), Color.Transparent)
+            listOf(Color.White.copy(alpha = 0.32f), Color.Transparent)
         )
     } else {
         Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent))
     }
 
-    val glowColor = if (enabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.48f) else Color.Transparent
+    val glowColor = if (enabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.36f) else Color.Transparent
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(56.dp)
+            .height(54.dp)
             .then(if (testTag.isNotEmpty()) Modifier.testTag(testTag) else Modifier)
             .shadow(
-                elevation = if (enabled) 14.dp else 0.dp,
+                elevation = if (enabled) 10.dp else 0.dp,
                 shape = shape,
                 ambientColor = glowColor,
                 spotColor = glowColor
             )
             .clip(shape)
             .background(bgBrush)
-            .luxuryShimmer(enabled = enabled, durationMillis = 4800, shimmerAlpha = 0.18f)
             .border(width = 1.dp, brush = rimBrush, shape = shape)
-            .tactileClickable(enabled = enabled, pressedScale = 0.962f, onClick = onClick),
+            .tactileClickable(enabled = enabled, pressedScale = 0.972f, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge.copy(
                 fontWeight = FontWeight.Bold,
-                fontSize = 15.5.sp,
-                letterSpacing = 0.3.sp
+                fontSize = 15.sp,
+                letterSpacing = 0.2.sp
             ),
             color = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -159,7 +157,7 @@ fun BaeumPrimaryButton(
 }
 
 /**
- * Soft frosted-glass secondary pill button with delicate specular rim and tactile spring press.
+ * Calm layered secondary button with crisp hairline border and tactile spring press.
  */
 @Composable
 fun BaeumSecondaryButton(
@@ -170,7 +168,7 @@ fun BaeumSecondaryButton(
     testTag: String = ""
 ) {
     val extended = LocalBaeumColors.current
-    val shape = RoundedCornerShape(26.dp)
+    val shape = RoundedCornerShape(18.dp)
 
     val fillBrush = if (extended.isDark) {
         Brush.verticalGradient(
@@ -194,30 +192,30 @@ fun BaeumSecondaryButton(
             extended.cardBorder.copy(alpha = if (extended.isDark) 0.55f else 0.85f)
         )
     )
-    val lightShadow = if (extended.isDark) Color.Transparent else Color(0x22161E48)
+    val lightShadow = if (extended.isDark) Color.Transparent else Color(0x18192138)
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(54.dp)
+            .height(52.dp)
             .then(if (testTag.isNotEmpty()) Modifier.testTag(testTag) else Modifier)
             .shadow(
-                elevation = if (!extended.isDark && enabled) 6.dp else 0.dp,
+                elevation = if (!extended.isDark && enabled) 4.dp else 0.dp,
                 shape = shape,
                 ambientColor = lightShadow,
                 spotColor = lightShadow
             )
             .clip(shape)
             .background(fillBrush)
-            .border(width = if (extended.isDark) 1.dp else 1.2.dp, brush = borderBrush, shape = shape)
-            .tactileClickable(enabled = enabled, pressedScale = 0.968f, onClick = onClick),
+            .border(width = 1.dp, brush = borderBrush, shape = shape)
+            .tactileClickable(enabled = enabled, pressedScale = 0.974f, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge.copy(
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp
+                fontSize = 14.5.sp
             ),
             color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -228,7 +226,7 @@ fun BaeumSecondaryButton(
 }
 
 /**
- * Editorial brand header with subtle glowing monogram accent and circular frosted-glass settings pill.
+ * Editorial Seoul Atelier brand header with crisp Hangul monogram seal (`배`) and circular settings pill.
  */
 @Composable
 fun BaeumBrandHeader(
@@ -247,17 +245,29 @@ fun BaeumBrandHeader(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(7.dp)
-                        .clip(CircleShape)
+                        .size(22.dp)
+                        .clip(RoundedCornerShape(7.dp))
                         .background(
-                            Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, extended.mint))
-                        )
-                )
+                            Brush.linearGradient(
+                                listOf(MaterialTheme.colorScheme.primary, extended.mint)
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "배",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "BAEUM  •  배움",
+                    text = "BAEUM  ·  배움",
                     style = MaterialTheme.typography.labelSmall.copy(
-                        letterSpacing = 2.0.sp,
+                        letterSpacing = 1.8.sp,
                         fontWeight = FontWeight.Bold
                     ),
                     color = MaterialTheme.colorScheme.primary
@@ -277,26 +287,27 @@ fun BaeumBrandHeader(
             )
         }
         if (onSettingsClick != null) {
+            Spacer(modifier = Modifier.width(12.dp))
             Box(
                 modifier = Modifier
                     .size(48.dp)
                     .shadow(
-                        elevation = if (extended.isDark) 0.dp else 6.dp,
+                        elevation = if (extended.isDark) 0.dp else 5.dp,
                         shape = CircleShape,
-                        ambientColor = Color(0x24161E48),
-                        spotColor = Color(0x24161E48)
+                        ambientColor = Color(0x1C192138),
+                        spotColor = Color(0x1C192138)
                     )
                     .clip(CircleShape)
                     .background(
                         Brush.verticalGradient(listOf(extended.glassFillTop, extended.glassFillBottom))
                     )
                     .border(
-                        width = if (extended.isDark) 1.dp else 1.15.dp,
+                        width = 1.dp,
                         brush = Brush.linearGradient(
                             if (extended.isDark) {
                                 listOf(extended.glassHighlightBorder, extended.cardBorder.copy(alpha = 0.5f))
                             } else {
-                                listOf(extended.cardBorder, extended.cardBorder.copy(alpha = 0.75f))
+                                listOf(extended.cardBorder, extended.cardBorder.copy(alpha = 0.8f))
                             }
                         ),
                         shape = CircleShape
@@ -309,7 +320,7 @@ fun BaeumBrandHeader(
                     imageVector = Icons.Outlined.Settings,
                     contentDescription = stringResource(R.string.cd_settings),
                     tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(21.dp)
                 )
             }
         }
@@ -317,7 +328,7 @@ fun BaeumBrandHeader(
 }
 
 /**
- * Refined floating frosted-glass top navigation bar with tactile circular back button.
+ * Refined floating top navigation bar with 48dp circular back button and unclipped flexible trailing slot.
  */
 @Composable
 fun BaeumTopBar(
@@ -337,22 +348,22 @@ fun BaeumTopBar(
             modifier = Modifier
                 .size(48.dp)
                 .shadow(
-                    elevation = if (extended.isDark) 0.dp else 6.dp,
+                    elevation = if (extended.isDark) 0.dp else 5.dp,
                     shape = CircleShape,
-                    ambientColor = Color(0x24161E48),
-                    spotColor = Color(0x24161E48)
+                    ambientColor = Color(0x1C192138),
+                    spotColor = Color(0x1C192138)
                 )
                 .clip(CircleShape)
                 .background(
                     Brush.verticalGradient(listOf(extended.glassFillTop, extended.glassFillBottom))
                 )
                 .border(
-                    width = if (extended.isDark) 1.dp else 1.15.dp,
+                    width = 1.dp,
                     brush = Brush.linearGradient(
                         if (extended.isDark) {
                             listOf(extended.glassHighlightBorder, extended.cardBorder.copy(alpha = 0.45f))
                         } else {
-                            listOf(extended.cardBorder, extended.cardBorder.copy(alpha = 0.75f))
+                            listOf(extended.cardBorder, extended.cardBorder.copy(alpha = 0.8f))
                         }
                     ),
                     shape = CircleShape
@@ -392,8 +403,8 @@ fun BaeumTopBar(
             }
         }
         Box(
-            modifier = Modifier.size(48.dp),
-            contentAlignment = Alignment.Center
+            modifier = Modifier.defaultMinSize(minWidth = 48.dp, minHeight = 48.dp),
+            contentAlignment = Alignment.CenterEnd
         ) {
             trailing?.invoke()
         }
@@ -416,7 +427,7 @@ fun CircularGoalRing(
     trackColor: Color = LocalBaeumColors.current.elevatedSurface.copy(alpha = 0.85f)
 ) {
     val extended = LocalBaeumColors.current
-    val animatedProgress by animateFloatAsState(
+    val animatedProgressState = animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
         animationSpec = if (extended.reducedMotion) tween(0) else BaeumMotion.luxurySpring(),
         label = "goal_ring"
@@ -429,9 +440,9 @@ fun CircularGoalRing(
             val strokePx = strokeWidth.toPx()
             val arcSize = Size(this.size.width - strokePx * 1.4f, this.size.height - strokePx * 1.4f)
             val topLeft = Offset(strokePx * 0.7f, strokePx * 0.7f)
-            val sweep = 360f * animatedProgress
+            val sweep = 360f * animatedProgressState.value
 
-            // Recessed glass track
+            // Recessed track
             drawArc(
                 color = trackColor,
                 startAngle = -90f,
@@ -443,15 +454,15 @@ fun CircularGoalRing(
             )
 
             if (sweep > 0.5f) {
-                // Soft luminous ambient halo beneath the arc
+                // Soft ambient halo beneath the arc
                 drawArc(
-                    color = accentColor.copy(alpha = 0.24f),
+                    color = accentColor.copy(alpha = 0.20f),
                     startAngle = -90f,
                     sweepAngle = sweep,
                     useCenter = false,
                     topLeft = topLeft,
                     size = arcSize,
-                    style = Stroke(width = strokePx * 2.1f, cap = StrokeCap.Round)
+                    style = Stroke(width = strokePx * 1.9f, cap = StrokeCap.Round)
                 )
 
                 // Multi-stop silk gradient arc
@@ -471,7 +482,7 @@ fun CircularGoalRing(
                     style = Stroke(width = strokePx, cap = StrokeCap.Round)
                 )
 
-                // Glowing jewel tip at the leading edge of progress
+                // Specular tip dot at leading edge
                 val radius = arcSize.width / 2f
                 val center = Offset(this.size.width / 2f, this.size.height / 2f)
                 val endRad = (-90.0 + sweep) * (PI / 180.0)
@@ -502,7 +513,7 @@ fun CircularGoalRing(
 }
 
 /**
- * Silky gradient pill progress bar with spring physics and subtle luminance.
+ * Silky gradient pill progress bar with spring physics and draw-phase state reads.
  */
 @Composable
 fun ProgressBarSlim(
@@ -513,7 +524,7 @@ fun ProgressBarSlim(
     height: Dp = 7.dp
 ) {
     val extended = LocalBaeumColors.current
-    val anim by animateFloatAsState(
+    val animState = animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
         animationSpec = if (extended.reducedMotion) tween(0) else BaeumMotion.silkSpring(),
         label = "slim_progress"
@@ -525,6 +536,7 @@ fun ProgressBarSlim(
             .fillMaxWidth()
             .height(height)
     ) {
+        val anim = animState.value
         val radius = size.height / 2f
         drawRoundRect(
             color = trackColor,
@@ -584,7 +596,8 @@ fun SevenDayForecastChart(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(16.dp))
+                    .defaultMinSize(minHeight = 48.dp)
+                    .clip(RoundedCornerShape(14.dp))
                     .background(
                         if (isHighlighted) {
                             primary.copy(alpha = if (extended.isDark) 0.12f else 0.08f)
@@ -597,7 +610,7 @@ fun SevenDayForecastChart(
                             Modifier.border(
                                 width = 1.dp,
                                 color = primary.copy(alpha = 0.28f),
-                                shape = RoundedCornerShape(16.dp)
+                                shape = RoundedCornerShape(14.dp)
                             )
                         } else Modifier
                     )

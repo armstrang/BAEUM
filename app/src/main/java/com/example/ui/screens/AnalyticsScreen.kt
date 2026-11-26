@@ -109,14 +109,24 @@ fun AnalyticsScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .widthIn(max = 680.dp)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+    val curriculumStats = remember(allVocab) {
+        allVocab.groupBy { it.curriculum }.mapValues { (_, list) ->
+            list.count { it.reps > 0 } to list.size
+        }
+    }
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter
     ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 680.dp)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
         StaggeredEntrance(index = 0) {
             BaeumBrandHeader(
                 title = bText("Your Progress", "Progres Anda"),
@@ -370,12 +380,11 @@ fun AnalyticsScreen(
                     Triple(CurriculumPathway.EPS_TOPIK, bText("EPS-TOPIK Workplace", "EPS-TOPIK Dunia Kerja"), extended.gold),
                     Triple(CurriculumPathway.EVERYDAY, bText("Everyday Korean", "Korea Sehari-hari"), extended.cherryPink)
                 ).forEach { (key, label, accent) ->
-                    val list = allVocab.filter { it.curriculum == key }
-                    val studied = list.count { it.reps > 0 }
-                    val total = list.size.coerceAtLeast(1)
+                    val (studied, size) = curriculumStats[key] ?: (0 to 0)
+                    val total = size.coerceAtLeast(1)
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
-                        Text("$studied / ${list.size}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("$studied / $size", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                     ProgressBarSlim(progress = studied.toFloat() / total, color = accent)
@@ -408,6 +417,7 @@ fun AnalyticsScreen(
         }
 
         Spacer(modifier = Modifier.height(12.dp))
+        }
     }
 }
 

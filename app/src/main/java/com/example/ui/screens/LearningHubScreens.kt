@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,6 +35,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.local.CurriculumPathway
 import com.example.data.local.VocabEntity
@@ -62,108 +65,113 @@ fun LearningHubScreen(
     onOpenQuizCenter: () -> Unit
 ) {
     val extended = LocalBaeumColors.current
-    fun progressFor(pathway: String): Float {
-        val list = allVocab.filter { it.curriculum == pathway }
-        if (list.isEmpty()) return 0f
-        return list.count { it.reps > 0 }.toFloat() / list.size
+    val progressByPathway = remember(allVocab) {
+        allVocab.groupBy { it.curriculum }.mapValues { (_, list) ->
+            if (list.isEmpty()) 0f else list.count { it.reps > 0 }.toFloat() / list.size
+        }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .widthIn(max = 680.dp)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter
     ) {
-        StaggeredEntrance(index = 0) {
-            BaeumBrandHeader(
-                title = bText("Learn Korean", "Belajar Korea"),
-                subtitle = bText("Curated pathways crafted for mastery", "Jalur belajar terstruktur menuju kefasihan"),
-                onSettingsClick = onOpenSettings
-            )
-        }
-
-        Spacer(modifier = Modifier.height(2.dp))
-
-        StaggeredEntrance(index = 1) {
-            PathwayCard(
-                emblem = "한",
-                title = bText("Hangul Fundamentals", "Dasar Hangul"),
-                subtitle = bText(
-                    "Alphabet, syllable blocks, batchim & stroke order",
-                    "Alfabet, blok suku kata, batchim & urutan goresan"
-                ),
-                progress = progressFor(CurriculumPathway.HANGUL),
-                accent = MaterialTheme.colorScheme.primary,
-                onClick = onSelectHangul,
-                testTag = "pathway_hangul"
-            )
-        }
-        StaggeredEntrance(index = 2) {
-            PathwayCard(
-                emblem = "급",
-                title = "TOPIK 1–6급",
-                subtitle = bText(
-                    "6,600+ academic vocabulary, grammar & exam mastery",
-                    "6.600+ kosakata akademik, tata bahasa & persiapan ujian"
-                ),
-                progress = progressFor(CurriculumPathway.TOPIK),
-                accent = extended.mint,
-                onClick = onSelectTopik,
-                testTag = "pathway_topik"
-            )
-        }
-        StaggeredEntrance(index = 3) {
-            PathwayCard(
-                emblem = "일",
-                title = "EPS-TOPIK",
-                subtitle = bText(
-                    "Industrial safety, manufacturing & workplace Korean",
-                    "Keselamatan kerja, manufaktur & bahasa Korea di tempat kerja"
-                ),
-                progress = progressFor(CurriculumPathway.EPS_TOPIK),
-                accent = extended.gold,
-                onClick = onSelectEpsTopik,
-                testTag = "pathway_eps"
-            )
-        }
-        StaggeredEntrance(index = 4) {
-            PathwayCard(
-                emblem = "말",
-                title = bText("Everyday Korean", "Korea Sehari-hari"),
-                subtitle = bText(
-                    "Seoul life conversations & polite speech levels",
-                    "Percakapan hidup di Seoul & tingkat kesopanan bicara"
-                ),
-                progress = progressFor(CurriculumPathway.EVERYDAY),
-                accent = extended.cherryPink,
-                onClick = onSelectEveryday,
-                testTag = "pathway_everyday"
-            )
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-        StaggeredEntrance(index = 5) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                BaeumSecondaryButton(
-                    text = bText("Grammar Studio", "Studio Tata Bahasa"),
-                    onClick = onOpenGrammarStudio,
-                    modifier = Modifier.weight(1f),
-                    testTag = "learn_grammar_button"
-                )
-                BaeumSecondaryButton(
-                    text = bText("Quiz Center", "Pusat Kuis"),
-                    onClick = onOpenQuizCenter,
-                    modifier = Modifier.weight(1f),
-                    testTag = "learn_quiz_button"
+        Column(
+            modifier = Modifier
+                .widthIn(max = 680.dp)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            StaggeredEntrance(index = 0) {
+                BaeumBrandHeader(
+                    title = bText("Learn Korean", "Belajar Korea"),
+                    subtitle = bText("Curated pathways crafted for mastery", "Jalur belajar terstruktur menuju kefasihan"),
+                    onSettingsClick = onOpenSettings
                 )
             }
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            StaggeredEntrance(index = 1) {
+                PathwayCard(
+                    emblem = "한",
+                    title = bText("Hangul Fundamentals", "Dasar Hangul"),
+                    subtitle = bText(
+                        "Alphabet, syllable blocks, batchim & stroke order",
+                        "Alfabet, blok suku kata, batchim & urutan goresan"
+                    ),
+                    progress = progressByPathway[CurriculumPathway.HANGUL] ?: 0f,
+                    accent = MaterialTheme.colorScheme.primary,
+                    onClick = onSelectHangul,
+                    testTag = "pathway_hangul"
+                )
+            }
+            StaggeredEntrance(index = 2) {
+                PathwayCard(
+                    emblem = "급",
+                    title = "TOPIK 1–6급",
+                    subtitle = bText(
+                        "6,600+ academic vocabulary, grammar & exam mastery",
+                        "6.600+ kosakata akademik, tata bahasa & persiapan ujian"
+                    ),
+                    progress = progressByPathway[CurriculumPathway.TOPIK] ?: 0f,
+                    accent = extended.mint,
+                    onClick = onSelectTopik,
+                    testTag = "pathway_topik"
+                )
+            }
+            StaggeredEntrance(index = 3) {
+                PathwayCard(
+                    emblem = "일",
+                    title = "EPS-TOPIK",
+                    subtitle = bText(
+                        "Industrial safety, manufacturing & workplace Korean",
+                        "Keselamatan kerja, manufaktur & bahasa Korea di tempat kerja"
+                    ),
+                    progress = progressByPathway[CurriculumPathway.EPS_TOPIK] ?: 0f,
+                    accent = extended.gold,
+                    onClick = onSelectEpsTopik,
+                    testTag = "pathway_eps"
+                )
+            }
+            StaggeredEntrance(index = 4) {
+                PathwayCard(
+                    emblem = "말",
+                    title = bText("Everyday Korean", "Korea Sehari-hari"),
+                    subtitle = bText(
+                        "Seoul life conversations & polite speech levels",
+                        "Percakapan hidup di Seoul & tingkat kesopanan bicara"
+                    ),
+                    progress = progressByPathway[CurriculumPathway.EVERYDAY] ?: 0f,
+                    accent = extended.cherryPink,
+                    onClick = onSelectEveryday,
+                    testTag = "pathway_everyday"
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            StaggeredEntrance(index = 5) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    BaeumSecondaryButton(
+                        text = bText("Grammar Studio", "Studio Tata Bahasa"),
+                        onClick = onOpenGrammarStudio,
+                        modifier = Modifier.weight(1f),
+                        testTag = "learn_grammar_button"
+                    )
+                    BaeumSecondaryButton(
+                        text = bText("Quiz Center", "Pusat Kuis"),
+                        onClick = onOpenQuizCenter,
+                        modifier = Modifier.weight(1f),
+                        testTag = "learn_quiz_button"
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
         }
-        Spacer(modifier = Modifier.height(12.dp))
     }
 }
 
@@ -282,7 +290,8 @@ fun TopikCenterScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("TOPIK Center", "Pusat TOPIK"),
@@ -292,8 +301,8 @@ fun TopikCenterScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 680.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -419,7 +428,8 @@ fun EpsTopikCenterScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = "EPS-TOPIK",
@@ -429,8 +439,8 @@ fun EpsTopikCenterScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 680.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -545,7 +555,8 @@ fun EverydayKoreanScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("Everyday Korean", "Korea Sehari-hari"),
@@ -555,8 +566,8 @@ fun EverydayKoreanScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 680.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -581,17 +592,22 @@ fun EverydayKoreanScreen(
                     speechComparisons.forEachIndexed { idx, (label, _, _) ->
                         val active = idx == selectedSituation
                         SeoulCard(
-                            modifier = Modifier.weight(1f),
-                            cornerRadius = 12.dp,
+                            modifier = Modifier
+                                .weight(1f)
+                                .defaultMinSize(minHeight = 48.dp),
+                            cornerRadius = 14.dp,
                             containerColor = if (active) MaterialTheme.colorScheme.primary else LocalBaeumColors.current.elevatedSurface,
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp, horizontal = 4.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp, horizontal = 6.dp),
                             onClick = { selectedSituation = idx }
                         ) {
                             Text(
                                 text = label,
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                                 color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }

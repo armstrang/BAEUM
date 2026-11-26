@@ -153,6 +153,9 @@ interface GrammarBookmarkDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(bookmark: GrammarBookmarkEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(bookmarks: List<GrammarBookmarkEntity>)
+
     @Query("DELETE FROM grammar_bookmarks WHERE grammarId = :grammarId")
     suspend fun delete(grammarId: String)
 

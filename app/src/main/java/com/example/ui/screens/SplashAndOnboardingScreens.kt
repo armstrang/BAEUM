@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -82,11 +83,11 @@ fun SplashScreen(
     onRetry: () -> Unit
 ) {
     val extended = LocalBaeumColors.current
-    val haloScale = if (extended.reducedMotion) {
-        1.0f
+    val haloScaleState = if (extended.reducedMotion) {
+        androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(1.0f) }
     } else {
         val infinite = rememberInfiniteTransition(label = "splash_halo")
-        val anim by infinite.animateFloat(
+        infinite.animateFloat(
             initialValue = 0.96f,
             targetValue = 1.06f,
             animationSpec = infiniteRepeatable(
@@ -95,7 +96,6 @@ fun SplashScreen(
             ),
             label = "halo_pulse"
         )
-        anim
     }
 
     Box(
@@ -114,8 +114,9 @@ fun SplashScreen(
                     modifier = Modifier
                         .size(164.dp)
                         .graphicsLayer {
-                            scaleX = haloScale
-                            scaleY = haloScale
+                            val s = haloScaleState.value
+                            scaleX = s
+                            scaleY = s
                         }
                         .clip(CircleShape)
                         .background(
@@ -268,8 +269,8 @@ fun OnboardingScreen(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
                 .widthIn(max = 600.dp)
+                .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 18.dp)
         ) {
@@ -296,9 +297,9 @@ fun OnboardingScreen(
                 // Instant ID | EN language switcher pill right in Onboarding
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
+                        .clip(RoundedCornerShape(24.dp))
                         .background(extended.glassFillTop)
-                        .border(1.dp, extended.cardBorder, RoundedCornerShape(20.dp))
+                        .border(1.dp, extended.cardBorder, RoundedCornerShape(24.dp))
                         .padding(3.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -307,16 +308,17 @@ fun OnboardingScreen(
                         val active = currentLang.equals(code, ignoreCase = true)
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
+                                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                                .clip(RoundedCornerShape(20.dp))
                                 .background(if (active) MaterialTheme.colorScheme.primary else Color.Transparent)
                                 .tactileClickable(pressedScale = 0.92f) { onSelectLang(code) }
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
                                 .testTag("onboarding_lang_$code"),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = label,
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                 color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -530,7 +532,9 @@ fun OnboardingScreen(
                 )
                 TextButton(
                     onClick = { onFinish(selectedGoal, selectedLevel, selectedDailyGoal) },
-                    modifier = Modifier.testTag("onboarding_skip_button")
+                    modifier = Modifier
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("onboarding_skip_button")
                 ) {
                     Text(
                         text = bText("Skip", "Lewati"),

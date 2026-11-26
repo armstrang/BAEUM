@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -118,13 +119,16 @@ fun VocabularyLibraryScreen(
         append(" (${filtered.size})")
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         BaeumTopBar(title = bText("Vocabulary", "Kosakata"), subtitle = subtitleText, onBack = onBack)
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 680.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp)
         ) {
             OutlinedTextField(
@@ -169,7 +173,9 @@ fun VocabularyLibraryScreen(
                             selectedContainerColor = MaterialTheme.colorScheme.primary,
                             selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                         ),
-                        modifier = Modifier.testTag("vocab_filter_$key")
+                        modifier = Modifier
+                            .defaultMinSize(minHeight = 48.dp)
+                            .testTag("vocab_filter_$key")
                     )
                 }
                 if (activeCurriculum != null || activeSubCat != null) {
@@ -179,7 +185,8 @@ fun VocabularyLibraryScreen(
                             activeCurriculum = null
                             activeSubCat = null
                         },
-                        label = { Text(bText("Show all", "Tampilkan semua")) }
+                        label = { Text(bText("Show all", "Tampilkan semua")) },
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp)
                     )
                 }
             }
@@ -204,7 +211,9 @@ fun VocabularyLibraryScreen(
                             selectedContainerColor = LocalBaeumColors.current.mint,
                             selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                         ),
-                        modifier = Modifier.testTag("vocab_level_all_topik")
+                        modifier = Modifier
+                            .defaultMinSize(minHeight = 48.dp)
+                            .testTag("vocab_level_all_topik")
                     )
                     topikLevels.forEach { lvl ->
                         FilterChip(
@@ -218,7 +227,9 @@ fun VocabularyLibraryScreen(
                                 selectedContainerColor = LocalBaeumColors.current.mint,
                                 selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                             ),
-                            modifier = Modifier.testTag("vocab_level_$lvl")
+                            modifier = Modifier
+                                .defaultMinSize(minHeight = 48.dp)
+                                .testTag("vocab_level_$lvl")
                         )
                     }
                 }
@@ -230,6 +241,7 @@ fun VocabularyLibraryScreen(
         if (filtered.isEmpty()) {
             Column(
                 modifier = Modifier
+                    .widthIn(max = 680.dp)
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp, vertical = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -263,7 +275,10 @@ fun VocabularyLibraryScreen(
             }
         } else {
             LazyColumn(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .widthIn(max = 680.dp)
+                    .fillMaxWidth(),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -366,7 +381,8 @@ fun WordDetailScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 28.dp)
+            .padding(bottom = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("Word details", "Detail kata"),
@@ -385,8 +401,8 @@ fun WordDetailScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 660.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -465,6 +481,7 @@ fun WordDetailScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .defaultMinSize(minHeight = 48.dp)
                                 .clickable { onSpeakKorean(form) }
                                 .padding(vertical = 8.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,

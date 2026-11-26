@@ -59,7 +59,8 @@ fun SpeakingAssessmentScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 28.dp)
+            .padding(bottom = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = "잘했어요!",
@@ -69,8 +70,8 @@ fun SpeakingAssessmentScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 660.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -210,7 +211,7 @@ private fun RubricBar(label: String, scoreOutOf10: Float) {
         ) {
             Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(
-                text = String.format("%.1f/10", scoreOutOf10),
+                text = String.format(java.util.Locale.US, "%.1f/10", scoreOutOf10),
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.primary
             )

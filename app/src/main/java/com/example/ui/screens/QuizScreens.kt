@@ -99,7 +99,8 @@ fun QuizCenterScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("Smart Quiz", "Kuis Cerdas"),
@@ -109,8 +110,8 @@ fun QuizCenterScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 660.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -264,7 +265,8 @@ fun ActiveQuizScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = state.mode.localizedTitle(),
@@ -278,8 +280,8 @@ fun ActiveQuizScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 640.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -547,9 +549,10 @@ fun ActiveQuizScreen(
                                 if (!state.isChecked && state.arrangedTokenIndices.isNotEmpty()) {
                                     Row(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(10.dp))
+                                            .defaultMinSize(minHeight = 48.dp)
+                                            .clip(RoundedCornerShape(12.dp))
                                             .clickable { onClearTokens() }
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            .padding(horizontal = 12.dp, vertical = 8.dp)
                                             .testTag("quiz_arrangement_clear"),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {

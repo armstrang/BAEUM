@@ -16,11 +16,15 @@ import com.example.domain.fsrs.FsrsScheduler
 import com.example.domain.scoring.FlashcardRatingOutcome
 import com.example.domain.scoring.FlashcardSessionEvaluation
 import com.example.domain.scoring.LearningScoringEngine
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -151,7 +155,8 @@ private data class FsrsUndoSnapshot(
 class FlashcardFsrsViewModel(
     private val store: FlashcardFsrsStore,
     private val clock: () -> Long = System::currentTimeMillis,
-    private val rng: Random = Random.Default
+    private val rng: Random = Random.Default,
+    computeDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
 
     val allVocab: StateFlow<List<VocabEntity>> = store.allVocabFlow
@@ -162,6 +167,8 @@ class FlashcardFsrsViewModel(
 
     val deckOverview: StateFlow<FsrsDeckOverview> = allVocab
         .map { vocab -> computeDeckOverview(vocab, clock()) }
+        .conflate()
+        .flowOn(computeDispatcher)
         .stateIn(viewModelScope, SharingStarted.Eagerly, FsrsDeckOverview())
 
     private val _sessionState = MutableStateFlow(FlashcardFsrsUiState())

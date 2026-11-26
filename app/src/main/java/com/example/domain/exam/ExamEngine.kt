@@ -283,7 +283,7 @@ object ExamEngine {
                     examType = examType,
                     section = "Listening",
                     instructionKo = "다음을 듣고 들은 표현의 알맞은 뜻을 고르십시오. (${weight}점)",
-                    stimulusKo = "음성을 듣고 핵심 어휘 '${target.hangul}'의 의미로 가장 알맞은 것을 고르세요.",
+                    stimulusKo = "음성 버튼을 눌러 한국어 어휘와 예문을 듣고, 핵심 어휘의 알맞은 뜻을 고르세요.",
                     audioTranscriptKo = "${target.hangul}. ${target.exampleKo}",
                     options = optionEntries,
                     correctOptionIndex = correctIdx,
@@ -320,62 +320,74 @@ object ExamEngine {
             val canCloze = stem.length >= 2 && target.exampleKo.contains(stem)
             val distractors = pickPlausibleVocabDistractors(pool, target, 3, rng, translationLang)
             if (distractors.size < 3) continue
-            usedIds.add(target.id)
 
             val (tier, weight) = tierAndWeightFor(target, examType)
             val targetMeaning = target.meaningFor(translationLang)
             val targetExample = target.exampleFor(translationLang)
             if (canCloze && result.size % 2 == 0) {
                 val tokenInSentence = target.exampleKo
-                    .split(" ")
+                    .split(Regex("\\s+"))
                     .firstOrNull { it.contains(stem) }
                     ?.trimEnd('.', '?', '!', ',')
                     ?: target.hangul
+                val alignedDistractors = distractors.mapNotNull { cand ->
+                    com.example.domain.quiz.AdaptiveQuizEngine.alignDistractorToClozeToken(
+                        target = target,
+                        tokenInSentence = tokenInSentence,
+                        distractor = cand
+                    )
+                }.filter { it.isNotBlank() && it != tokenInSentence }.distinct()
+
                 val blanked = target.exampleKo.replaceFirst(tokenInSentence, "( ____ )")
-                val opts = (distractors.map { it.hangul } + tokenInSentence).distinct().shuffled(rng)
-                if (opts.size < 4) continue
-                val correctIdx = opts.indexOf(tokenInSentence)
-                result.add(
-                    ExamQuestion(
-                        id = "dyn_${examType.name}_rc_${result.size}_${target.id}",
-                        examType = examType,
-                        section = "Reading",
-                        instructionKo = "빈칸에 들어갈 가장 알맞은 것을 고르십시오. (${weight}점)",
-                        stimulusKo = "$blanked\n($targetExample)",
-                        options = opts,
-                        correctOptionIndex = correctIdx,
-                        explanationEn = if (isId) {
-                            "'${target.hangul}' ($targetMeaning) melengkapi kalimat dengan tepat: ${target.exampleKo}"
-                        } else {
-                            "'${target.hangul}' ($targetMeaning) completes the sentence accurately: ${target.exampleKo}"
-                        },
-                        pointWeight = weight,
-                        difficultyTier = tier
+                if (alignedDistractors.size >= 3) {
+                    val opts = (alignedDistractors.take(3) + tokenInSentence).distinct().shuffled(rng)
+                    if (opts.size < 4) continue
+                    usedIds.add(target.id)
+                    val correctIdx = opts.indexOf(tokenInSentence)
+                    result.add(
+                        ExamQuestion(
+                            id = "dyn_${examType.name}_rc_${result.size}_${target.id}",
+                            examType = examType,
+                            section = "Reading",
+                            instructionKo = "빈칸에 들어갈 가장 알맞은 것을 고르십시오. (${weight}점)",
+                            stimulusKo = "$blanked\n($targetExample)",
+                            options = opts,
+                            correctOptionIndex = correctIdx,
+                            explanationEn = if (isId) {
+                                "'${target.hangul}' ($targetMeaning) melengkapi kalimat dengan tepat: ${target.exampleKo}"
+                            } else {
+                                "'${target.hangul}' ($targetMeaning) completes the sentence accurately: ${target.exampleKo}"
+                            },
+                            pointWeight = weight,
+                            difficultyTier = tier
+                        )
                     )
-                )
-            } else {
-                val opts = (distractors.map { it.hangul } + target.hangul).distinct().shuffled(rng)
-                if (opts.size < 4) continue
-                val correctIdx = opts.indexOf(target.hangul)
-                result.add(
-                    ExamQuestion(
-                        id = "dyn_${examType.name}_rv_${result.size}_${target.id}",
-                        examType = examType,
-                        section = "Reading",
-                        instructionKo = "다음 설명에 해당하는 알맞은 한국어 어휘를 고르십시오. (${weight}점)",
-                        stimulusKo = "\"$targetMeaning\" (${target.partOfSpeech} • ${target.subCategory})",
-                        options = opts,
-                        correctOptionIndex = correctIdx,
-                        explanationEn = if (isId) {
-                            "${target.hangul} (${target.romanization}) berarti '$targetMeaning'. ${target.exampleKo}"
-                        } else {
-                            "${target.hangul} (${target.romanization}) means '$targetMeaning'. ${target.exampleKo}"
-                        },
-                        pointWeight = weight,
-                        difficultyTier = tier
-                    )
-                )
+                    continue
+                }
             }
+
+            val opts = (distractors.map { it.hangul } + target.hangul).distinct().shuffled(rng)
+            if (opts.size < 4) continue
+            usedIds.add(target.id)
+            val correctIdx = opts.indexOf(target.hangul)
+            result.add(
+                ExamQuestion(
+                    id = "dyn_${examType.name}_rv_${result.size}_${target.id}",
+                    examType = examType,
+                    section = "Reading",
+                    instructionKo = "다음 설명에 해당하는 알맞은 한국어 어휘를 고르십시오. (${weight}점)",
+                    stimulusKo = "\"$targetMeaning\" (${target.partOfSpeech} • ${target.subCategory})",
+                    options = opts,
+                    correctOptionIndex = correctIdx,
+                    explanationEn = if (isId) {
+                        "${target.hangul} (${target.romanization}) berarti '$targetMeaning'. ${target.exampleKo}"
+                    } else {
+                        "${target.hangul} (${target.romanization}) means '$targetMeaning'. ${target.exampleKo}"
+                    },
+                    pointWeight = weight,
+                    difficultyTier = tier
+                )
+            )
         }
         return result
     }

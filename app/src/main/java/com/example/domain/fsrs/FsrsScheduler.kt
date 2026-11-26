@@ -1,11 +1,12 @@
 package com.example.domain.fsrs
 
+import java.util.Locale
 import kotlin.math.exp
-import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 /**
  * Genuine FSRS-4.5 (Free Spaced Repetition Scheduler) implementation.
@@ -64,6 +65,10 @@ object FsrsScheduler {
     private const val FACTOR = 19.0 / 81.0
     private const val DAY_MS = 86_400_000L
     private const val MIN_MS = 60_000L
+    private const val MIN_STABILITY_DAYS = 0.1
+    private const val MAX_STABILITY_DAYS = 3650.0
+    private const val MAX_INTERVAL_DAYS = 3650.0
+    private const val DEFAULT_RETENTION = 0.90
     private const val MASTERED_STABILITY_DAYS = 21.0
     private const val LEECH_LAPSE_THRESHOLD = 4
     // FSRS-5 short-term same-day review stability parameters
@@ -71,15 +76,17 @@ object FsrsScheduler {
     private const val W18_SHORT_TERM = 0.6621
 
     fun retrievability(elapsedDays: Double, stability: Double): Double {
-        if (stability <= 0.0) return 0.0
-        return (1.0 + FACTOR * (max(0.0, elapsedDays) / stability)).pow(DECAY)
+        if (!elapsedDays.isFinite() || !stability.isFinite() || stability <= 0.0) return 0.0
+        return (1.0 + FACTOR * (max(0.0, elapsedDays) / stability))
+            .pow(DECAY)
+            .coerceIn(0.0, 1.0)
     }
 
     fun currentRetrievability(
         card: FsrsCardSnapshot,
         nowEpochMs: Long = System.currentTimeMillis()
     ): Double {
-        if (card.reps == 0 || card.stability <= 0.0) return 0.0
+        if (card.reps <= 0 || !card.stability.isFinite() || card.stability <= 0.0) return 0.0
         val elapsed = if (card.lastReviewEpochMs > 0L) {
             max(0.0, (nowEpochMs - card.lastReviewEpochMs).toDouble() / DAY_MS)
         } else 0.0
@@ -91,7 +98,7 @@ object FsrsScheduler {
     fun previewAll(
         card: FsrsCardSnapshot,
         nowEpochMs: Long = System.currentTimeMillis(),
-        desiredRetention: Double = 0.90
+        desiredRetention: Double = DEFAULT_RETENTION
     ): Map<FsrsRating, FsrsScheduleResult> = FsrsRating.entries.associateWith { rating ->
         schedule(card, rating, nowEpochMs, desiredRetention)
     }
@@ -100,16 +107,22 @@ object FsrsScheduler {
         card: FsrsCardSnapshot,
         rating: FsrsRating,
         nowEpochMs: Long = System.currentTimeMillis(),
-        desiredRetention: Double = 0.90
+        desiredRetention: Double = DEFAULT_RETENTION
     ): FsrsScheduleResult {
-        val retention = desiredRetention.coerceIn(0.75, 0.97)
+        val retention = if (desiredRetention.isFinite()) {
+            desiredRetention.coerceIn(0.75, 0.97)
+        } else {
+            DEFAULT_RETENTION
+        }
         val elapsedDays = if (card.lastReviewEpochMs > 0L) {
             max(0.0, (nowEpochMs - card.lastReviewEpochMs).toDouble() / DAY_MS)
         } else {
             0.0
         }
 
-        val isFirstReview = card.reps == 0 || card.stage == CardMemoryStage.NEW
+        val safeReps = card.reps.coerceAtLeast(0)
+        val safeLapses = card.lapses.coerceAtLeast(0)
+        val isFirstReview = safeReps == 0 || card.stage == CardMemoryStage.NEW
         val newDifficulty: Double
         val newStability: Double
         val newLapses: Int
@@ -118,61 +131,87 @@ object FsrsScheduler {
         if (isFirstReview) {
             newDifficulty = initDifficulty(rating).coerceIn(1.0, 10.0)
             newStability = initStability(rating)
-            newLapses = if (rating == FsrsRating.AGAIN) card.lapses + 1 else card.lapses
+            newLapses = if (rating == FsrsRating.AGAIN) safeLapses + 1 else safeLapses
             intervalDays = when (rating) {
                 FsrsRating.AGAIN -> 1.0 / (24.0 * 60.0) // 1 min
                 FsrsRating.HARD -> 6.0 / (24.0 * 60.0)  // 6 min
                 FsrsRating.GOOD -> 10.0 / (24.0 * 60.0) // 10 min
-                FsrsRating.EASY -> max(1.0, nextInterval(newStability, retention))
+                FsrsRating.EASY -> nextInterval(newStability, retention).coerceIn(1.0, MAX_INTERVAL_DAYS)
             }
         } else {
-            val r = retrievability(elapsedDays, card.stability)
-            newDifficulty = nextDifficulty(card.difficulty, rating)
+            val safeS = if (card.stability.isFinite() && card.stability > 0.0) {
+                card.stability.coerceIn(MIN_STABILITY_DAYS, MAX_STABILITY_DAYS)
+            } else {
+                initStability(FsrsRating.GOOD)
+            }
+            val safeD = if (card.difficulty.isFinite() && card.difficulty > 0.0) {
+                card.difficulty.coerceIn(1.0, 10.0)
+            } else {
+                initDifficulty(FsrsRating.GOOD).coerceIn(1.0, 10.0)
+            }
+            val r = retrievability(elapsedDays, safeS)
+            newDifficulty = nextDifficulty(safeD, rating)
             val isSameDayShortTerm = elapsedDays < 1.0
             if (rating == FsrsRating.AGAIN) {
                 newStability = if (isSameDayShortTerm) {
-                    shortTermStability(card.stability, rating)
+                    shortTermStability(safeS, rating)
                 } else {
-                    nextForgetStability(newDifficulty, card.stability, r)
+                    nextForgetStability(newDifficulty, safeS, r)
                 }
-                newLapses = card.lapses + 1
+                newLapses = safeLapses + 1
                 intervalDays = 5.0 / (24.0 * 60.0) // 5 min relearn step
             } else {
                 newStability = if (isSameDayShortTerm) {
-                    shortTermStability(card.stability, rating)
+                    shortTermStability(safeS, rating)
                 } else {
-                    nextRecallStability(newDifficulty, card.stability, r, rating)
+                    nextRecallStability(newDifficulty, safeS, r, rating)
                 }
-                newLapses = card.lapses
+                newLapses = safeLapses
                 val rawInterval = nextInterval(newStability, retention)
                 intervalDays = when (rating) {
-                    FsrsRating.HARD -> max(1.0, rawInterval * 0.8)
-                    FsrsRating.GOOD -> max(1.0, rawInterval)
-                    FsrsRating.EASY -> max(2.0, rawInterval * 1.3)
+                    FsrsRating.HARD -> (rawInterval * 0.8).coerceIn(1.0, MAX_INTERVAL_DAYS)
+                    FsrsRating.GOOD -> rawInterval.coerceIn(1.0, MAX_INTERVAL_DAYS)
+                    FsrsRating.EASY -> (rawInterval * 1.3).coerceIn(2.0, MAX_INTERVAL_DAYS)
                     FsrsRating.AGAIN -> 5.0 / (24.0 * 60.0)
                 }
             }
         }
 
-        val newReps = card.reps + 1
+        val boundedStability = if (newStability.isFinite()) {
+            newStability.coerceIn(MIN_STABILITY_DAYS, MAX_STABILITY_DAYS)
+        } else {
+            MIN_STABILITY_DAYS
+        }
+        val boundedDifficulty = if (newDifficulty.isFinite()) {
+            newDifficulty.coerceIn(1.0, 10.0)
+        } else {
+            5.0
+        }
+        val boundedInterval = if (intervalDays.isFinite() && intervalDays > 0.0) {
+            intervalDays.coerceAtMost(MAX_INTERVAL_DAYS)
+        } else {
+            1.0 / (24.0 * 60.0)
+        }
+
+        val newReps = safeReps + 1
         val nextStage = computeStage(
             reps = newReps,
-            stability = newStability,
-            intervalDays = intervalDays,
+            stability = boundedStability,
+            intervalDays = boundedInterval,
             rating = rating
         )
 
-        val dueDeltaMs = if (intervalDays < 1.0) {
-            max(MIN_MS, (intervalDays * DAY_MS).toLong())
+        val dueDeltaMs = if (boundedInterval < 1.0) {
+            max(MIN_MS, (boundedInterval * DAY_MS).roundToLong())
         } else {
-            (intervalDays.roundToInt().coerceAtLeast(1) * DAY_MS)
+            boundedInterval.roundToLong().coerceAtLeast(1L) * DAY_MS
         }
 
         val updated = FsrsCardSnapshot(
-            stability = newStability,
-            difficulty = newDifficulty,
+            stability = boundedStability,
+            difficulty = boundedDifficulty,
             elapsedDays = elapsedDays,
-            scheduledDays = intervalDays,
+            scheduledDays = boundedInterval,
             reps = newReps,
             lapses = newLapses,
             stage = nextStage,
@@ -182,20 +221,20 @@ object FsrsScheduler {
 
         return FsrsScheduleResult(
             nextState = updated,
-            intervalDays = intervalDays,
-            formattedInterval = formatInterval(intervalDays)
+            intervalDays = boundedInterval,
+            formattedInterval = formatInterval(boundedInterval)
         )
     }
 
     private fun initStability(rating: FsrsRating): Double =
-        max(0.1, w[rating.value - 1])
+        w[rating.value - 1].coerceIn(MIN_STABILITY_DAYS, MAX_STABILITY_DAYS)
 
     private fun initDifficulty(rating: FsrsRating): Double =
-        w[4] - exp(w[5] * (rating.value - 1)) + 1.0
+        (w[4] - exp(w[5] * (rating.value - 1)) + 1.0).coerceIn(1.0, 10.0)
 
     private fun nextDifficulty(currentD: Double, rating: FsrsRating): Double {
         val nextD = currentD - w[6] * (rating.value - 3)
-        // Mean reversion toward initial Easy difficulty
+        // Mean reversion toward initial Good difficulty
         val d0 = initDifficulty(FsrsRating.GOOD)
         return (w[7] * d0 + (1.0 - w[7]) * nextD).coerceIn(1.0, 10.0)
     }
@@ -206,36 +245,63 @@ object FsrsScheduler {
         r: Double,
         rating: FsrsRating
     ): Double {
+        val safeS = s.coerceIn(MIN_STABILITY_DAYS, MAX_STABILITY_DAYS)
+        val safeD = d.coerceIn(1.0, 10.0)
+        val safeR = r.coerceIn(0.0, 1.0)
         val hardPenalty = if (rating == FsrsRating.HARD) w[15] else 1.0
         val easyBonus = if (rating == FsrsRating.EASY) w[16] else 1.0
         val growth = exp(w[8]) *
-            (11.0 - d) *
-            s.pow(-w[9]) *
-            (exp((1.0 - r) * w[10]) - 1.0) *
+            (11.0 - safeD) *
+            safeS.pow(-w[9]) *
+            (exp((1.0 - safeR) * w[10]) - 1.0) *
             hardPenalty *
             easyBonus
-        return max(0.1, s * (1.0 + growth))
+        val result = safeS * (1.0 + growth)
+        return if (result.isFinite()) {
+            result.coerceIn(MIN_STABILITY_DAYS, MAX_STABILITY_DAYS)
+        } else {
+            MAX_STABILITY_DAYS
+        }
     }
 
     private fun nextForgetStability(d: Double, s: Double, r: Double): Double {
+        val safeS = s.coerceIn(MIN_STABILITY_DAYS, MAX_STABILITY_DAYS)
+        val safeD = d.coerceIn(1.0, 10.0)
+        val safeR = r.coerceIn(0.0, 1.0)
         val forget = w[11] *
-            d.pow(-w[12]) *
-            ((s + 1.0).pow(w[13]) - 1.0) *
-            exp((1.0 - r) * w[14])
-        return min(s, max(0.1, forget))
+            safeD.pow(-w[12]) *
+            ((safeS + 1.0).pow(w[13]) - 1.0) *
+            exp((1.0 - safeR) * w[14])
+        val bounded = if (forget.isFinite()) forget else MIN_STABILITY_DAYS
+        return min(safeS, bounded.coerceIn(MIN_STABILITY_DAYS, MAX_STABILITY_DAYS))
     }
 
     /**
-     * FSRS-5 short-term stability update for same-day reviews (elapsedDays < 1.0).
+     * FSRS-5 short-term stability update for same-day reviews (elapsedDays < 1.0),
+     * bounded so repeated same-day reviews cannot explode stability or increase stability on AGAIN.
      */
     private fun shortTermStability(s: Double, rating: FsrsRating): Double {
-        val updated = s * exp(W17_SHORT_TERM * (rating.value - 3 + W18_SHORT_TERM))
-        return max(0.1, updated)
+        val safeS = s.coerceIn(MIN_STABILITY_DAYS, MAX_STABILITY_DAYS)
+        val factor = exp(W17_SHORT_TERM * (rating.value - 3 + W18_SHORT_TERM))
+        val updated = safeS * factor
+        val finite = if (updated.isFinite()) updated else safeS
+        return when (rating) {
+            FsrsRating.AGAIN -> min(safeS, finite.coerceIn(MIN_STABILITY_DAYS, MAX_STABILITY_DAYS))
+            FsrsRating.HARD -> min(safeS * 1.15, finite).coerceIn(MIN_STABILITY_DAYS, MAX_STABILITY_DAYS)
+            FsrsRating.GOOD -> min(safeS * 1.5, finite).coerceIn(MIN_STABILITY_DAYS, MAX_STABILITY_DAYS)
+            FsrsRating.EASY -> min(safeS * 2.0, finite).coerceIn(MIN_STABILITY_DAYS, MAX_STABILITY_DAYS)
+        }
     }
 
     private fun nextInterval(stability: Double, desiredRetention: Double): Double {
-        val interval = (stability / FACTOR) * (desiredRetention.pow(1.0 / DECAY) - 1.0)
-        return interval.coerceIn(1.0, 3650.0)
+        val safeS = stability.coerceIn(MIN_STABILITY_DAYS, MAX_STABILITY_DAYS)
+        val safeR = desiredRetention.coerceIn(0.75, 0.97)
+        val interval = (safeS / FACTOR) * (safeR.pow(1.0 / DECAY) - 1.0)
+        return if (interval.isFinite()) {
+            interval.coerceIn(1.0, MAX_INTERVAL_DAYS)
+        } else {
+            MAX_INTERVAL_DAYS
+        }
     }
 
     fun computeStage(
@@ -244,23 +310,24 @@ object FsrsScheduler {
         intervalDays: Double,
         rating: FsrsRating? = null
     ): CardMemoryStage {
-        if (reps == 0) return CardMemoryStage.NEW
+        if (reps <= 0) return CardMemoryStage.NEW
         if (rating == FsrsRating.AGAIN || intervalDays < 1.0) return CardMemoryStage.LEARNING
         if (stability >= MASTERED_STABILITY_DAYS && reps >= 3) return CardMemoryStage.MASTERED
         return CardMemoryStage.REVIEW
     }
 
     fun formatInterval(intervalDays: Double): String {
-        val minutes = (intervalDays * 24.0 * 60.0).roundToInt()
+        if (!intervalDays.isFinite() || intervalDays <= 0.0) return "1m"
+        val minutes = (intervalDays * 24.0 * 60.0).roundToLong()
         return when {
-            minutes <= 1 -> "1m"
-            minutes < 60 -> "${minutes}m"
+            minutes <= 1L -> "1m"
+            minutes < 60L -> "${minutes}m"
             intervalDays < 1.0 -> "${(intervalDays * 24.0).roundToInt()}h"
             intervalDays < 30.0 -> "${intervalDays.roundToInt()}d"
             intervalDays < 365.0 -> "${(intervalDays / 30.0).roundToInt()}mo"
             else -> {
                 val years = intervalDays / 365.0
-                if (years < 10.0) String.format("%.1fy", years) else "${years.roundToInt()}y"
+                if (years < 10.0) String.format(Locale.US, "%.1fy", years) else "${years.roundToInt()}y"
             }
         }
     }

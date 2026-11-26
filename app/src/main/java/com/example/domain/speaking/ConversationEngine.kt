@@ -6,6 +6,7 @@ import com.example.data.seed.SpeakingDifficulty
 import com.example.data.seed.SpeakingScenario
 import com.example.data.seed.localizedTitle
 import com.example.domain.hangul.HangulUnicodeEngine
+import com.example.domain.hangul.KoreanLinguisticsEngine
 import kotlin.math.roundToInt
 
 /**
@@ -39,8 +40,7 @@ data class EvaluatedTurn(
     val speechLevelScore: Int,    // 0..10
     val feedbackNote: String,
     val suggestedImprovementKo: String,
-    val modelResponseKo: String,
-    val aiCoachFeedback: KoreanAiCoachFeedback? = null
+    val modelResponseKo: String
 )
 
 data class LiveConversationState(
@@ -56,8 +56,7 @@ data class LiveConversationState(
     val lastRecordingSeconds: Int = 0,
     val lastWaveform: List<Float> = emptyList(),
     val recognitionErrorMessage: String? = null,
-    val showOptionalHint: Boolean = false,
-    val latestAiCoachFeedback: KoreanAiCoachFeedback? = null
+    val showOptionalHint: Boolean = false
 ) {
     val currentPrompt: ConversationTurnPrompt?
         get() = scenario.turns.getOrNull(currentTurnIndex)
@@ -119,7 +118,7 @@ object ConversationEngine {
      * Evaluates a confirmed Korean response transparently using evidence-based linguistic criteria:
      * 1. Contextual relevance (keyword/intent coverage)
      * 2. Vocabulary & Hangul richness (Korean Unicode tokens)
-     * 3. Grammar & particle structure (Korean particles/connectors & sentence completeness)
+     * 3. Grammar & particle structure (token-boundary particles/connectors & sentence completeness)
      * 4. Speech level appropriateness (해요체 / 합니다체 / 반말 alignment)
      *
      * Never fabricates a pronunciation score.
@@ -155,50 +154,55 @@ object ConversationEngine {
             )
         }
 
+        val hangulChars = cleaned.filter { it.code in 0xAC00..0xD7A3 }
+        val hangulCharCount = hangulChars.length
+        val uniqueHangulRatio = if (hangulCharCount > 0) {
+            hangulChars.toSet().size.toDouble() / hangulCharCount.coerceAtMost(30).toDouble()
+        } else 0.0
+        val spamPenalty = if (hangulCharCount >= 6 && uniqueHangulRatio < 0.30) 0.35 else 1.0
+
         // 1. Contextual relevance (0..10)
-        val matchedKeywords = prompt.expectedKeywords.count { kw -> cleaned.contains(kw) }
-        val relevance = when {
+        val matchedKeywords = prompt.expectedKeywords.count { kw -> kw.isNotBlank() && cleaned.contains(kw) }
+        val relevanceRaw = when {
             matchedKeywords >= 3 -> 10
             matchedKeywords == 2 -> 9
             matchedKeywords == 1 -> 7
-            cleaned.length >= 8 -> 5
+            hangulCharCount >= 8 -> 5
             else -> 3
         }
+        val relevance = (relevanceRaw * spamPenalty).roundToInt().coerceIn(0, 10)
 
         // 2. Vocabulary richness (0..10)
         val wordTokens = cleaned.split(Regex("\\s+")).filter { it.isNotBlank() }
-        val hangulCharCount = cleaned.count { it.code in 0xAC00..0xD7A3 }
-        val vocabulary = when {
+        val vocabularyRaw = when {
             wordTokens.size >= 5 && hangulCharCount >= 12 -> 10
             wordTokens.size >= 3 && hangulCharCount >= 7 -> 8
             wordTokens.size >= 2 && hangulCharCount >= 4 -> 7
             hangulCharCount >= 2 -> 5
             else -> 3
         }
+        val vocabulary = (vocabularyRaw * spamPenalty).roundToInt().coerceIn(0, 10)
 
-        // 3. Grammar & particles / connectors (0..10)
-        val hasParticlesOrConnectors = listOf(
-            "은", "는", "이", "가", "을", "를", "에", "에서", "으로", "로", "도", "하고", "와", "과",
-            "어서", "아서", "해서", "고", "면", "때문", "지만", "는데", "주세요", "싶어요", "할게요", "겠습니다"
-        ).any { cleaned.contains(it) }
-        val grammar = when {
-            hasParticlesOrConnectors && hangulCharCount >= 8 -> 9
-            hasParticlesOrConnectors -> 8
-            hangulCharCount >= 5 -> 6
-            else -> 4
+        // 3. Grammar & particles / connectors (0..10) — token-boundary verified
+        val particleCount = KoreanLinguisticsEngine.countWordFinalParticles(cleaned)
+        val connectorCount = KoreanLinguisticsEngine.countDiscourseConnectors(cleaned)
+        val endsFormal = KoreanLinguisticsEngine.hasFormalPoliteEnding(cleaned)
+        val endsPolite = KoreanLinguisticsEngine.hasPoliteHaeyoEnding(cleaned)
+        val hasGrammaticalStructure = particleCount > 0 || connectorCount > 0
+        val hasPredicateCompletion = endsFormal || endsPolite ||
+            listOf("주세요", "싶어요", "할게요", "겠습니다", "세요").any { cleaned.contains(it) }
+
+        val grammarRaw = when {
+            (particleCount + connectorCount) >= 2 && hasPredicateCompletion && hangulCharCount >= 8 -> 10
+            hasGrammaticalStructure && hasPredicateCompletion && hangulCharCount >= 6 -> 9
+            hasGrammaticalStructure || (hasPredicateCompletion && hangulCharCount >= 5) -> 7
+            hangulCharCount >= 5 -> 5
+            else -> 3
         }
+        val grammar = (grammarRaw * spamPenalty).roundToInt().coerceIn(0, 10)
 
-        // 4. Speech level appropriateness (0..10)
-        val endsFormal = cleaned.endsWith("습니다.") || cleaned.endsWith("습니다") ||
-            cleaned.endsWith("습니까?") || cleaned.endsWith("습니까") ||
-            cleaned.endsWith("입니다.") || cleaned.endsWith("입니다") ||
-            cleaned.endsWith("드립니다.") || cleaned.endsWith("드립니다") ||
-            cleaned.endsWith("겠습니다.") || cleaned.endsWith("겠습니다")
-        val endsPolite = cleaned.endsWith("요.") || cleaned.endsWith("요") ||
-            cleaned.endsWith("요?") || cleaned.endsWith("요!") ||
-            cleaned.contains("주세요") || cleaned.contains("감사합니다") || cleaned.contains("죄송합니다")
-
-        val speechLevel = when (prompt.expectedSpeechLevel) {
+        // 4. Speech level appropriateness (0..10) — Unicode Jamo ending recognition
+        val speechLevelRaw = when (prompt.expectedSpeechLevel) {
             "합니다체" -> when {
                 endsFormal -> 10
                 endsPolite -> 8
@@ -209,13 +213,20 @@ object ConversationEngine {
                 else -> 5
             }
         }
+        val speechLevel = (speechLevelRaw * spamPenalty).roundToInt().coerceIn(0, 10)
 
         val overall10 = ((relevance * 0.35) + (vocabulary * 0.20) + (grammar * 0.25) + (speechLevel * 0.20))
             .roundToInt()
             .coerceIn(0, 10)
 
         val feedbackParts = mutableListOf<String>()
-        if (isIndonesian) {
+        if (spamPenalty < 1.0) {
+            feedbackParts += if (isIndonesian) {
+                "Terdeteksi pengulangan suku kata tidak natural. Gunakan kalimat bahasa Korea yang utuh."
+            } else {
+                "Repeated-syllable spam detected. Respond with a meaningful Korean sentence."
+            }
+        } else if (isIndonesian) {
             if (matchedKeywords >= 1) {
                 feedbackParts += "Menjawab konteks percakapan dengan tepat."
             } else {
@@ -226,7 +237,7 @@ object ConversationEngine {
             } else {
                 feedbackParts += "Tingkat kesopanan bahasa Korea sudah sesuai (${prompt.expectedSpeechLevel})."
             }
-            if (!hasParticlesOrConnectors) {
+            if (!hasGrammaticalStructure) {
                 feedbackParts += "Tambahkan partikel (은/는, 이/가, 을/를, 에) agar struktur kalimat lebih lengkap."
             }
         } else {
@@ -240,7 +251,7 @@ object ConversationEngine {
             } else {
                 feedbackParts += "Appropriate Korean politeness level (${prompt.expectedSpeechLevel})."
             }
-            if (!hasParticlesOrConnectors) {
+            if (!hasGrammaticalStructure) {
                 feedbackParts += "Add particles (은/는, 이/가, 을/를, 에) for fuller sentence structure."
             }
         }

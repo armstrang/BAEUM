@@ -91,177 +91,182 @@ fun ExamCenterScreen(
     val extended = LocalBaeumColors.current
     val primary = MaterialTheme.colorScheme.primary
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .widthIn(max = 680.dp)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter
     ) {
-        StaggeredEntrance(index = 0) {
-            BaeumBrandHeader(
-                title = bText("Exam Center", "Pusat Ujian"),
-                subtitle = bText("Realistic timed examinations & readiness reports", "Simulasi ujian berbatas waktu & laporan kesiapan"),
-                onSettingsClick = onOpenSettings
-            )
-        }
-
-        ExamType.entries.forEachIndexed { idx, examType ->
-            val accent = when (idx % 3) {
-                0 -> primary
-                1 -> extended.mint
-                else -> extended.gold
+        Column(
+            modifier = Modifier
+                .widthIn(max = 680.dp)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            StaggeredEntrance(index = 0) {
+                BaeumBrandHeader(
+                    title = bText("Exam Center", "Pusat Ujian"),
+                    subtitle = bText("Realistic timed examinations & readiness reports", "Simulasi ujian berbatas waktu & laporan kesiapan"),
+                    onSettingsClick = onOpenSettings
+                )
             }
-            StaggeredEntrance(index = idx + 1) {
-                BaeumGlassCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("exam_card_${examType.name}"),
-                    style = BaeumGlassStyle.STANDARD,
-                    accentGlowColor = accent
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+
+            ExamType.entries.forEachIndexed { idx, examType ->
+                val accent = when (idx % 3) {
+                    0 -> primary
+                    1 -> extended.mint
+                    else -> extended.gold
+                }
+                StaggeredEntrance(index = idx + 1) {
+                    BaeumGlassCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("exam_card_${examType.name}"),
+                        style = BaeumGlassStyle.STANDARD,
+                        accentGlowColor = accent
                     ) {
-                        Text(
-                            text = examType.title,
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(accent.copy(alpha = 0.16f))
-                                .border(1.dp, accent.copy(alpha = 0.36f), RoundedCornerShape(14.dp))
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = examType.badgeKo,
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                color = accent
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = examType.localizedSubtitle(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .defaultMinSize(minHeight = 46.dp)
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(extended.elevatedSurface.copy(alpha = 0.78f))
-                                .border(1.dp, extended.glassHighlightBorder, RoundedCornerShape(18.dp))
-                                .tactileClickable(pressedScale = 0.95f) { onStartExam(examType, ExamSessionMode.PRACTICE) }
-                                .testTag("exam_practice_${examType.name}"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = bText("Practice", "Latihan"),
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                text = examType.title,
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .defaultMinSize(minHeight = 46.dp)
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(
-                                    Brush.horizontalGradient(
-                                        listOf(accent.copy(alpha = 0.24f), accent.copy(alpha = 0.12f))
-                                    )
-                                )
-                                .border(1.dp, accent.copy(alpha = 0.52f), RoundedCornerShape(18.dp))
-                                .tactileClickable(pressedScale = 0.95f) { onStartExam(examType, ExamSessionMode.MOCK) }
-                                .testTag("exam_mock_${examType.name}"),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(accent.copy(alpha = 0.16f))
+                                    .border(1.dp, accent.copy(alpha = 0.36f), RoundedCornerShape(14.dp))
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
                                 Text(
-                                    text = bText("Mock exam", "Ujian simulasi"),
-                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                    text = examType.badgeKo,
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                     color = accent
-                                )
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                    contentDescription = null,
-                                    tint = accent,
-                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
-                    }
-                }
-            }
-        }
-
-        StaggeredEntrance(index = ExamType.entries.size + 1) {
-            BaeumSecondaryButton(
-                text = if (showHistory) {
-                    bText("Hide examination history (${attempts.size})", "Sembunyikan riwayat ujian (${attempts.size})")
-                } else {
-                    bText("Examination history (${attempts.size})", "Riwayat ujian (${attempts.size})")
-                },
-                onClick = { showHistory = !showHistory },
-                testTag = "exam_history_toggle"
-            )
-        }
-
-        AnimatedVisibility(
-            visible = showHistory,
-            enter = fadeIn(tween(240, easing = BaeumMotion.SilkEasing)) + expandVertically(BaeumMotion.silkSpring()),
-            exit = fadeOut(tween(180)) + shrinkVertically(BaeumMotion.silkSpring())
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (attempts.isEmpty()) {
-                    SeoulCard(modifier = Modifier.fillMaxWidth()) {
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            bText(
-                                "No completed examinations yet. Start a Practice or Mock session above to track your score history.",
-                                "Belum ada ujian yang diselesaikan. Mulai sesi Latihan atau Simulasi di atas untuk melacak riwayat skor."
-                            ),
+                            text = examType.localizedSubtitle(),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    }
-                } else {
-                    attempts.forEach { a ->
-                        SeoulCard(modifier = Modifier.fillMaxWidth()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = 48.dp)
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .background(extended.elevatedSurface.copy(alpha = 0.78f))
+                                    .border(1.dp, extended.glassHighlightBorder, RoundedCornerShape(18.dp))
+                                    .tactileClickable(pressedScale = 0.95f) { onStartExam(examType, ExamSessionMode.PRACTICE) }
+                                    .testTag("exam_practice_${examType.name}"),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("${a.examType.replace('_', ' ')} • ${a.mode}", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
-                                    Text("${a.estimatedLevel} • ${a.dayKey}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
                                 Text(
-                                    text = "${a.totalScore}/${a.maxScore}",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = extended.mint
+                                    text = bText("Practice", "Latihan"),
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = 48.dp)
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            listOf(accent.copy(alpha = 0.24f), accent.copy(alpha = 0.12f))
+                                        )
+                                    )
+                                    .border(1.dp, accent.copy(alpha = 0.52f), RoundedCornerShape(18.dp))
+                                    .tactileClickable(pressedScale = 0.95f) { onStartExam(examType, ExamSessionMode.MOCK) }
+                                    .testTag("exam_mock_${examType.name}"),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = bText("Mock exam", "Ujian simulasi"),
+                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                        color = accent
+                                    )
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                        contentDescription = null,
+                                        tint = accent,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
+
+            StaggeredEntrance(index = ExamType.entries.size + 1) {
+                BaeumSecondaryButton(
+                    text = if (showHistory) {
+                        bText("Hide examination history (${attempts.size})", "Sembunyikan riwayat ujian (${attempts.size})")
+                    } else {
+                        bText("Examination history (${attempts.size})", "Riwayat ujian (${attempts.size})")
+                    },
+                    onClick = { showHistory = !showHistory },
+                    testTag = "exam_history_toggle"
+                )
+            }
+
+            AnimatedVisibility(
+                visible = showHistory,
+                enter = fadeIn(tween(240, easing = BaeumMotion.SilkEasing)) + expandVertically(BaeumMotion.silkSpring()),
+                exit = fadeOut(tween(180)) + shrinkVertically(BaeumMotion.silkSpring())
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (attempts.isEmpty()) {
+                        SeoulCard(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                bText(
+                                    "No completed examinations yet. Start a Practice or Mock session above to track your score history.",
+                                    "Belum ada ujian yang diselesaikan. Mulai sesi Latihan atau Simulasi di atas untuk melacak riwayat skor."
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        attempts.forEach { a ->
+                            SeoulCard(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("${a.examType.replace('_', ' ')} • ${a.mode}", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                                        Text("${a.estimatedLevel} • ${a.dayKey}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Text(
+                                        text = "${a.totalScore}/${a.maxScore}",
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = extended.mint
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
         }
-        Spacer(modifier = Modifier.height(12.dp))
     }
 }
 
@@ -362,7 +367,7 @@ fun ActiveExamScreen(
     val q = session.currentQuestion!!
     val extended = LocalBaeumColors.current
     val isId = isIndonesian()
-    val timerText = String.format("%02d:%02d", remainingSec / 60, remainingSec % 60)
+    val timerText = String.format(java.util.Locale.US, "%02d:%02d", remainingSec / 60, remainingSec % 60)
     val isFlagged = q.id in session.flaggedQuestionIds
     val localizedSection = localizeExamSection(q.section, isId)
 
@@ -370,7 +375,8 @@ fun ActiveExamScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = session.examType.title,
@@ -392,8 +398,8 @@ fun ActiveExamScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 660.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -490,7 +496,7 @@ fun ActiveExamScreen(
                 }
             }
 
-            // Question Navigator Grid (Blueprint Screen 21)
+            // Question Navigator Grid (Blueprint Screen 21) — 5 columns at 48dp min touch height
             SeoulCard(modifier = Modifier.fillMaxWidth(), contentPadding = PaddingValues(14.dp)) {
                 Text(
                     text = bText("QUESTION NAVIGATOR", "NAVIGATOR SOAL"),
@@ -498,7 +504,7 @@ fun ActiveExamScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(10.dp))
-                val rows = session.questions.indices.chunked(6)
+                val rows = session.questions.indices.chunked(5)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     rows.forEach { rowIndices ->
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -516,23 +522,23 @@ fun ActiveExamScreen(
                                 Surface(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .height(38.dp)
-                                        .clip(RoundedCornerShape(10.dp))
+                                        .height(48.dp)
+                                        .clip(RoundedCornerShape(12.dp))
                                         .clickable { onJumpToQuestion(idx) },
-                                    shape = RoundedCornerShape(10.dp),
+                                    shape = RoundedCornerShape(12.dp),
                                     color = bg,
                                     border = if (flagged) BorderStroke(1.5.dp, extended.gold) else null
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
                                         Text(
                                             text = "${idx + 1}",
-                                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                                             color = if (isCur) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
                                         )
                                     }
                                 }
                             }
-                            repeat(6 - rowIndices.size) { Spacer(modifier = Modifier.weight(1f)) }
+                            repeat(5 - rowIndices.size) { Spacer(modifier = Modifier.weight(1f)) }
                         }
                     }
                 }
@@ -592,7 +598,8 @@ fun ExamReportScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 28.dp)
+            .padding(bottom = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("${report.mode.localizedLabel()} result", "Hasil ${report.mode.localizedLabel()}"),
@@ -602,8 +609,8 @@ fun ExamReportScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 660.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)

@@ -155,7 +155,8 @@ fun SmartFlashcardScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("Smart Flashcard", "Flashcard Cerdas"),
@@ -216,8 +217,8 @@ fun SmartFlashcardScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 640.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp)
         ) {
             if (session.isCompleted || currentCard == null) {
@@ -290,7 +291,7 @@ fun SmartFlashcardScreen(
                                     Text(bText("Easy ${eval.easyCount}", "Mudah ${eval.easyCount}"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                                 }
                                 Spacer(modifier = Modifier.height(12.dp))
-                                val gainStr = String.format("%+.1fd", eval.avgStabilityGainDays)
+                                val gainStr = String.format(java.util.Locale.US, "%+.1fd", eval.avgStabilityGainDays)
                                 Text(
                                     text = bText(
                                         "Stability delta: $gainStr • ${eval.avgSecondsPerCard}s/card • Newly mastered: ${eval.newlyMasteredCount}",
@@ -406,8 +407,8 @@ fun SmartFlashcardScreen(
                             }
                         }
                         val metricText = if (telemetry.reps > 0) {
-                            val sText = String.format("%.1fd", telemetry.stabilityDays)
-                            val dText = String.format("%.1f", telemetry.difficulty)
+                            val sText = String.format(java.util.Locale.US, "%.1fd", telemetry.stabilityDays)
+                            val dText = String.format(java.util.Locale.US, "%.1f", telemetry.difficulty)
                             val rText = telemetry.retrievabilityPercent?.let { " • R $it%" } ?: ""
                             "S $sText • D $dText$rText"
                         } else {
@@ -575,10 +576,10 @@ fun SmartFlashcardScreen(
                                     }
                                     Box(
                                         modifier = Modifier
-                                            .size(44.dp)
-                                            .clip(RoundedCornerShape(15.dp))
+                                            .size(48.dp)
+                                            .clip(RoundedCornerShape(16.dp))
                                             .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
-                                            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.34f), RoundedCornerShape(15.dp))
+                                            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.34f), RoundedCornerShape(16.dp))
                                             .tactileClickable(pressedScale = 0.88f) { onSpeakKorean(card.hangul) }
                                             .testTag("flashcard_audio_button"),
                                         contentAlignment = Alignment.Center
@@ -921,7 +922,8 @@ fun ReviewPlannerScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("Review Planner", "Perencana Ulasan"),
@@ -931,8 +933,8 @@ fun ReviewPlannerScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 660.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {

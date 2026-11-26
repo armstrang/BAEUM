@@ -30,53 +30,33 @@ import com.example.domain.exam.ExamEngine
 import com.example.domain.exam.ExamReport
 import com.example.domain.exam.ExamSessionMode
 import com.example.domain.fsrs.CardMemoryStage
-import com.example.domain.fsrs.FlashcardSessionAlgorithm
-import com.example.domain.fsrs.FsrsRating
 import com.example.domain.quiz.ModeProgressStats
 import com.example.domain.quiz.QuizManager
 import com.example.domain.quiz.QuizMode
 import com.example.domain.quiz.QuizSessionState
-import com.example.domain.scoring.FlashcardRatingOutcome
-import com.example.domain.scoring.FlashcardSessionEvaluation
 import com.example.domain.scoring.LearnerReadinessProfile
 import com.example.domain.scoring.LearningScoringEngine
 import com.example.data.seed.localizedTitle
 import com.example.domain.speaking.ConversationEngine
 import com.example.domain.speaking.ConversationPhase
 import com.example.domain.speaking.FinalSpeakingAssessment
-import com.example.domain.speaking.KoreanAiCoachFeedback
-import com.example.domain.speaking.KoreanAiCoachRepository
 import com.example.domain.speaking.KoreanPronunciationEvaluator
 import com.example.domain.speaking.LiveConversationState
-import com.example.domain.speaking.LocalSampleKoreanAiCoachRepository
 import com.example.domain.speaking.PronunciationAttemptResult
 import com.example.domain.speaking.PronunciationDrillCategory
 import com.example.domain.speaking.PronunciationDrillItem
 import com.example.ui.theme.ThemeMode
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-data class FlashcardSessionState(
-    val title: String = "Review session",
-    val cards: List<VocabEntity> = emptyList(),
-    val currentIndex: Int = 0,
-    val isRevealed: Boolean = false,
-    val reviewedCount: Int = 0,
-    val isSubmitting: Boolean = false,
-    val isCompleted: Boolean = false,
-    val sessionStartedMs: Long = System.currentTimeMillis(),
-    val outcomes: List<FlashcardRatingOutcome> = emptyList(),
-    val evaluation: FlashcardSessionEvaluation? = null
-) {
-    val currentCard: VocabEntity? get() = cards.getOrNull(currentIndex)
-}
-
 
 data class DashboardSummary(
     val todayWords: Int = 0,
@@ -102,7 +82,6 @@ data class PronunciationPracticeState(
     val activeDrill: PronunciationDrillItem = KoreanPronunciationEvaluator.defaultDrills.first(),
     val recognitionState: SpeechRecognitionState = SpeechRecognitionState.Idle,
     val lastAttempt: PronunciationAttemptResult? = null,
-    val aiCoachFeedback: KoreanAiCoachFeedback? = null,
     val passedDrillIds: Set<String> = emptySet(),
     val totalAttempts: Int = 0,
     val isSpeechServiceAvailable: Boolean = true,
@@ -113,7 +92,6 @@ class BaeumViewModel(
     val repository: BaeumRepository,
     val audioController: KoreanAudioController,
     val userPreferencesRepository: UserPreferencesRepository = repository.userPreferences,
-    val aiCoachRepository: KoreanAiCoachRepository = LocalSampleKoreanAiCoachRepository(),
     private val reminderScheduler: (Boolean, Int, Int, Boolean) -> Unit = { _, _, _, _ -> },
     private val testReminderPoster: (Int, Int, Int, Int, Boolean) -> Boolean = { _, _, _, _, _ -> false }
 ) : ViewModel() {
@@ -214,7 +192,10 @@ class BaeumViewModel(
             activePathwayTotal = activeVocab.size,
             recommendedFocus = recommendation
         )
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, DashboardSummary())
+    }
+        .conflate()
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, DashboardSummary())
 
     val readinessProfile: StateFlow<LearnerReadinessProfile> = combine(
         allVocab, quizRecords, examAttempts, speakingSessions
@@ -225,16 +206,16 @@ class BaeumViewModel(
             examAttempts = exams,
             speakingSessions = speaking
         )
-    }.stateIn(
-        viewModelScope,
-        SharingStarted.Eagerly,
-        LearningScoringEngine.computeReadinessProfile(emptyList(), emptyList(), emptyList(), emptyList())
-    )
+    }
+        .conflate()
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            LearningScoringEngine.computeReadinessProfile(emptyList(), emptyList(), emptyList(), emptyList())
+        )
 
     // Active Session States
-    private val _flashcardSession = MutableStateFlow(FlashcardSessionState())
-    val flashcardSession: StateFlow<FlashcardSessionState> = _flashcardSession.asStateFlow()
-
     val quizManager: QuizManager = QuizManager()
     val activeQuiz: StateFlow<QuizSessionState?> = quizManager.sessionState
     val quizModeProgress: StateFlow<Map<QuizMode, ModeProgressStats>> = quizManager.modeProgress
@@ -294,7 +275,7 @@ class BaeumViewModel(
         }
         viewModelScope.launch {
             audioController.captureState.collect { cap ->
-                val conv = _liveConversation.value ?: return@collect
+                if (_liveConversation.value == null) return@collect
                 val isId = settings.value.translationLanguage.equals("ID", ignoreCase = true)
                 when (cap) {
                     is SpeechCaptureState.Listening -> {
@@ -353,16 +334,10 @@ class BaeumViewModel(
                         } else {
                             _pronunciationPractice.value.passedDrillIds
                         }
-                        val coachFeedback = aiCoachRepository.coachPronunciationAttempt(
-                            drill = currentDrill,
-                            attempt = evaluation,
-                            amplitudes = recState.amplitudes
-                        )
                         _pronunciationPractice.update {
                             it.copy(
                                 recognitionState = recState,
                                 lastAttempt = evaluation,
-                                aiCoachFeedback = coachFeedback,
                                 passedDrillIds = updatedPassed,
                                 totalAttempts = it.totalAttempts + 1
                             )
@@ -396,6 +371,14 @@ class BaeumViewModel(
                 _initError.value = err.localizedMessage ?: "Failed to open local Korean learning database."
             }
         }
+    }
+
+    fun onHostStop() {
+        audioController.onHostStop()
+    }
+
+    fun reportStatusMessage(message: String) {
+        _statusMessage.value = message
     }
 
     fun clearStatusMessage() {
@@ -496,101 +479,6 @@ class BaeumViewModel(
 
     fun speakKorean(text: String) {
         audioController.speakKorean(text)
-    }
-
-    // ==================== SMART FLASHCARDS (FSRS-5 & ADAPTIVE INTERLEAVING) ====================
-    fun startFlashcardSession(
-        curriculumFilter: String? = null,
-        subCategoryFilter: String? = null,
-        dueOnly: Boolean = false
-    ) {
-        val pool = allVocab.value.filter { item ->
-            (curriculumFilter == null || item.curriculum == curriculumFilter) &&
-                (subCategoryFilter == null || item.subCategory == subCategoryFilter)
-        }
-
-        val selected = FlashcardSessionAlgorithm.buildAdaptiveDeck(
-            pool = pool,
-            dailyGoal = settings.value.dailyGoalWords,
-            dueOnly = dueOnly,
-            maxSessionSize = if (dueOnly) 25 else 15
-        )
-
-        val isId = settings.value.translationLanguage.equals("ID", ignoreCase = true)
-        val label = when {
-            dueOnly -> if (isId) "Ulasan Terjadwal FSRS" else "Due FSRS Review"
-            subCategoryFilter != null -> if (isId) "$subCategoryFilter • Ulasan" else "$subCategoryFilter • Review"
-            curriculumFilter != null -> if (isId) "$curriculumFilter • Belajar" else "$curriculumFilter • Study"
-            else -> if (isId) "${dashboardSummary.value.activePathwayLabel} • Sesi ulasan" else "${dashboardSummary.value.activePathwayLabel} • Review session"
-        }
-
-        _flashcardSession.value = FlashcardSessionState(
-            title = label,
-            cards = selected,
-            currentIndex = 0,
-            isRevealed = false,
-            reviewedCount = 0,
-            isSubmitting = false,
-            isCompleted = selected.isEmpty(),
-            sessionStartedMs = System.currentTimeMillis(),
-            outcomes = emptyList(),
-            evaluation = null
-        )
-    }
-
-    fun revealFlashcard() {
-        _flashcardSession.update { it.copy(isRevealed = true) }
-    }
-
-    fun rateFlashcard(rating: FsrsRating) {
-        val session = _flashcardSession.value
-        val card = session.currentCard ?: return
-        if (!session.isRevealed || session.isSubmitting) return // Prevent double tap & unrevealed rating
-
-        _flashcardSession.update { it.copy(isSubmitting = true) }
-        viewModelScope.launch {
-            val wasFirstExposure = card.reps == 0
-            val updated = repository.submitFlashcardRating(
-                vocab = card,
-                rating = rating,
-                desiredRetention = settings.value.fsrsDesiredRetention
-            )
-            val outcome = FlashcardRatingOutcome(
-                vocabId = updated.id,
-                hangul = updated.hangul,
-                rating = rating,
-                stabilityBefore = card.stability,
-                stabilityAfter = updated.stability,
-                lapsesAfter = updated.lapses,
-                stageBefore = card.stage,
-                stageAfter = updated.stage
-            )
-            val updatedOutcomes = session.outcomes + outcome
-            val remaining = FlashcardSessionAlgorithm.applyIntraSessionRequeue(
-                currentQueue = session.cards,
-                currentIndex = session.currentIndex,
-                updatedCard = updated,
-                rating = rating,
-                wasFirstExposure = wasFirstExposure
-            )
-            val nextIdx = session.currentIndex + 1
-            val done = nextIdx >= remaining.size
-            val elapsedSec = ((System.currentTimeMillis() - session.sessionStartedMs) / 1000L).toInt().coerceAtLeast(1)
-            val evaluation = if (done) {
-                LearningScoringEngine.evaluateFlashcardSession(updatedOutcomes, elapsedSec)
-            } else null
-
-            _flashcardSession.value = session.copy(
-                cards = remaining,
-                currentIndex = nextIdx,
-                isRevealed = false,
-                reviewedCount = session.reviewedCount + 1,
-                isSubmitting = false,
-                isCompleted = done,
-                outcomes = updatedOutcomes,
-                evaluation = evaluation
-            )
-        }
     }
 
     // ==================== ADAPTIVE QUIZ ENGINE (QuizManager) ====================
@@ -700,7 +588,6 @@ class BaeumViewModel(
                 selectedCategory = category,
                 activeDrill = nextActive,
                 lastAttempt = null,
-                aiCoachFeedback = null,
                 recognitionState = SpeechRecognitionState.Idle
             )
         }
@@ -714,7 +601,6 @@ class BaeumViewModel(
                 drills = updatedDrills,
                 activeDrill = drill,
                 lastAttempt = null,
-                aiCoachFeedback = null,
                 recognitionState = SpeechRecognitionState.Idle
             )
         }
@@ -738,7 +624,7 @@ class BaeumViewModel(
     fun startPronunciationListening() {
         val activeDrill = _pronunciationPractice.value.activeDrill
         val isShortWord = activeDrill.targetWrittenKo.length <= 5
-        _pronunciationPractice.update { it.copy(lastAttempt = null, aiCoachFeedback = null) }
+        _pronunciationPractice.update { it.copy(lastAttempt = null) }
         audioController.startPronunciationRecognition(shortWordDrill = isShortWord)
     }
 
@@ -755,7 +641,6 @@ class BaeumViewModel(
         _pronunciationPractice.update {
             it.copy(
                 lastAttempt = null,
-                aiCoachFeedback = null,
                 recognitionState = SpeechRecognitionState.Idle
             )
         }
@@ -792,8 +677,6 @@ class BaeumViewModel(
         if (state.phase == ConversationPhase.EVALUATING || state.phase == ConversationPhase.COMPLETED) return false
 
         val isId = settings.value.translationLanguage.equals("ID", ignoreCase = true)
-        val capturedWaveform = state.lastWaveform
-        val capturedSeconds = state.lastRecordingSeconds
 
         val evaluated = ConversationEngine.evaluateResponse(
             prompt = prompt,
@@ -804,23 +687,6 @@ class BaeumViewModel(
         audioController.resetCapture()
         val nextState = ConversationEngine.commitTurnAndAdvance(state, evaluated)
         _liveConversation.value = nextState
-
-        viewModelScope.launch {
-            val coach = aiCoachRepository.coachConversationTurn(
-                prompt = prompt,
-                evaluatedTurn = evaluated,
-                amplitudes = capturedWaveform,
-                durationSeconds = capturedSeconds
-            )
-            _liveConversation.update { current ->
-                current?.copy(
-                    evaluatedTurns = current.evaluatedTurns.map { t ->
-                        if (t.turnId == evaluated.turnId) t.copy(aiCoachFeedback = coach) else t
-                    },
-                    latestAiCoachFeedback = coach
-                )
-            }
-        }
 
         if (nextState.phase == ConversationPhase.COMPLETED) {
             val assessment = ConversationEngine.buildFinalAssessment(nextState, isIndonesian = isId)
@@ -967,9 +833,16 @@ class BaeumViewModel(
 
     fun restoreFromBackupJson(json: String) {
         viewModelScope.launch {
+            val isId = settings.value.translationLanguage.equals("ID", ignoreCase = true)
             repository.restoreBackupJson(json)
                 .onSuccess { msg -> _statusMessage.value = msg }
-                .onFailure { err -> _statusMessage.value = "Restore failed: ${err.localizedMessage}" }
+                .onFailure { err ->
+                    _statusMessage.value = if (isId) {
+                        "Gagal memulihkan cadangan: ${err.localizedMessage ?: "Format JSON tidak valid."}"
+                    } else {
+                        "Restore failed: ${err.localizedMessage ?: "Invalid JSON format."}"
+                    }
+                }
         }
     }
 
@@ -986,9 +859,8 @@ class BaeumViewModel(
 
     class Factory(
         private val repository: BaeumRepository,
-        private val audioController: KoreanAudioController,
+        private val audioControllerFactory: () -> KoreanAudioController,
         private val userPreferencesRepository: UserPreferencesRepository = repository.userPreferences,
-        private val aiCoachRepository: KoreanAiCoachRepository = LocalSampleKoreanAiCoachRepository(),
         private val reminderScheduler: (Boolean, Int, Int, Boolean) -> Unit = { _, _, _, _ -> },
         private val testReminderPoster: (Int, Int, Int, Int, Boolean) -> Boolean = { _, _, _, _, _ -> false }
     ) : ViewModelProvider.Factory {
@@ -996,9 +868,8 @@ class BaeumViewModel(
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             return BaeumViewModel(
                 repository = repository,
-                audioController = audioController,
+                audioController = audioControllerFactory(),
                 userPreferencesRepository = userPreferencesRepository,
-                aiCoachRepository = aiCoachRepository,
                 reminderScheduler = reminderScheduler,
                 testReminderPoster = testReminderPoster
             ) as T
