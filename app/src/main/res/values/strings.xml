@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">Baeum</string>
+    <string name="brand_hangul">배움</string>
+    <string name="brand_latin">BAEUM</string>
+    <string name="brand_tagline">Your journey to Korean.</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_learn">Learn</string>
+    <string name="nav_speak">Speak</string>
+    <string name="nav_exam">Exam</string>
+    <string name="nav_progress">Progress</string>
+    <string name="cd_back">Navigate back</string>
+    <string name="cd_settings">Open settings</string>
+    <string name="cd_audio_play">Play Korean pronunciation</string>
+    <string name="cd_bookmark">Toggle bookmark</string>
+    <string name="cd_mic_record">Record Korean speech</string>
+    <string name="cd_clear_search">Clear search</string>
+</resources>

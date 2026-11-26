@@ -1,0 +1,1052 @@
+package com.example.ui.navigation
+
+import android.net.Uri
+import android.os.Build
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Assignment
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.Assignment
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.outlined.BarChart
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.MicNone
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.example.data.local.CurriculumPathway
+import com.example.data.local.RomanizationMode
+import com.example.data.seed.ExamType
+import com.example.data.seed.SpeakingDifficulty
+import com.example.domain.exam.ExamSessionMode
+import com.example.domain.quiz.QuizMode
+import com.example.ui.screens.ActiveExamScreen
+import com.example.ui.screens.ActiveQuizScreen
+import com.example.ui.screens.AnalyticsScreen
+import com.example.ui.screens.DifficultySelectionScreen
+import com.example.ui.screens.EpsTopikCenterScreen
+import com.example.ui.screens.EverydayKoreanScreen
+import com.example.ui.screens.ExamCenterScreen
+import com.example.ui.screens.ExamReportScreen
+import com.example.ui.screens.GrammarStudioScreen
+import com.example.ui.screens.HangulStudioScreen
+import com.example.ui.screens.HangulWritingScreen
+import com.example.ui.screens.HomeDashboardScreen
+import com.example.ui.screens.LearningHubScreen
+import com.example.ui.screens.LiveConversationScreen
+import com.example.ui.screens.OnboardingScreen
+import com.example.ui.screens.PronunciationLabScreen
+import com.example.ui.screens.QuizCenterScreen
+import com.example.ui.screens.ReviewPlannerScreen
+import com.example.ui.screens.SettingsScreen
+import com.example.ui.screens.SmartFlashcardScreen
+import com.example.ui.screens.SpeakingAssessmentScreen
+import com.example.ui.screens.SpeakingHistoryScreen
+import com.example.ui.screens.SpeakingHubScreen
+import com.example.ui.screens.SplashScreen
+import com.example.ui.screens.TopikCenterScreen
+import com.example.ui.screens.VocabularyLibraryScreen
+import com.example.ui.screens.WordDetailScreen
+import com.example.ui.theme.BaeumMotion
+import com.example.ui.theme.LocalBaeumColors
+import com.example.ui.theme.LocalBaeumLang
+import com.example.ui.theme.SeoulAmbientBackdrop
+import com.example.ui.theme.bText
+import com.example.ui.theme.tactileClickable
+import com.example.viewmodel.BaeumViewModel
+import com.example.viewmodel.FlashcardFsrsViewModel
+
+object BaeumRoutes {
+    const val HOME = "home_dashboard"
+    const val LEARN = "learning_hub"
+    const val SPEAK = "speaking_hub"
+    const val EXAM = "exam_center"
+    const val PROGRESS = "learning_analytics"
+
+    const val HANGUL_STUDIO = "hangul_studio"
+    const val HANGUL_WRITING = "hangul_writing"
+    const val TOPIK_CENTER = "topik_center"
+    const val EPS_CENTER = "eps_center"
+    const val EVERYDAY_KOREAN = "everyday_korean"
+    const val VOCABULARY = "vocabulary_library?curriculum={curriculum}&sub={sub}"
+    const val WORD_DETAIL = "word_detail/{wordId}"
+    const val FLASHCARD = "smart_flashcard"
+    const val REVIEW_PLANNER = "review_planner"
+    const val QUIZ_CENTER = "quiz_center"
+    const val ACTIVE_QUIZ = "active_quiz"
+    const val GRAMMAR_STUDIO = "grammar_studio"
+    const val SPEAK_DIFFICULTY = "speak_difficulty"
+    const val LIVE_CONVERSATION = "live_conversation"
+    const val SPEAK_ASSESSMENT = "speak_assessment"
+    const val PRONUNCIATION_LAB = "pronunciation_lab"
+    const val SPEAK_HISTORY = "speak_history"
+    const val ACTIVE_EXAM = "active_exam"
+    const val EXAM_REPORT = "exam_report"
+    const val SETTINGS = "settings"
+
+    fun vocabularyRoute(curriculum: String? = null, sub: String? = null): String {
+        val c = Uri.encode(curriculum.orEmpty())
+        val s = Uri.encode(sub.orEmpty())
+        return "vocabulary_library?curriculum=$c&sub=$s"
+    }
+
+    fun wordDetailRoute(wordId: String): String = "word_detail/${Uri.encode(wordId)}"
+}
+
+private data class TopLevelTab(
+    val route: String,
+    val tagKey: String,
+    val labelEn: String,
+    val labelId: String,
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector
+)
+
+private val topLevelTabs = listOf(
+    TopLevelTab(BaeumRoutes.HOME, "home", "Home", "Beranda", Icons.Filled.Home, Icons.Outlined.Home),
+    TopLevelTab(BaeumRoutes.LEARN, "learn", "Learn", "Belajar", Icons.AutoMirrored.Filled.MenuBook, Icons.AutoMirrored.Outlined.MenuBook),
+    TopLevelTab(BaeumRoutes.SPEAK, "speak", "Speak", "Bicara", Icons.Filled.Mic, Icons.Outlined.MicNone),
+    TopLevelTab(BaeumRoutes.EXAM, "exam", "Exam", "Ujian", Icons.AutoMirrored.Filled.Assignment, Icons.AutoMirrored.Outlined.Assignment),
+    TopLevelTab(BaeumRoutes.PROGRESS, "progress", "Progress", "Progres", Icons.Filled.BarChart, Icons.Outlined.BarChart)
+)
+
+@Composable
+fun BaeumAppRoot(
+    viewModel: BaeumViewModel,
+    flashcardViewModel: FlashcardFsrsViewModel
+) {
+    val isInitialized by viewModel.isInitialized.collectAsStateWithLifecycle()
+    val initError by viewModel.initError.collectAsStateWithLifecycle()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val extended = LocalBaeumColors.current
+
+    CompositionLocalProvider(LocalBaeumLang provides settings.translationLanguage) {
+        if (!isInitialized) {
+            SeoulAmbientBackdrop {
+                SplashScreen(
+                    initError = initError,
+                    onRetry = { viewModel.initializeApp() }
+                )
+            }
+            return@CompositionLocalProvider
+        }
+
+        if (!settings.onboardingCompleted) {
+            SeoulAmbientBackdrop {
+                OnboardingScreen(
+                    currentLang = settings.translationLanguage,
+                    onSelectLang = { viewModel.setTranslationLanguage(it) },
+                    onFinish = { goal, level, daily ->
+                        viewModel.completeOnboarding(goal, level, daily)
+                    }
+                )
+            }
+            return@CompositionLocalProvider
+        }
+
+        BaeumMainShell(
+            viewModel = viewModel,
+            flashcardViewModel = flashcardViewModel,
+            settings = settings,
+            extended = extended
+        )
+    }
+}
+
+@Composable
+private fun BaeumMainShell(
+    viewModel: BaeumViewModel,
+    flashcardViewModel: FlashcardFsrsViewModel,
+    settings: com.example.data.local.UserSettings,
+    extended: com.example.ui.theme.BaeumExtendedColors
+) {
+
+    val navController = rememberNavController()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentDest = backStackEntry?.destination
+    val topRoutes = topLevelTabs.map { it.route }.toSet()
+    val showPrimaryNav = currentDest?.route in topRoutes
+
+    val allVocab by viewModel.allVocab.collectAsStateWithLifecycle()
+    val summary by viewModel.dashboardSummary.collectAsStateWithLifecycle()
+    val readinessProfile by viewModel.readinessProfile.collectAsStateWithLifecycle()
+    val dailyStats by viewModel.dailyStats.collectAsStateWithLifecycle()
+    val speakingSessions by viewModel.speakingSessions.collectAsStateWithLifecycle()
+    val examAttempts by viewModel.examAttempts.collectAsStateWithLifecycle()
+    val grammarBookmarks by viewModel.grammarBookmarks.collectAsStateWithLifecycle()
+    val flashcardSession by flashcardViewModel.sessionState.collectAsStateWithLifecycle()
+    val activeQuiz by viewModel.activeQuiz.collectAsStateWithLifecycle()
+    val quizModeProgress by viewModel.quizModeProgress.collectAsStateWithLifecycle()
+    val liveConversation by viewModel.liveConversation.collectAsStateWithLifecycle()
+    val lastAssessment by viewModel.lastSpeakingAssessment.collectAsStateWithLifecycle()
+    val pronunciationPractice by viewModel.pronunciationPractice.collectAsStateWithLifecycle()
+    val activeExam by viewModel.activeExam.collectAsStateWithLifecycle()
+    val lastExamReport by viewModel.lastExamReport.collectAsStateWithLifecycle()
+    val ttsStatus by viewModel.ttsStatus.collectAsStateWithLifecycle()
+    val isPlayingRecording by viewModel.isPlayingRecording.collectAsStateWithLifecycle()
+    val statusMessage by viewModel.statusMessage.collectAsStateWithLifecycle()
+
+    fun navigateTopTab(route: String) {
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    val transitionMs = if (extended.reducedMotion) 0 else 380
+    val tabTransitionMs = if (extended.reducedMotion) 0 else 300
+    val tabIndexByRoute = topLevelTabs.mapIndexed { idx, tab -> tab.route to idx }.toMap()
+
+    SeoulAmbientBackdrop {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val useNavRail = maxWidth >= 720.dp
+
+            val navHostContent: @Composable (Modifier) -> Unit = { contentModifier ->
+                Box(
+                    modifier = contentModifier
+                        .fillMaxSize()
+                        .statusBarsPadding(),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    NavHost(
+                        navController = navController,
+                        startDestination = BaeumRoutes.HOME,
+                        enterTransition = {
+                            val fromIdx = tabIndexByRoute[initialState.destination.route]
+                            val toIdx = tabIndexByRoute[targetState.destination.route]
+                            if (fromIdx != null && toIdx != null) {
+                                val dir = if (toIdx >= fromIdx) 1 else -1
+                                slideInHorizontally(
+                                    initialOffsetX = { (it * 0.08f * dir).toInt() },
+                                    animationSpec = tween(tabTransitionMs, easing = BaeumMotion.SilkEasing)
+                                ) + fadeIn(tween(tabTransitionMs, easing = BaeumMotion.SilkEasing)) +
+                                    scaleIn(
+                                        initialScale = 0.986f,
+                                        animationSpec = tween(tabTransitionMs, easing = BaeumMotion.SilkEasing)
+                                    )
+                            } else {
+                                slideInHorizontally(
+                                    initialOffsetX = { (it * 0.16f).toInt() },
+                                    animationSpec = tween(transitionMs, easing = BaeumMotion.SilkEasing)
+                                ) + fadeIn(tween(transitionMs, easing = BaeumMotion.SilkEasing)) +
+                                    scaleIn(
+                                        initialScale = 0.965f,
+                                        animationSpec = tween(transitionMs, easing = BaeumMotion.SilkEasing)
+                                    )
+                            }
+                        },
+                        exitTransition = {
+                            val fromIdx = tabIndexByRoute[initialState.destination.route]
+                            val toIdx = tabIndexByRoute[targetState.destination.route]
+                            if (fromIdx != null && toIdx != null) {
+                                val dir = if (toIdx >= fromIdx) -1 else 1
+                                slideOutHorizontally(
+                                    targetOffsetX = { (it * 0.06f * dir).toInt() },
+                                    animationSpec = tween((tabTransitionMs * 0.85f).toInt(), easing = BaeumMotion.SilkEasing)
+                                ) + fadeOut(tween((tabTransitionMs * 0.65f).toInt()))
+                            } else {
+                                slideOutHorizontally(
+                                    targetOffsetX = { -(it * 0.09f).toInt() },
+                                    animationSpec = tween(transitionMs, easing = BaeumMotion.SilkEasing)
+                                ) + fadeOut(tween((transitionMs * 0.72f).toInt())) +
+                                    scaleOut(
+                                        targetScale = 0.955f,
+                                        animationSpec = tween(transitionMs, easing = BaeumMotion.SilkEasing)
+                                    )
+                            }
+                        },
+                        popEnterTransition = {
+                            slideInHorizontally(
+                                initialOffsetX = { -(it * 0.10f).toInt() },
+                                animationSpec = tween(transitionMs, easing = BaeumMotion.SilkEasing)
+                            ) + fadeIn(tween(transitionMs, easing = BaeumMotion.SilkEasing)) +
+                                scaleIn(
+                                    initialScale = 0.965f,
+                                    animationSpec = tween(transitionMs, easing = BaeumMotion.SilkEasing)
+                                )
+                        },
+                        popExitTransition = {
+                            slideOutHorizontally(
+                                targetOffsetX = { (it * 0.18f).toInt() },
+                                animationSpec = tween(transitionMs, easing = BaeumMotion.SilkEasing)
+                            ) + fadeOut(tween((transitionMs * 0.72f).toInt())) +
+                                scaleOut(
+                                    targetScale = 0.96f,
+                                    animationSpec = tween(transitionMs, easing = BaeumMotion.SilkEasing)
+                                )
+                        }
+                    ) {
+                        composable(BaeumRoutes.HOME) {
+                            HomeDashboardScreen(
+                                summary = summary,
+                                onOpenSettings = { navController.navigate(BaeumRoutes.SETTINGS) },
+                                onResumeLearning = {
+                                    flashcardViewModel.startSession(curriculumFilter = settings.activePathway, dueOnly = false)
+                                    navController.navigate(BaeumRoutes.FLASHCARD)
+                                },
+                                onReviewDue = {
+                                    val dueOnly = summary.dueTodayCount > 0
+                                    flashcardViewModel.startSession(dueOnly = dueOnly)
+                                    navController.navigate(BaeumRoutes.FLASHCARD)
+                                },
+                                onOpenReviewPlanner = { navController.navigate(BaeumRoutes.REVIEW_PLANNER) },
+                                onOpenVocabulary = { navController.navigate(BaeumRoutes.vocabularyRoute(settings.activePathway, null)) },
+                                onOpenFlashcards = {
+                                    flashcardViewModel.startSession(curriculumFilter = settings.activePathway, dueOnly = false)
+                                    navController.navigate(BaeumRoutes.FLASHCARD)
+                                },
+                                onOpenQuizCenter = { navController.navigate(BaeumRoutes.QUIZ_CENTER) },
+                                onOpenGrammarStudio = { navController.navigate(BaeumRoutes.GRAMMAR_STUDIO) }
+                            )
+                        }
+
+                        composable(BaeumRoutes.LEARN) {
+                            LearningHubScreen(
+                                allVocab = allVocab,
+                                onOpenSettings = { navController.navigate(BaeumRoutes.SETTINGS) },
+                                onSelectHangul = {
+                                    viewModel.setActivePathway(CurriculumPathway.HANGUL)
+                                    navController.navigate(BaeumRoutes.HANGUL_STUDIO)
+                                },
+                                onSelectTopik = {
+                                    viewModel.setActivePathway(CurriculumPathway.TOPIK)
+                                    navController.navigate(BaeumRoutes.TOPIK_CENTER)
+                                },
+                                onSelectEpsTopik = {
+                                    viewModel.setActivePathway(CurriculumPathway.EPS_TOPIK)
+                                    navController.navigate(BaeumRoutes.EPS_CENTER)
+                                },
+                                onSelectEveryday = {
+                                    viewModel.setActivePathway(CurriculumPathway.EVERYDAY)
+                                    navController.navigate(BaeumRoutes.EVERYDAY_KOREAN)
+                                },
+                                onOpenGrammarStudio = { navController.navigate(BaeumRoutes.GRAMMAR_STUDIO) },
+                                onOpenQuizCenter = { navController.navigate(BaeumRoutes.QUIZ_CENTER) }
+                            )
+                        }
+
+                        composable(BaeumRoutes.SPEAK) {
+                            SpeakingHubScreen(
+                                historyCount = speakingSessions.size,
+                                onOpenSettings = { navController.navigate(BaeumRoutes.SETTINGS) },
+                                onStartConversationFlow = { navController.navigate(BaeumRoutes.SPEAK_DIFFICULTY) },
+                                onOpenPronunciationLab = { navController.navigate(BaeumRoutes.PRONUNCIATION_LAB) },
+                                onStartWorkplaceSpeaking = {
+                                    viewModel.startAutoConversation(SpeakingDifficulty.INTERMEDIATE, categoryFilter = "Workplace")
+                                    navController.navigate(BaeumRoutes.LIVE_CONVERSATION)
+                                },
+                                onStartTopikSpeaking = {
+                                    viewModel.startAutoConversation(SpeakingDifficulty.INTERMEDIATE, categoryFilter = "TOPIK Speaking")
+                                    navController.navigate(BaeumRoutes.LIVE_CONVERSATION)
+                                },
+                                onOpenSessionHistory = { navController.navigate(BaeumRoutes.SPEAK_HISTORY) }
+                            )
+                        }
+
+                        composable(BaeumRoutes.EXAM) {
+                            ExamCenterScreen(
+                                attempts = examAttempts,
+                                onOpenSettings = { navController.navigate(BaeumRoutes.SETTINGS) },
+                                onStartExam = { type, mode ->
+                                    viewModel.startExam(type, mode)
+                                    navController.navigate(BaeumRoutes.ACTIVE_EXAM)
+                                }
+                            )
+                        }
+
+                        composable(BaeumRoutes.PROGRESS) {
+                            AnalyticsScreen(
+                                summary = summary,
+                                allVocab = allVocab,
+                                dailyStats = dailyStats,
+                                speakingCount = speakingSessions.size,
+                                examCount = examAttempts.size,
+                                readinessProfile = readinessProfile,
+                                onOpenSettings = { navController.navigate(BaeumRoutes.SETTINGS) },
+                                onRecommendedAction = {
+                                    if (summary.dueTodayCount > 0) {
+                                        flashcardViewModel.startSession(dueOnly = true)
+                                        navController.navigate(BaeumRoutes.FLASHCARD)
+                                    } else {
+                                        navController.navigate(BaeumRoutes.QUIZ_CENTER)
+                                    }
+                                }
+                            )
+                        }
+
+                        // ==================== LEARNING SUB-SCREENS ====================
+                        composable(BaeumRoutes.HANGUL_STUDIO) {
+                            HangulStudioScreen(
+                                showRomanization = settings.romanizationMode != RomanizationMode.HIDDEN,
+                                ttsStatus = ttsStatus,
+                                onBack = { navController.popBackStack() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onStartPractice = {
+                                    viewModel.startQuiz(QuizMode.BATCHIM)
+                                    navController.navigate(BaeumRoutes.ACTIVE_QUIZ)
+                                },
+                                onOpenWritingStudio = { navController.navigate(BaeumRoutes.HANGUL_WRITING) }
+                            )
+                        }
+
+                        composable(BaeumRoutes.HANGUL_WRITING) {
+                            HangulWritingScreen(
+                                onBack = { navController.popBackStack() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onPracticeCompleted = { viewModel.recordWritingPracticeCompleted() }
+                            )
+                        }
+
+                        composable(BaeumRoutes.TOPIK_CENTER) {
+                            TopikCenterScreen(
+                                allVocab = allVocab,
+                                onBack = { navController.popBackStack() },
+                                onOpenLevelVocab = { level ->
+                                    navController.navigate(BaeumRoutes.vocabularyRoute(CurriculumPathway.TOPIK, level))
+                                },
+                                onStartLevelFlashcards = { level ->
+                                    flashcardViewModel.startSession(CurriculumPathway.TOPIK, level)
+                                    navController.navigate(BaeumRoutes.FLASHCARD)
+                                },
+                                onOpenGrammar = { navController.navigate(BaeumRoutes.GRAMMAR_STUDIO) },
+                                onOpenExam = {
+                                    viewModel.startExam(ExamType.TOPIK_I, ExamSessionMode.MOCK)
+                                    navController.navigate(BaeumRoutes.ACTIVE_EXAM)
+                                }
+                            )
+                        }
+
+                        composable(BaeumRoutes.EPS_CENTER) {
+                            EpsTopikCenterScreen(
+                                allVocab = allVocab,
+                                onBack = { navController.popBackStack() },
+                                onOpenCategoryVocab = { cat ->
+                                    navController.navigate(BaeumRoutes.vocabularyRoute(CurriculumPathway.EPS_TOPIK, cat))
+                                },
+                                onStartEpsFlashcards = {
+                                    flashcardViewModel.startSession(CurriculumPathway.EPS_TOPIK, null)
+                                    navController.navigate(BaeumRoutes.FLASHCARD)
+                                },
+                                onOpenEpsExam = {
+                                    viewModel.startExam(ExamType.EPS_TOPIK, ExamSessionMode.MOCK)
+                                    navController.navigate(BaeumRoutes.ACTIVE_EXAM)
+                                }
+                            )
+                        }
+
+                        composable(BaeumRoutes.EVERYDAY_KOREAN) {
+                            EverydayKoreanScreen(
+                                allVocab = allVocab,
+                                onBack = { navController.popBackStack() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onOpenCategoryVocab = { cat ->
+                                    navController.navigate(BaeumRoutes.vocabularyRoute(CurriculumPathway.EVERYDAY, cat))
+                                },
+                                onStartConversation = { navController.navigate(BaeumRoutes.SPEAK_DIFFICULTY) }
+                            )
+                        }
+
+                        composable(
+                            route = BaeumRoutes.VOCABULARY,
+                            arguments = listOf(
+                                navArgument("curriculum") { type = NavType.StringType; defaultValue = "" },
+                                navArgument("sub") { type = NavType.StringType; defaultValue = "" }
+                            )
+                        ) { entry ->
+                            val cur = entry.arguments?.getString("curriculum")?.ifBlank { null }
+                            val sub = entry.arguments?.getString("sub")?.ifBlank { null }
+                            VocabularyLibraryScreen(
+                                allVocab = allVocab,
+                                initialCurriculum = cur,
+                                initialSubCategory = sub,
+                                romanizationMode = settings.romanizationMode,
+                                translationLang = settings.translationLanguage,
+                                onBack = { navController.popBackStack() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onToggleBookmark = { viewModel.toggleBookmark(it) },
+                                onOpenWordDetail = { wordId -> navController.navigate(BaeumRoutes.wordDetailRoute(wordId)) },
+                                onStudyFilteredCards = { fCur, fSub ->
+                                    flashcardViewModel.startSession(fCur, fSub, dueOnly = false)
+                                    navController.navigate(BaeumRoutes.FLASHCARD)
+                                }
+                            )
+                        }
+
+                        composable(
+                            route = BaeumRoutes.WORD_DETAIL,
+                            arguments = listOf(navArgument("wordId") { type = NavType.StringType })
+                        ) { entry ->
+                            val wordId = entry.arguments?.getString("wordId").orEmpty()
+                            val word = allVocab.firstOrNull { it.id == wordId }
+                            WordDetailScreen(
+                                word = word,
+                                romanizationMode = settings.romanizationMode,
+                                translationLang = settings.translationLanguage,
+                                onBack = { navController.popBackStack() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onToggleBookmark = { viewModel.toggleBookmark(it) }
+                            )
+                        }
+
+                        composable(BaeumRoutes.FLASHCARD) {
+                            SmartFlashcardScreen(
+                                session = flashcardSession,
+                                romanizationMode = settings.romanizationMode,
+                                translationLang = settings.translationLanguage,
+                                onBack = { navController.popBackStack() },
+                                onReveal = { flashcardViewModel.revealCard() },
+                                onRate = { flashcardViewModel.rateCurrentCard(it) },
+                                onUndo = { flashcardViewModel.undoLastRating() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onToggleRomanization = {
+                                    val next = if (settings.romanizationMode == RomanizationMode.ALWAYS) {
+                                        RomanizationMode.HIDDEN
+                                    } else {
+                                        RomanizationMode.ALWAYS
+                                    }
+                                    viewModel.setRomanizationMode(next)
+                                },
+                                onStartNewSession = { flashcardViewModel.startSession(dueOnly = false) }
+                            )
+                        }
+
+                        composable(BaeumRoutes.REVIEW_PLANNER) {
+                            ReviewPlannerScreen(
+                                allVocab = allVocab,
+                                onBack = { navController.popBackStack() },
+                                onStartDueReview = {
+                                    flashcardViewModel.startSession(dueOnly = true)
+                                    navController.navigate(BaeumRoutes.FLASHCARD)
+                                },
+                                onStartNewStudy = {
+                                    flashcardViewModel.startSession(dueOnly = false)
+                                    navController.navigate(BaeumRoutes.FLASHCARD)
+                                }
+                            )
+                        }
+
+                        composable(BaeumRoutes.QUIZ_CENTER) {
+                            QuizCenterScreen(
+                                allVocab = allVocab,
+                                modeProgress = quizModeProgress,
+                                onBack = { navController.popBackStack() },
+                                onSelectQuizMode = { mode, weakOnly ->
+                                    viewModel.startQuiz(mode, weakOnly = weakOnly)
+                                    navController.navigate(BaeumRoutes.ACTIVE_QUIZ)
+                                }
+                            )
+                        }
+
+                        composable(BaeumRoutes.ACTIVE_QUIZ) {
+                            ActiveQuizScreen(
+                                state = activeQuiz,
+                                onBack = { navController.popBackStack() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onSelectOption = { viewModel.selectQuizOption(it) },
+                                onTypedChange = { viewModel.updateQuizTypedInput(it) },
+                                onAppendToken = { viewModel.appendArrangementToken(it) },
+                                onRemoveToken = { viewModel.removeArrangementToken(it) },
+                                onClearTokens = { viewModel.clearArrangement() },
+                                onCheckAnswer = { viewModel.checkQuizAnswer() },
+                                onNextQuestion = { viewModel.nextQuizQuestion() },
+                                onRestart = {
+                                    val mode = activeQuiz?.mode ?: QuizMode.RECALL
+                                    viewModel.startQuiz(mode)
+                                }
+                            )
+                        }
+
+                        composable(BaeumRoutes.GRAMMAR_STUDIO) {
+                            GrammarStudioScreen(
+                                bookmarks = grammarBookmarks,
+                                translationLang = settings.translationLanguage,
+                                onBack = { navController.popBackStack() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onToggleBookmark = { viewModel.toggleGrammarBookmark(it) },
+                                onPracticeGrammar = { gId ->
+                                    viewModel.startQuiz(QuizMode.GRAMMAR, focusGrammarId = gId)
+                                    navController.navigate(BaeumRoutes.ACTIVE_QUIZ)
+                                }
+                            )
+                        }
+
+                        // ==================== SPEAKING SUB-SCREENS ====================
+                        composable(BaeumRoutes.SPEAK_DIFFICULTY) {
+                            DifficultySelectionScreen(
+                                onBack = { navController.popBackStack() },
+                                onSelectDifficulty = { diff ->
+                                    viewModel.startAutoConversation(diff)
+                                    navController.navigate(BaeumRoutes.LIVE_CONVERSATION)
+                                }
+                            )
+                        }
+
+                        composable(BaeumRoutes.LIVE_CONVERSATION) {
+                            LiveConversationScreen(
+                                state = liveConversation,
+                                isPlayingRecording = isPlayingRecording,
+                                onBack = { navController.popBackStack() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onStartRecording = { viewModel.startVoiceCapture() },
+                                onStopRecording = { viewModel.stopVoiceCapture() },
+                                onRedoRecording = { viewModel.redoVoiceCapture() },
+                                onEnterManualMode = { viewModel.enterManualTranscriptMode() },
+                                onDraftChange = { viewModel.updateDraftTranscript(it) },
+                                onPlayRecording = { viewModel.playDraftRecording() },
+                                onToggleHint = { viewModel.toggleConversationHint() },
+                                onSubmitAnswer = { viewModel.submitConversationTurn() },
+                                onCompletedNavigate = {
+                                    navController.navigate(BaeumRoutes.SPEAK_ASSESSMENT) {
+                                        popUpTo(BaeumRoutes.LIVE_CONVERSATION) { inclusive = true }
+                                    }
+                                }
+                            )
+                        }
+
+                        composable(BaeumRoutes.SPEAK_ASSESSMENT) {
+                            SpeakingAssessmentScreen(
+                                assessment = lastAssessment,
+                                onBack = { navController.popBackStack() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onNewScenario = {
+                                    val diff = lastAssessment?.difficulty ?: SpeakingDifficulty.BEGINNER
+                                    viewModel.startAutoConversation(diff)
+                                    navController.navigate(BaeumRoutes.LIVE_CONVERSATION) {
+                                        popUpTo(BaeumRoutes.SPEAK_ASSESSMENT) { inclusive = true }
+                                    }
+                                }
+                            )
+                        }
+
+                        composable(BaeumRoutes.PRONUNCIATION_LAB) {
+                            PronunciationLabScreen(
+                                state = pronunciationPractice,
+                                onBack = { navController.popBackStack() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onSelectCategory = { viewModel.selectPronunciationCategory(it) },
+                                onSelectDrill = { viewModel.selectPronunciationDrill(it) },
+                                onNextDrill = { viewModel.selectNextPronunciationDrill() },
+                                onStartListening = { viewModel.startPronunciationListening() },
+                                onStopListening = { viewModel.stopPronunciationListening() },
+                                onCancelListening = { viewModel.cancelPronunciationListening() },
+                                onRetryDrill = { viewModel.clearPronunciationResult() }
+                            )
+                        }
+
+                        composable(BaeumRoutes.SPEAK_HISTORY) {
+                            SpeakingHistoryScreen(
+                                sessions = speakingSessions,
+                                onBack = { navController.popBackStack() },
+                                onOpenSession = { sessionEntity ->
+                                    viewModel.loadHistoricalSpeakingAssessment(sessionEntity)
+                                    navController.navigate(BaeumRoutes.SPEAK_ASSESSMENT)
+                                }
+                            )
+                        }
+
+                        // ==================== EXAM SUB-SCREENS ====================
+                        composable(BaeumRoutes.ACTIVE_EXAM) {
+                            ActiveExamScreen(
+                                session = activeExam,
+                                onBack = { navController.popBackStack() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onSelectOption = { qId, idx -> viewModel.selectExamOption(qId, idx) },
+                                onOpenResponseChange = { qId, txt -> viewModel.updateExamOpenResponse(qId, txt) },
+                                onToggleFlag = { qId -> viewModel.toggleExamFlag(qId) },
+                                onJumpToQuestion = { idx -> viewModel.jumpToExamQuestion(idx) },
+                                onSubmitExam = {
+                                    viewModel.submitActiveExam()
+                                    navController.navigate(BaeumRoutes.EXAM_REPORT) {
+                                        popUpTo(BaeumRoutes.ACTIVE_EXAM) { inclusive = true }
+                                    }
+                                }
+                            )
+                        }
+
+                        composable(BaeumRoutes.EXAM_REPORT) {
+                            ExamReportScreen(
+                                report = lastExamReport,
+                                onBack = { navController.popBackStack() }
+                            )
+                        }
+
+                        // ==================== SETTINGS ====================
+                        composable(BaeumRoutes.SETTINGS) {
+                            SettingsScreen(
+                                settings = settings,
+                                statusMessage = statusMessage,
+                                onBack = { navController.popBackStack() },
+                                onThemeChange = { viewModel.setThemeMode(it) },
+                                onTranslationLangChange = { viewModel.setTranslationLanguage(it) },
+                                onFontScaleChange = { viewModel.setFontScale(it) },
+                                onDailyGoalChange = { viewModel.setDailyGoal(it) },
+                                onRomanizationChange = { viewModel.setRomanizationMode(it) },
+                                onFsrsRetentionChange = { viewModel.setFsrsRetention(it) },
+                                onSpeechRateChange = { viewModel.setSpeechRate(it) },
+                                onReducedMotionChange = { viewModel.setReducedMotion(it) },
+                                onDailyReminderChange = { enabled, hour, minute ->
+                                    viewModel.updateDailyReminder(enabled, hour, minute)
+                                },
+                                onSendTestReminder = { viewModel.sendTestStudyReminder() },
+                                onExportBackupJson = { viewModel.generateBackupJson() },
+                                onRestoreBackupJson = { viewModel.restoreFromBackupJson(it) },
+                                onReplayOnboarding = { viewModel.replayOnboarding() },
+                                onClearStatus = { viewModel.clearStatusMessage() }
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (useNavRail) {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    if (showPrimaryNav) {
+                        NavigationRail(
+                            containerColor = extended.dockSurface,
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .statusBarsPadding()
+                                .navigationBarsPadding()
+                        ) {
+                            topLevelTabs.forEach { tab ->
+                                val selected = currentDest?.hierarchy?.any { it.route == tab.route } == true
+                                val tabLabel = bText(tab.labelEn, tab.labelId)
+                                NavigationRailItem(
+                                    selected = selected,
+                                    onClick = { navigateTopTab(tab.route) },
+                                    icon = {
+                                        Icon(
+                                            imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                                            contentDescription = tabLabel
+                                        )
+                                    },
+                                    label = { Text(tabLabel) },
+                                    modifier = Modifier.testTag("nav_tab_${tab.tagKey}")
+                                )
+                            }
+                        }
+                    }
+                    navHostContent(Modifier.weight(1f).navigationBarsPadding())
+                }
+            } else {
+                Scaffold(
+                    containerColor = Color.Transparent,
+                    bottomBar = {
+                        AnimatedVisibility(
+                            visible = showPrimaryNav,
+                            enter = slideInVertically(
+                                initialOffsetY = { it },
+                                animationSpec = tween(if (extended.reducedMotion) 0 else 320, easing = BaeumMotion.SilkEasing)
+                            ) + fadeIn(tween(if (extended.reducedMotion) 0 else 240)),
+                            exit = slideOutVertically(
+                                targetOffsetY = { it },
+                                animationSpec = tween(if (extended.reducedMotion) 0 else 260, easing = BaeumMotion.SilkEasing)
+                            ) + fadeOut(tween(if (extended.reducedMotion) 0 else 180))
+                        ) {
+                            SeoulFloatingGlassDock(
+                                tabs = topLevelTabs,
+                                currentDestinationRoute = currentDest?.route,
+                                isSelected = { tab ->
+                                    currentDest?.hierarchy?.any { it.route == tab.route } == true
+                                },
+                                onSelectTab = { navigateTopTab(it.route) }
+                            )
+                        }
+                    }
+                ) { innerPadding ->
+                    navHostContent(
+                        Modifier
+                            .padding(innerPadding)
+                            .then(if (!showPrimaryNav) Modifier.navigationBarsPadding() else Modifier)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Luxury floating frosted-glass capsule bottom dock with hardware-isolated backdrop blur,
+ * specular beveled rim, continuous spring-gliding liquid-glass active indicator pill,
+ * luminous top crest bead, and safe navigation bar insets.
+ */
+@Composable
+private fun SeoulFloatingGlassDock(
+    tabs: List<TopLevelTab>,
+    currentDestinationRoute: String?,
+    isSelected: (TopLevelTab) -> Boolean,
+    onSelectTab: (TopLevelTab) -> Unit
+) {
+    val extended = LocalBaeumColors.current
+    val dockShape = RoundedCornerShape(34.dp)
+    val shadowTint = if (extended.isDark) Color(0xAA000000) else Color(0x3C141D48)
+    val selectedIndex = tabs.indexOfFirst { isSelected(it) || currentDestinationRoute == it.route }.coerceAtLeast(0)
+    val supportsBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !extended.reducedMotion
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(
+                    elevation = if (extended.isDark) 22.dp else 18.dp,
+                    shape = dockShape,
+                    ambientColor = shadowTint,
+                    spotColor = shadowTint
+                )
+                .clip(dockShape)
+        ) {
+            // Layer 1: Dedicated frosted glass backdrop (blur isolated so icons/labels stay razor-sharp)
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            if (extended.isDark) {
+                                listOf(
+                                    extended.dockSurface,
+                                    extended.glassFillBottom.copy(alpha = 0.96f)
+                                )
+                            } else {
+                                listOf(
+                                    Color(0xFCFFFFFF),
+                                    Color(0xF8F5F3FC)
+                                )
+                            }
+                        )
+                    )
+                    .then(
+                        if (supportsBlur) {
+                            Modifier.blur(20.dp, edgeTreatment = BlurredEdgeTreatment.Rectangle)
+                        } else {
+                            Modifier
+                        }
+                    )
+            )
+
+            // Layer 2: Specular top gloss + beveled crystalline border
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0.0f to Color.White.copy(alpha = if (extended.isDark) 0.10f else 0.0f),
+                            0.45f to Color.Transparent,
+                            1.0f to Color.Transparent
+                        )
+                    )
+                    .border(
+                        width = if (extended.isDark) 1.dp else 1.25.dp,
+                        brush = Brush.linearGradient(
+                            if (extended.isDark) {
+                                listOf(
+                                    extended.glassHighlightBorder,
+                                    extended.cardBorder.copy(alpha = 0.55f),
+                                    extended.glassHighlightBorder.copy(alpha = 0.28f)
+                                )
+                            } else {
+                                listOf(
+                                    extended.cardBorder,
+                                    extended.cardBorder.copy(alpha = 0.85f),
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+                                )
+                            }
+                        ),
+                        shape = dockShape
+                    )
+            )
+
+            // Layer 3: Gliding liquid-glass active capsule + crisp tab row
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 7.dp, vertical = 7.dp)
+            ) {
+                val tabWidth = maxWidth / tabs.size.coerceAtLeast(1)
+                val indicatorOffset by animateDpAsState(
+                    targetValue = tabWidth * selectedIndex,
+                    animationSpec = if (extended.reducedMotion) tween(0) else BaeumMotion.liquidSpring(),
+                    label = "dock_liquid_pill_offset"
+                )
+                val pillShape = RoundedCornerShape(26.dp)
+
+                // Continuous gliding liquid-glass active pill
+                Box(
+                    modifier = Modifier
+                        .offset(x = indicatorOffset)
+                        .width(tabWidth)
+                        .height(54.dp)
+                        .clip(pillShape)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = if (extended.isDark) 0.24f else 0.18f),
+                                    extended.mint.copy(alpha = if (extended.isDark) 0.10f else 0.11f)
+                                )
+                            )
+                        )
+                        .border(
+                            width = 1.dp,
+                            brush = Brush.linearGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = if (extended.isDark) 0.48f else 0.45f),
+                                    extended.mint.copy(alpha = if (extended.isDark) 0.22f else 0.28f)
+                                )
+                            ),
+                            shape = pillShape
+                        ),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    // Luminous crown crest line on top of active capsule
+                    Box(
+                        modifier = Modifier
+                            .padding(top = 3.dp)
+                            .width(22.dp)
+                            .height(2.5.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.horizontalGradient(
+                                    listOf(MaterialTheme.colorScheme.primary, extended.mint)
+                                )
+                            )
+                    )
+                }
+
+                // Foreground interactive tab buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    tabs.forEachIndexed { idx, tab ->
+                        val selected = idx == selectedIndex
+                        val tabLabel = bText(tab.labelEn, tab.labelId)
+                        val iconScale by animateFloatAsState(
+                            targetValue = if (selected && !extended.reducedMotion) 1.14f else 1.0f,
+                            animationSpec = BaeumMotion.playfulSpring(),
+                            label = "dock_icon_scale_${tab.tagKey}"
+                        )
+                        val iconLift by animateDpAsState(
+                            targetValue = if (selected && !extended.reducedMotion) (-1.5).dp else 0.dp,
+                            animationSpec = BaeumMotion.playfulSpring(),
+                            label = "dock_icon_lift_${tab.tagKey}"
+                        )
+                        val contentTint by animateColorAsState(
+                            targetValue = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            animationSpec = tween(220),
+                            label = "dock_tint_${tab.tagKey}"
+                        )
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .defaultMinSize(minHeight = 54.dp)
+                                .clip(pillShape)
+                                .tactileClickable(pressedScale = 0.92f) { onSelectTab(tab) }
+                                .testTag("nav_tab_${tab.tagKey}"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
+                                modifier = Modifier.padding(vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (selected) tab.selectedIcon else tab.unselectedIcon,
+                                    contentDescription = tabLabel,
+                                    tint = contentTint,
+                                    modifier = Modifier
+                                        .offset(y = iconLift)
+                                        .size(22.dp)
+                                        .graphicsLayer {
+                                            scaleX = iconScale
+                                            scaleY = iconScale
+                                        }
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = tabLabel,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                                    ),
+                                    color = contentTint,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
