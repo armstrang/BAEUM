@@ -59,7 +59,8 @@ object AdaptiveQuizEngine {
         maxCount: Int = 8,
         weakOnly: Boolean = false,
         focusGrammarId: String? = null,
-        activeCurriculum: String? = null
+        activeCurriculum: String? = null,
+        rng: Random = Random.Default
     ): List<QuizQuestion> {
         if (mode == QuizMode.GRAMMAR) {
             return buildGrammarQuestions(maxCount, focusGrammarId, translationLang)
@@ -67,7 +68,6 @@ object AdaptiveQuizEngine {
         if (allVocab.size < 4) return emptyList()
 
         val now = System.currentTimeMillis()
-        val rng = Random.Default
 
         // Rank by composite adaptive priority: quiz errors + lapses + FSRS forgetting risk + pathway fit
         val prioritized = allVocab
@@ -165,6 +165,22 @@ object AdaptiveQuizEngine {
         }
     }
 
+    private val ALIGNABLE_PARTICLE_SUFFIXES = setOf(
+        "은", "는", "이", "가", "을", "를", "과", "와", "으로", "로",
+        "이나", "나", "이랑", "랑",
+        "에", "에서", "도", "의", "부터", "까지", "보다", "하고", "에게", "한테", "처럼", "만"
+    )
+
+    private fun canAlignClozeToken(target: VocabEntity, tokenInSentence: String): Boolean {
+        if (tokenInSentence == target.hangul) return true
+        if (tokenInSentence.startsWith(target.hangul)) {
+            val suffix = tokenInSentence.removePrefix(target.hangul)
+            if (suffix.isEmpty() || suffix in ALIGNABLE_PARTICLE_SUFFIXES) return true
+        }
+        val targetForms = target.parsedConjugations()
+        return targetForms.any { (form, _) -> form == tokenInSentence }
+    }
+
     /**
      * Aligns a distractor [VocabEntity] to the exact particle or conjugation morphology of [tokenInSentence]
      * so cloze questions test Korean meaning rather than leaking the answer via bare dictionary forms.
@@ -196,6 +212,7 @@ object AdaptiveQuizEngine {
         }
 
         // Case 2: Conjugated verb/adjective matching one of target's parsed conjugations
+        if (distractor.partOfSpeech != target.partOfSpeech) return null
         val targetForms = target.parsedConjugations().ifEmpty {
             KoreanLinguisticsEngine.buildConjugationsSerialized(target.hangul, target.partOfSpeech)
                 .split("||").mapNotNull { entry ->
@@ -550,6 +567,7 @@ object AdaptiveQuizEngine {
                 .firstOrNull { it.contains(stem) }
                 ?.trimEnd('.', '?', '!', ',')
                 ?: continue
+            if (!canAlignClozeToken(target, tokenInSentence)) continue
 
             val alignedDistractors = sampleDistractors(allVocab, target, 3, rng) { cand ->
                 alignDistractorToClozeToken(target, tokenInSentence, cand).orEmpty()

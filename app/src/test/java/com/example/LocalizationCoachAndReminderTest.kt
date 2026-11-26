@@ -289,17 +289,22 @@ class LocalizationCoachAndReminderTest {
             assertTrue(q.correctAnswer in q.options)
         }
 
-        // Dynamic listening exam items must NOT leak the target word in stimulusKo
+        // Dynamic listening exam items must NOT leak the target Korean word or meaning in stimulusKo
         val topik1Mock = ExamEngine.startExam(ExamType.TOPIK_I, ExamSessionMode.MOCK, bank, Random(77))
         val dynamicListening = topik1Mock.questions.filter { it.section == "Listening" && it.id.startsWith("dyn_") }
         assertTrue("Expected dynamic listening items", dynamicListening.isNotEmpty())
         dynamicListening.forEach { q ->
-            val correctWord = q.options[q.correctOptionIndex]
-            assertFalse(
-                "Listening stimulus '${q.stimulusKo}' leaked answer '$correctWord'",
-                q.stimulusKo.contains(correctWord)
-            )
             assertNotNull(q.audioTranscriptKo)
+            val targetHangul = q.audioTranscriptKo!!.substringBefore(".").trim()
+            val correctMeaning = q.options[q.correctOptionIndex]
+            assertFalse(
+                "Listening stimulus '${q.stimulusKo}' leaked Korean answer '$targetHangul'",
+                targetHangul.isNotEmpty() && q.stimulusKo.contains(targetHangul)
+            )
+            assertFalse(
+                "Listening stimulus '${q.stimulusKo}' leaked meaning '$correctMeaning'",
+                q.stimulusKo.contains(correctMeaning)
+            )
         }
     }
 
