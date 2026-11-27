@@ -1,10 +1,18 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -52,6 +60,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -79,7 +89,11 @@ import com.example.ui.theme.StaggeredEntrance
 import com.example.ui.theme.bText
 import com.example.ui.theme.gentleShake
 import com.example.ui.theme.rememberAnimatedInt
+import com.example.ui.theme.tactileBindClick
 import com.example.ui.theme.tactileClickable
+import com.example.ui.theme.tactilePressScale
+import kotlinx.coroutines.delay
+import kotlin.math.abs
 import kotlin.random.Random
 
 private val LessonEmblemShape = RoundedCornerShape(16.dp)
@@ -173,71 +187,121 @@ fun BeginnerSyllabusScreen(
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 3-Track Selector Ribbon (Pemula Nol | TOPIK I | TOPIK II)
-            Row(
+            // 3-Track Selector Ribbon (Pemula Nol | TOPIK I | TOPIK II) with Liquid Spring Capsule
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("syllabus_track_switcher"),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .clip(LessonOptionShape)
+                    .background(extended.elevatedSurface.copy(alpha = 0.56f))
+                    .border(1.dp, extended.glassHighlightBorder, LessonOptionShape)
+                    .padding(4.dp)
+                    .testTag("syllabus_track_switcher")
             ) {
-                SyllabusTrack.entries.forEach { track ->
-                    val isSelected = track == selectedTrack
-                    val tAccent = trackAccentColor(track)
-                    val tDone = BeginnerSyllabusCatalog.completionCount(completedLessonIds, track)
-                    val tTotal = BeginnerSyllabusCatalog.lessonsForTrack(track).size
-                    val tGrad = tDone >= tTotal
+                BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                    val tracks = SyllabusTrack.entries
+                    val segmentWidth = maxWidth / tracks.size.coerceAtLeast(1)
+                    val density = LocalDensity.current
+                    val segmentWidthPx = with(density) { segmentWidth.toPx() }
+                    val selectedIdx = tracks.indexOf(selectedTrack).coerceAtLeast(0)
+                    val glidePosState = animateFloatAsState(
+                        targetValue = selectedIdx.toFloat(),
+                        animationSpec = if (extended.reducedMotion) tween(0) else BaeumMotion.liquidSpring(),
+                        label = "syllabus_track_glide"
+                    )
+                    val activePillColor by animateColorAsState(
+                        targetValue = accent.copy(alpha = 0.22f),
+                        animationSpec = tween(if (extended.reducedMotion) 0 else 240),
+                        label = "syllabus_track_pill_fill"
+                    )
+                    val activePillBorder by animateColorAsState(
+                        targetValue = accent.copy(alpha = 0.85f),
+                        animationSpec = tween(if (extended.reducedMotion) 0 else 240),
+                        label = "syllabus_track_pill_border"
+                    )
 
+                    // Gliding liquid capsule indicator (draw-phase transform, zero relayout)
                     Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .defaultMinSize(minHeight = 58.dp)
-                            .clip(LessonOptionShape)
-                            .background(
-                                if (isSelected) tAccent.copy(alpha = 0.20f)
-                                else extended.elevatedSurface.copy(alpha = 0.58f)
-                            )
-                            .border(
-                                width = if (isSelected) 1.5.dp else 1.dp,
-                                color = if (isSelected) tAccent else extended.glassHighlightBorder,
-                                shape = LessonOptionShape
-                            )
-                            .tactileClickable(pressedScale = 0.96f) {
-                                selectedTrackName = track.name
+                            .graphicsLayer {
+                                val pos = glidePosState.value
+                                val travel = abs(pos - selectedIdx.toFloat()).coerceIn(0f, 1f)
+                                translationX = pos * segmentWidthPx
+                                if (!extended.reducedMotion) {
+                                    scaleX = 1f + (0.08f * travel)
+                                    scaleY = 1f - (0.04f * travel)
+                                }
                             }
-                            .testTag("syllabus_track_tab_${track.name.lowercase()}")
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = track.badgeKo,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.ExtraBold,
-                                    letterSpacing = 0.8.sp
-                                ),
-                                color = if (isSelected) tAccent else MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1
+                            .width(segmentWidth)
+                            .height(58.dp)
+                            .clip(TileChipShape)
+                            .background(activePillColor)
+                            .border(1.4.dp, activePillBorder, TileChipShape)
+                    )
+
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        tracks.forEach { track ->
+                            val isSelected = track == selectedTrack
+                            val tAccent = trackAccentColor(track)
+                            val tDone = BeginnerSyllabusCatalog.completionCount(completedLessonIds, track)
+                            val tTotal = BeginnerSyllabusCatalog.lessonsForTrack(track).size
+                            val tGrad = tDone >= tTotal
+                            val interaction = remember { MutableInteractionSource() }
+                            val badgeColor by animateColorAsState(
+                                targetValue = if (isSelected) tAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                                animationSpec = tween(if (extended.reducedMotion) 0 else 200),
+                                label = "track_badge_tint_${track.name}"
                             )
-                            Text(
-                                text = bText(track.shortLabelEn, track.shortLabelId),
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
-                                    fontSize = 11.sp
-                                ),
-                                color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                textAlign = TextAlign.Center
+                            val titleColor by animateColorAsState(
+                                targetValue = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                                animationSpec = tween(if (extended.reducedMotion) 0 else 200),
+                                label = "track_title_tint_${track.name}"
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = if (tGrad) "$tDone/$tTotal ✓" else "$tDone/$tTotal",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                color = if (tGrad) extended.mint else tAccent
-                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = 58.dp)
+                                    .tactilePressScale(interactionSource = interaction, pressedScale = 0.95f)
+                                    .clip(TileChipShape)
+                                    .tactileBindClick(interactionSource = interaction) {
+                                        selectedTrackName = track.name
+                                    }
+                                    .testTag("syllabus_track_tab_${track.name.lowercase()}")
+                                    .padding(horizontal = 6.dp, vertical = 7.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = track.badgeKo,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.ExtraBold,
+                                            letterSpacing = 0.8.sp
+                                        ),
+                                        color = badgeColor,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = bText(track.shortLabelEn, track.shortLabelId),
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                            fontSize = 11.sp
+                                        ),
+                                        color = titleColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = if (tGrad) "$tDone/$tTotal ✓" else "$tDone/$tTotal",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        color = if (tGrad) extended.mint else tAccent
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1423,23 +1487,33 @@ fun BeginnerLessonScreen(
                                     Spacer(modifier = Modifier.height(14.dp))
 
                                     // Answer Assembly Tray (tap placed tile to remove it)
+                                    val trayBgColor by animateColorAsState(
+                                        targetValue = if (buildSolved) extended.mint.copy(alpha = 0.14f) else extended.elevatedSurface.copy(alpha = 0.72f),
+                                        animationSpec = tween(if (extended.reducedMotion) 0 else 240),
+                                        label = "sentence_tray_bg"
+                                    )
+                                    val trayBorderColor by animateColorAsState(
+                                        targetValue = when {
+                                            buildSolved -> extended.mint
+                                            buildWrongFeedback -> extended.cherryPink
+                                            assembledTokens.isNotEmpty() -> trackAccent.copy(alpha = 0.55f)
+                                            else -> extended.glassHighlightBorder
+                                        },
+                                        animationSpec = tween(if (extended.reducedMotion) 0 else 220),
+                                        label = "sentence_tray_border"
+                                    )
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .defaultMinSize(minHeight = 76.dp)
-                                            .clip(LessonOptionShape)
-                                            .background(
-                                                if (buildSolved) extended.mint.copy(alpha = 0.14f)
-                                                else extended.elevatedSurface.copy(alpha = 0.72f)
+                                            .animateContentSize(
+                                                animationSpec = if (extended.reducedMotion) tween(0) else BaeumMotion.sizeSpring()
                                             )
+                                            .clip(LessonOptionShape)
+                                            .background(trayBgColor)
                                             .border(
                                                 width = 1.2.dp,
-                                                color = when {
-                                                    buildSolved -> extended.mint
-                                                    buildWrongFeedback -> extended.cherryPink
-                                                    assembledTokens.isNotEmpty() -> trackAccent.copy(alpha = 0.55f)
-                                                    else -> extended.glassHighlightBorder
-                                                },
+                                                color = trayBorderColor,
                                                 shape = LessonOptionShape
                                             )
                                             .padding(12.dp),
@@ -1462,20 +1536,45 @@ fun BeginnerLessonScreen(
                                             ) {
                                                 selectedTileIds.forEach { tileId ->
                                                     val token = shuffledBank.firstOrNull { it.first == tileId }?.second.orEmpty()
+                                                    val chipInteraction = remember(tileId) { MutableInteractionSource() }
+                                                    val popScale = remember(tileId) {
+                                                        Animatable(if (extended.reducedMotion) 1f else 0.78f)
+                                                    }
+                                                    LaunchedEffect(tileId) {
+                                                        if (!extended.reducedMotion) {
+                                                            popScale.animateTo(1f, BaeumMotion.playfulSpring())
+                                                        }
+                                                    }
+                                                    val chipBg by animateColorAsState(
+                                                        targetValue = if (buildSolved) extended.mint.copy(alpha = 0.24f) else trackAccent.copy(alpha = 0.20f),
+                                                        animationSpec = tween(if (extended.reducedMotion) 0 else 220),
+                                                        label = "placed_chip_bg_$tileId"
+                                                    )
+                                                    val chipBorder by animateColorAsState(
+                                                        targetValue = if (buildSolved) extended.mint else trackAccent,
+                                                        animationSpec = tween(if (extended.reducedMotion) 0 else 220),
+                                                        label = "placed_chip_border_$tileId"
+                                                    )
                                                     Box(
                                                         modifier = Modifier
                                                             .defaultMinSize(minHeight = 46.dp)
+                                                            .graphicsLayer {
+                                                                val s = popScale.value
+                                                                scaleX = s
+                                                                scaleY = s
+                                                            }
+                                                            .tactilePressScale(
+                                                                interactionSource = chipInteraction,
+                                                                enabled = !buildSolved,
+                                                                pressedScale = 0.92f
+                                                            )
                                                             .clip(TileChipShape)
-                                                            .background(
-                                                                if (buildSolved) extended.mint.copy(alpha = 0.24f)
-                                                                else trackAccent.copy(alpha = 0.20f)
-                                                            )
-                                                            .border(
-                                                                1.2.dp,
-                                                                if (buildSolved) extended.mint else trackAccent,
-                                                                TileChipShape
-                                                            )
-                                                            .tactileClickable(enabled = !buildSolved, pressedScale = 0.94f) {
+                                                            .background(chipBg)
+                                                            .border(1.2.dp, chipBorder, TileChipShape)
+                                                            .tactileBindClick(
+                                                                interactionSource = chipInteraction,
+                                                                enabled = !buildSolved
+                                                            ) {
                                                                 selectedTileIds.remove(tileId)
                                                                 buildWrongFeedback = false
                                                             }
@@ -1506,102 +1605,116 @@ fun BeginnerLessonScreen(
                                         }
                                     }
 
-                                    // Optional Hint Callout (always shown when toggled or after a wrong check)
-                                    if (buildHintVisible || buildWrongFeedback) {
-                                        Spacer(modifier = Modifier.height(10.dp))
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(LessonPillShape)
-                                                .background(
-                                                    if (buildWrongFeedback) extended.cherryPink.copy(alpha = 0.12f)
-                                                    else extended.gold.copy(alpha = 0.12f)
-                                                )
-                                                .border(
-                                                    1.dp,
-                                                    if (buildWrongFeedback) extended.cherryPink.copy(alpha = 0.42f)
-                                                    else extended.gold.copy(alpha = 0.36f),
-                                                    LessonPillShape
-                                                )
-                                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalAlignment = Alignment.Top
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Filled.Lightbulb,
-                                                contentDescription = null,
-                                                tint = if (buildWrongFeedback) extended.cherryPink else extended.gold,
+                                    // Optional Hint Callout (silky unfurl enter/exit)
+                                    AnimatedVisibility(
+                                        visible = buildHintVisible || buildWrongFeedback,
+                                        enter = BaeumMotion.silkExpandEnter(extended.reducedMotion),
+                                        exit = BaeumMotion.silkCollapseExit(extended.reducedMotion)
+                                    ) {
+                                        Column {
+                                            Spacer(modifier = Modifier.height(10.dp))
+                                            Row(
                                                 modifier = Modifier
-                                                    .padding(top = 1.dp)
-                                                    .size(16.dp)
-                                            )
-                                            Column {
-                                                if (buildWrongFeedback) {
+                                                    .fillMaxWidth()
+                                                    .clip(LessonPillShape)
+                                                    .background(
+                                                        if (buildWrongFeedback) extended.cherryPink.copy(alpha = 0.12f)
+                                                        else extended.gold.copy(alpha = 0.12f)
+                                                    )
+                                                    .border(
+                                                        1.dp,
+                                                        if (buildWrongFeedback) extended.cherryPink.copy(alpha = 0.42f)
+                                                        else extended.gold.copy(alpha = 0.36f),
+                                                        LessonPillShape
+                                                    )
+                                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalAlignment = Alignment.Top
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Lightbulb,
+                                                    contentDescription = null,
+                                                    tint = if (buildWrongFeedback) extended.cherryPink else extended.gold,
+                                                    modifier = Modifier
+                                                        .padding(top = 1.dp)
+                                                        .size(16.dp)
+                                                )
+                                                Column {
+                                                    if (buildWrongFeedback) {
+                                                        Text(
+                                                            text = bText(
+                                                                "Almost there! Tap any tile above to adjust the order.",
+                                                                "Hampir benar! Ketuk balok di atas untuk ubah urutannya."
+                                                            ),
+                                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                            color = extended.cherryPink
+                                                        )
+                                                    }
                                                     Text(
-                                                        text = bText(
-                                                            "Almost there! Tap any tile above to adjust the order.",
-                                                            "Hampir benar! Ketuk balok di atas untuk ubah urutannya."
-                                                        ),
-                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                        color = extended.cherryPink
+                                                        text = bText(exercise.hintEn, exercise.hintId),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurface
                                                     )
                                                 }
-                                                Text(
-                                                    text = bText(exercise.hintEn, exercise.hintId),
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
                                             }
                                         }
                                     }
 
-                                    // Solved Celebration Audio Bar
-                                    if (buildSolved) {
-                                        Spacer(modifier = Modifier.height(12.dp))
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(LessonPillShape)
-                                                .background(extended.mint.copy(alpha = 0.14f))
-                                                .border(1.dp, extended.mint.copy(alpha = 0.45f), LessonPillShape)
-                                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = bText("Perfect Korean! 🎉", "Kalimat Korea Tepat! 🎉"),
-                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
-                                                    color = extended.mint
-                                                )
-                                                Text(
-                                                    text = exercise.fullSentenceKo,
-                                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                                Text(
-                                                    text = exercise.romanization,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                            Box(
+                                    // Solved Celebration Audio Bar (silky unfurl)
+                                    AnimatedVisibility(
+                                        visible = buildSolved,
+                                        enter = BaeumMotion.silkExpandEnter(extended.reducedMotion),
+                                        exit = BaeumMotion.silkCollapseExit(extended.reducedMotion)
+                                    ) {
+                                        Column {
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            Row(
                                                 modifier = Modifier
-                                                    .size(48.dp)
-                                                    .clip(CircleShape)
-                                                    .background(extended.mint.copy(alpha = 0.20f))
-                                                    .border(1.dp, extended.mint.copy(alpha = 0.5f), CircleShape)
-                                                    .tactileClickable(pressedScale = 0.90f) {
-                                                        onSpeakKorean(exercise.fullSentenceKo)
-                                                    },
-                                                contentAlignment = Alignment.Center
+                                                    .fillMaxWidth()
+                                                    .clip(LessonPillShape)
+                                                    .background(extended.mint.copy(alpha = 0.14f))
+                                                    .border(1.dp, extended.mint.copy(alpha = 0.45f), LessonPillShape)
+                                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
-                                                Icon(
-                                                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                                                    contentDescription = bText("Hear sentence", "Dengar kalimat"),
-                                                    tint = extended.mint,
-                                                    modifier = Modifier.size(20.dp)
-                                                )
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = bText("Perfect Korean! 🎉", "Kalimat Korea Tepat! 🎉"),
+                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                                                        color = extended.mint
+                                                    )
+                                                    Text(
+                                                        text = exercise.fullSentenceKo,
+                                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    Text(
+                                                        text = exercise.romanization,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                                val audioInteraction = remember { MutableInteractionSource() }
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(48.dp)
+                                                        .tactilePressScale(interactionSource = audioInteraction, pressedScale = 0.88f)
+                                                        .clip(CircleShape)
+                                                        .background(extended.mint.copy(alpha = 0.20f))
+                                                        .border(1.dp, extended.mint.copy(alpha = 0.5f), CircleShape)
+                                                        .tactileBindClick(interactionSource = audioInteraction) {
+                                                            onSpeakKorean(exercise.fullSentenceKo)
+                                                        },
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                                        contentDescription = bText("Hear sentence", "Dengar kalimat"),
+                                                        tint = extended.mint,
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -1654,21 +1767,39 @@ fun BeginnerLessonScreen(
                                         ) {
                                             shuffledBank.forEach { (tileId, token) ->
                                                 val isUsed = tileId in selectedTileIds
+                                                val tileInteraction = remember(tileId) { MutableInteractionSource() }
+                                                val usedProgressState = animateFloatAsState(
+                                                    targetValue = if (isUsed) 1f else 0f,
+                                                    animationSpec = if (extended.reducedMotion) tween(0) else BaeumMotion.silkSpring(),
+                                                    label = "bank_tile_used_$tileId"
+                                                )
                                                 Box(
                                                     modifier = Modifier
                                                         .defaultMinSize(minWidth = 60.dp, minHeight = 50.dp)
-                                                        .clip(TileChipShape)
-                                                        .background(
-                                                            if (isUsed) extended.elevatedSurface.copy(alpha = 0.25f)
-                                                            else extended.elevatedSurface.copy(alpha = 0.85f)
+                                                        .graphicsLayer {
+                                                            val u = usedProgressState.value
+                                                            val s = 1f - (0.07f * u)
+                                                            scaleX = s
+                                                            scaleY = s
+                                                            alpha = 1f - (0.68f * u)
+                                                        }
+                                                        .tactilePressScale(
+                                                            interactionSource = tileInteraction,
+                                                            enabled = !isUsed,
+                                                            pressedScale = 0.92f
                                                         )
+                                                        .clip(TileChipShape)
+                                                        .background(extended.elevatedSurface.copy(alpha = 0.85f))
                                                         .border(
                                                             width = 1.2.dp,
                                                             color = if (isUsed) extended.glassHighlightBorder.copy(alpha = 0.35f)
                                                             else trackAccent.copy(alpha = 0.55f),
                                                             shape = TileChipShape
                                                         )
-                                                        .tactileClickable(enabled = !isUsed, pressedScale = 0.94f) {
+                                                        .tactileBindClick(
+                                                            interactionSource = tileInteraction,
+                                                            enabled = !isUsed
+                                                        ) {
                                                             selectedTileIds.add(tileId)
                                                             buildWrongFeedback = false
                                                         }
@@ -1679,8 +1810,7 @@ fun BeginnerLessonScreen(
                                                     Text(
                                                         text = token,
                                                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                                        color = if (isUsed) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.30f)
-                                                        else MaterialTheme.colorScheme.onSurface
+                                                        color = MaterialTheme.colorScheme.onSurface
                                                     )
                                                 }
                                             }
@@ -1828,25 +1958,42 @@ fun BeginnerLessonScreen(
                                     check.options.forEachIndexed { optIdx, option ->
                                         val isPicked = selectedOption == option
                                         val isTrueOpt = option == check.correctOption
-                                        val bgColor = when {
-                                            isAnswered && isTrueOpt -> extended.mint.copy(alpha = 0.18f)
-                                            isAnswered && isPicked && !isTrueOpt -> extended.cherryPink.copy(alpha = 0.16f)
-                                            else -> extended.elevatedSurface.copy(alpha = 0.65f)
-                                        }
-                                        val borderColor = when {
-                                            isAnswered && isTrueOpt -> extended.mint
-                                            isAnswered && isPicked && !isTrueOpt -> extended.cherryPink
-                                            else -> extended.glassHighlightBorder
-                                        }
+                                        val optInteraction = remember(checkIndex, optIdx) { MutableInteractionSource() }
+                                        val bgColor by animateColorAsState(
+                                            targetValue = when {
+                                                isAnswered && isTrueOpt -> extended.mint.copy(alpha = 0.18f)
+                                                isAnswered && isPicked && !isTrueOpt -> extended.cherryPink.copy(alpha = 0.16f)
+                                                else -> extended.elevatedSurface.copy(alpha = 0.65f)
+                                            },
+                                            animationSpec = tween(if (extended.reducedMotion) 0 else 220),
+                                            label = "check_opt_bg_$optIdx"
+                                        )
+                                        val borderColor by animateColorAsState(
+                                            targetValue = when {
+                                                isAnswered && isTrueOpt -> extended.mint
+                                                isAnswered && isPicked && !isTrueOpt -> extended.cherryPink
+                                                else -> extended.glassHighlightBorder
+                                            },
+                                            animationSpec = tween(if (extended.reducedMotion) 0 else 220),
+                                            label = "check_opt_border_$optIdx"
+                                        )
 
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .defaultMinSize(minHeight = 54.dp)
+                                                .tactilePressScale(
+                                                    interactionSource = optInteraction,
+                                                    enabled = !isAnswered,
+                                                    pressedScale = 0.968f
+                                                )
                                                 .clip(LessonOptionShape)
                                                 .background(bgColor)
                                                 .border(1.2.dp, borderColor, LessonOptionShape)
-                                                .tactileClickable(enabled = !isAnswered, pressedScale = 0.97f) {
+                                                .tactileBindClick(
+                                                    interactionSource = optInteraction,
+                                                    enabled = !isAnswered
+                                                ) {
                                                     selectedOption = option
                                                     val right = option == check.correctOption
                                                     if (right) {
@@ -1874,44 +2021,50 @@ fun BeginnerLessonScreen(
                                     }
                                 }
 
-                                if (isAnswered) {
-                                    SeoulCard(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        borderColor = (if (isCorrect) extended.mint else extended.gold).copy(alpha = 0.55f)
-                                    ) {
-                                        Text(
-                                            text = if (isCorrect) {
-                                                bText("Spot on! ✨", "Tepat sekali! ✨")
+                                AnimatedVisibility(
+                                    visible = isAnswered,
+                                    enter = BaeumMotion.silkExpandEnter(extended.reducedMotion),
+                                    exit = BaeumMotion.silkCollapseExit(extended.reducedMotion)
+                                ) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        SeoulCard(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            borderColor = (if (isCorrect) extended.mint else extended.gold).copy(alpha = 0.55f)
+                                        ) {
+                                            Text(
+                                                text = if (isCorrect) {
+                                                    bText("Spot on! ✨", "Tepat sekali! ✨")
+                                                } else {
+                                                    bText("Good try — here's the trick:", "Bagus sudah mencoba — ini rahasianya:")
+                                                },
+                                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold),
+                                                color = if (isCorrect) extended.mint else extended.gold
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = bText(check.explanationEn, check.explanationId),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+
+                                        BaeumPrimaryButton(
+                                            text = if (checkIndex + 1 < lesson.miniChecks.size) {
+                                                bText("Next Question →", "Soal Berikutnya →")
                                             } else {
-                                                bText("Good try — here's the trick:", "Bagus sudah mencoba — ini rahasianya:")
+                                                bText("Complete Lesson ${lesson.number} 🎉", "Selesaikan Pelajaran ${lesson.number} 🎉")
                                             },
-                                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold),
-                                            color = if (isCorrect) extended.mint else extended.gold
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = bText(check.explanationEn, check.explanationId),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            onClick = {
+                                                if (checkIndex + 1 < lesson.miniChecks.size) {
+                                                    checkIndex += 1
+                                                    selectedOption = null
+                                                } else {
+                                                    phase = BeginnerLessonPhase.COMPLETE
+                                                }
+                                            },
+                                            testTag = "beginner_check_next_btn"
                                         )
                                     }
-
-                                    BaeumPrimaryButton(
-                                        text = if (checkIndex + 1 < lesson.miniChecks.size) {
-                                            bText("Next Question →", "Soal Berikutnya →")
-                                        } else {
-                                            bText("Complete Lesson ${lesson.number} 🎉", "Selesaikan Pelajaran ${lesson.number} 🎉")
-                                        },
-                                        onClick = {
-                                            if (checkIndex + 1 < lesson.miniChecks.size) {
-                                                checkIndex += 1
-                                                selectedOption = null
-                                            } else {
-                                                phase = BeginnerLessonPhase.COMPLETE
-                                            }
-                                        },
-                                        testTag = "beginner_check_next_btn"
-                                    )
                                 }
                             }
                         }
@@ -1928,6 +2081,11 @@ fun BeginnerLessonScreen(
 
                             val earnedXpDisplay = (if (!isAlreadyCompleted) lesson.xpReward else 0) +
                                 (if (earnedPerfect && !isAlreadyPerfect) BeginnerSyllabusCatalog.PERFECT_STAR_BONUS_XP else 0)
+                            val animEarnedXp by rememberAnimatedInt(
+                                targetValue = earnedXpDisplay,
+                                durationMs = 680,
+                                label = "lesson_complete_xp"
+                            )
 
                             Column(
                                 verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -1952,15 +2110,31 @@ fun BeginnerLessonScreen(
                                             modifier = Modifier.size(34.dp)
                                         )
                                         Spacer(modifier = Modifier.height(8.dp))
-                                        // 3-Star Gold Mastery Seal Display
-                                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        // Sequential Elastic 3-Star Gold Mastery Seal Reveal (★ → ★★ → ★★★)
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                             repeat(3) { starIdx ->
                                                 val filled = earnedPerfect || starIdx < 2
+                                                val starScale = remember(lesson.id, starIdx) {
+                                                    Animatable(if (extended.reducedMotion) 1f else 0f)
+                                                }
+                                                LaunchedEffect(lesson.id, starIdx) {
+                                                    if (!extended.reducedMotion) {
+                                                        delay(120L + starIdx * 150L)
+                                                        starScale.animateTo(1f, BaeumMotion.playfulSpring())
+                                                    }
+                                                }
                                                 Icon(
                                                     imageVector = if (filled) Icons.Filled.Star else Icons.Outlined.StarBorder,
                                                     contentDescription = null,
                                                     tint = if (filled) extended.gold else MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    modifier = Modifier.size(32.dp)
+                                                    modifier = Modifier
+                                                        .size(34.dp)
+                                                        .graphicsLayer {
+                                                            val s = starScale.value
+                                                            scaleX = s
+                                                            scaleY = s
+                                                            rotationZ = (1f - s) * -22f
+                                                        }
                                                 )
                                             }
                                         }
@@ -1989,8 +2163,8 @@ fun BeginnerLessonScreen(
                                         Text(
                                             text = when {
                                                 earnedXpDisplay > 0 -> bText(
-                                                    "+$earnedXpDisplay Atelier XP earned!",
-                                                    "+$earnedXpDisplay XP Atelier diraih!"
+                                                    "+$animEarnedXp Atelier XP earned!",
+                                                    "+$animEarnedXp XP Atelier diraih!"
                                                 )
                                                 earnedPerfect -> bText(
                                                     "Gold ★★★ mastery verified — flawless Korean!",
@@ -2066,11 +2240,27 @@ private fun PhaseStepLabel(
     active: Boolean,
     accent: Color
 ) {
+    val extended = LocalBaeumColors.current
+    val labelColor by animateColorAsState(
+        targetValue = if (active) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(if (extended.reducedMotion) 0 else 220),
+        label = "phase_step_color"
+    )
+    val scaleState = animateFloatAsState(
+        targetValue = if (active) 1.05f else 1f,
+        animationSpec = if (extended.reducedMotion) tween(0) else BaeumMotion.silkSpring(),
+        label = "phase_step_scale"
+    )
     Text(
         text = text,
         style = MaterialTheme.typography.labelSmall.copy(
             fontWeight = if (active) FontWeight.ExtraBold else FontWeight.Medium
         ),
-        color = if (active) accent else MaterialTheme.colorScheme.onSurfaceVariant
+        color = labelColor,
+        modifier = Modifier.graphicsLayer {
+            val s = scaleState.value
+            scaleX = s
+            scaleY = s
+        }
     )
 }

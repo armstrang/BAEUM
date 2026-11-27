@@ -1,6 +1,7 @@
 package com.example.ui.navigation
 
 import android.net.Uri
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -13,6 +14,8 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import kotlin.math.abs
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -203,6 +206,8 @@ private val topLevelTabs = listOf(
     TopLevelTab(BaeumRoutes.PROGRESS, "progress", "Progress", "Progres", Icons.Filled.BarChart, Icons.Outlined.BarChart)
 )
 
+private enum class AppRootStage { SPLASH, ONBOARDING, MAIN }
+
 @Composable
 fun BaeumAppRoot(
     viewModel: BaeumViewModel,
@@ -213,36 +218,59 @@ fun BaeumAppRoot(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val extended = LocalBaeumColors.current
 
+    val rootStage = when {
+        !isInitialized -> AppRootStage.SPLASH
+        !settings.onboardingCompleted -> AppRootStage.ONBOARDING
+        else -> AppRootStage.MAIN
+    }
+
     CompositionLocalProvider(LocalBaeumLang provides settings.translationLanguage) {
-        if (!isInitialized) {
-            SeoulAmbientBackdrop {
-                SplashScreen(
-                    initError = initError,
-                    onRetry = { viewModel.initializeApp() }
-                )
-            }
-            return@CompositionLocalProvider
-        }
-
-        if (!settings.onboardingCompleted) {
-            SeoulAmbientBackdrop {
-                OnboardingScreen(
-                    currentLang = settings.translationLanguage,
-                    onSelectLang = { viewModel.setTranslationLanguage(it) },
-                    onFinish = { goal, level, daily ->
-                        viewModel.completeOnboarding(goal, level, daily)
+        AnimatedContent(
+            targetState = rootStage,
+            transitionSpec = {
+                if (extended.reducedMotion) {
+                    fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                } else {
+                    (fadeIn(tween(420, easing = BaeumMotion.SilkEasing)) +
+                        scaleIn(initialScale = 0.96f, animationSpec = tween(440, easing = BaeumMotion.SilkEasing)))
+                        .togetherWith(
+                            fadeOut(tween(260, easing = BaeumMotion.VelvetEasing)) +
+                                scaleOut(targetScale = 1.03f, animationSpec = tween(280, easing = BaeumMotion.SilkEasing))
+                        )
+                }
+            },
+            label = "baeum_app_root_stage"
+        ) { stage ->
+            when (stage) {
+                AppRootStage.SPLASH -> {
+                    SeoulAmbientBackdrop {
+                        SplashScreen(
+                            initError = initError,
+                            onRetry = { viewModel.initializeApp() }
+                        )
                     }
-                )
+                }
+                AppRootStage.ONBOARDING -> {
+                    SeoulAmbientBackdrop {
+                        OnboardingScreen(
+                            currentLang = settings.translationLanguage,
+                            onSelectLang = { viewModel.setTranslationLanguage(it) },
+                            onFinish = { goal, level, daily ->
+                                viewModel.completeOnboarding(goal, level, daily)
+                            }
+                        )
+                    }
+                }
+                AppRootStage.MAIN -> {
+                    BaeumMainShell(
+                        viewModel = viewModel,
+                        flashcardViewModel = flashcardViewModel,
+                        settings = settings,
+                        extended = extended
+                    )
+                }
             }
-            return@CompositionLocalProvider
         }
-
-        BaeumMainShell(
-            viewModel = viewModel,
-            flashcardViewModel = flashcardViewModel,
-            settings = settings,
-            extended = extended
-        )
     }
 }
 
@@ -273,8 +301,6 @@ private fun BaeumMainShell(
         }
     }
 
-    val transitionMs = if (extended.reducedMotion) 0 else 340
-    val tabTransitionMs = if (extended.reducedMotion) 0 else 260
     val tabIndexByRoute = remember { topLevelTabs.mapIndexed { idx, tab -> tab.route to idx }.toMap() }
 
     SeoulAmbientBackdrop {
@@ -293,65 +319,49 @@ private fun BaeumMainShell(
                             val fromIdx = tabIndexByRoute[initialState.destination.route]
                             val toIdx = tabIndexByRoute[targetState.destination.route]
                             if (fromIdx != null && toIdx != null) {
-                                val dir = if (toIdx >= fromIdx) 1 else -1
-                                slideInHorizontally(
-                                    initialOffsetX = { (it * 0.08f * dir).toInt() },
-                                    animationSpec = tween(tabTransitionMs, easing = BaeumMotion.SilkEasing)
-                                ) + fadeIn(tween(tabTransitionMs, easing = BaeumMotion.SilkEasing)) +
-                                    scaleIn(
-                                        initialScale = 0.986f,
-                                        animationSpec = tween(tabTransitionMs, easing = BaeumMotion.SilkEasing)
-                                    )
+                                BaeumMotion.tabEnter(
+                                    forward = toIdx >= fromIdx,
+                                    reducedMotion = extended.reducedMotion
+                                )
                             } else {
-                                slideInHorizontally(
-                                    initialOffsetX = { (it * 0.14f).toInt() },
-                                    animationSpec = tween(transitionMs, easing = BaeumMotion.SilkEasing)
-                                ) + fadeIn(tween(transitionMs, easing = BaeumMotion.SilkEasing)) +
-                                    scaleIn(
-                                        initialScale = 0.97f,
-                                        animationSpec = tween(transitionMs, easing = BaeumMotion.SilkEasing)
-                                    )
+                                BaeumMotion.routePushEnter(extended.reducedMotion)
                             }
                         },
                         exitTransition = {
                             val fromIdx = tabIndexByRoute[initialState.destination.route]
                             val toIdx = tabIndexByRoute[targetState.destination.route]
                             if (fromIdx != null && toIdx != null) {
-                                val dir = if (toIdx >= fromIdx) -1 else 1
-                                slideOutHorizontally(
-                                    targetOffsetX = { (it * 0.06f * dir).toInt() },
-                                    animationSpec = tween((tabTransitionMs * 0.85f).toInt(), easing = BaeumMotion.SilkEasing)
-                                ) + fadeOut(tween((tabTransitionMs * 0.65f).toInt()))
+                                BaeumMotion.tabExit(
+                                    forward = toIdx >= fromIdx,
+                                    reducedMotion = extended.reducedMotion
+                                )
                             } else {
-                                slideOutHorizontally(
-                                    targetOffsetX = { -(it * 0.08f).toInt() },
-                                    animationSpec = tween(transitionMs, easing = BaeumMotion.SilkEasing)
-                                ) + fadeOut(tween((transitionMs * 0.72f).toInt())) +
-                                    scaleOut(
-                                        targetScale = 0.96f,
-                                        animationSpec = tween(transitionMs, easing = BaeumMotion.SilkEasing)
-                                    )
+                                BaeumMotion.routePushExit(extended.reducedMotion)
                             }
                         },
                         popEnterTransition = {
-                            slideInHorizontally(
-                                initialOffsetX = { -(it * 0.10f).toInt() },
-                                animationSpec = tween(transitionMs, easing = BaeumMotion.SilkEasing)
-                            ) + fadeIn(tween(transitionMs, easing = BaeumMotion.SilkEasing)) +
-                                scaleIn(
-                                    initialScale = 0.97f,
-                                    animationSpec = tween(transitionMs, easing = BaeumMotion.SilkEasing)
+                            val fromIdx = tabIndexByRoute[initialState.destination.route]
+                            val toIdx = tabIndexByRoute[targetState.destination.route]
+                            if (fromIdx != null && toIdx != null) {
+                                BaeumMotion.tabEnter(
+                                    forward = toIdx >= fromIdx,
+                                    reducedMotion = extended.reducedMotion
                                 )
+                            } else {
+                                BaeumMotion.routePopEnter(extended.reducedMotion)
+                            }
                         },
                         popExitTransition = {
-                            slideOutHorizontally(
-                                targetOffsetX = { (it * 0.16f).toInt() },
-                                animationSpec = tween(transitionMs, easing = BaeumMotion.SilkEasing)
-                            ) + fadeOut(tween((transitionMs * 0.72f).toInt())) +
-                                scaleOut(
-                                    targetScale = 0.96f,
-                                    animationSpec = tween(transitionMs, easing = BaeumMotion.SilkEasing)
+                            val fromIdx = tabIndexByRoute[initialState.destination.route]
+                            val toIdx = tabIndexByRoute[targetState.destination.route]
+                            if (fromIdx != null && toIdx != null) {
+                                BaeumMotion.tabExit(
+                                    forward = toIdx >= fromIdx,
+                                    reducedMotion = extended.reducedMotion
                                 )
+                            } else {
+                                BaeumMotion.routePopExit(extended.reducedMotion)
+                            }
                         }
                     ) {
                         composable(BaeumRoutes.HOME) {
@@ -1187,11 +1197,17 @@ private fun SeoulFloatingGlassDock(
                     label = "dock_liquid_pill_offset"
                 )
 
-                // Gliding active indicator pill (draw-phase translationX for zero relayout)
+                // Gliding active indicator pill with travel-reactive liquid stretch (zero relayout)
                 Box(
                     modifier = Modifier
                         .graphicsLayer {
-                            translationX = indicatorIndexState.value * tabWidthPx
+                            val currentPos = indicatorIndexState.value
+                            val travel = abs(currentPos - selectedIndex.toFloat()).coerceIn(0f, 1f)
+                            translationX = currentPos * tabWidthPx
+                            if (!extended.reducedMotion) {
+                                scaleX = 1f + (0.14f * travel)
+                                scaleY = 1f - (0.06f * travel)
+                            }
                         }
                         .width(tabWidth)
                         .height(54.dp)

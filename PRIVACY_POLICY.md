@@ -1,7 +1,7 @@
 # Kebijakan Privasi · Privacy Policy — BAEUM (배움)
 
 **Berlaku sejak / Effective Date:** 2026-11-27  
-**Aplikasi / Application:** BAEUM (`com.aistudio.baeum.krnxqv`)
+**Aplikasi / Application:** BAEUM (`com.armstrang.baeum`)
 
 ---
 

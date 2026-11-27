@@ -134,14 +134,13 @@ jobs:
           - **Unit Tests**: \`:app:testDebugUnitTest\` ✓
           - **SHA-256**: \`${SHA256}\`
 
-          ### Sorotan Fitur \`${TAG_NAME}\`
-          - **3 Jalur Silabus Terpandu (30 Pelajaran · 60 Susun Kalimat · 8 Bos Tahap)**:
-            - **Pemula Nol → Susun Kalimat (12 Pelajaran)**: Hangul dari nol, *Batchim*, *Liaison*, Sapaan, menyusun kalimat S-O-P, partikel inti, angka, kafe & rumus \`~아요/~어요\`.
-            - **TOPIK I · 1–2급 (10 Pelajaran)**: Kala lampau/depan, negasi \`안/못\`, keinginan/harus, penghubung, jam \`부터~까지\`, arah, perbandingan, **Kata Kerja Tidak Beraturan (\`ㅂ/ㄷ/르/으/ㄹ\`)**, **Modifier Kata Benda (\`~(으)ㄴ/~는/~(으)ㄹ\`)**, serta strategi ujian TOPIK I.
-            - **TOPIK II · 3–6급 (8 Pelajaran)**: Sebab formal, pengalaman, kutipan tidak langsung, kontras/pasif, gaya tulis *Haerache* (\`~는다/ㄴ다/다\`), dan Menulis #51–54.
-          - **Auto-Fade Romanisasi**, **Mode Dengar & Susun (*Listening-First*)**, **Brankas Balas Dendam Kesalahan**, **Sinkronisasi FSRS Otomatis**, & **8 Bos Tahap (60–90d)**.
-          - **Backup & Restore JSON Penuh**: Kini ikut mencadangkan dan memulihkan XP, progres 30 pelajaran silabus, stempel emas \`★★★\`, Bos Tahap, Brankas Kesalahan, dan Stempel Dojang!
-          - **Badge Versi di Pengaturan + Kesiapan Play Store** (aturan R8/ProGuard, dukungan build \`.aab\`, dan \`PRIVACY_POLICY.md\`).
+          ### Sorotan Fitur \`${TAG_NAME}\` (\`com.armstrang.baeum\`)
+          - **Siap Play Store Closed Testing**: Package ID resmi **\`com.armstrang.baeum\`** + signed Android App Bundle (**\`BAEUM-${TAG_NAME}-playstore.aab\`**) siap langsung diunggah ke Google Play Console.
+          - **120fps Seoul Atelier Motion Engine**:
+            - Unified physical spring press di seluruh kartu kaca, tombol utama/sekunder, dan ikon navigasi.
+            - Transisi layar *parallax depth push/pop*, *root crossfade* mulus (*Splash → Onboarding → Beranda*), dan *liquid-morphing capsule* pada *Floating Dock* & *3-Track Ribbon*.
+            - Animasi *Sentence Builder* elastis (*spring chip pop-in*, *tray resize*, *silk unfurl* petunjuk & selebrasi), bintang emas \`★★★\` berurutan, *Stage Boss* timer pulse, & *living silk aurora backdrop*.
+          - **3 Jalur Silabus Terpandu (30 Pelajaran · 60 Susun Kalimat · 8 Bos Tahap)** + **Auto-Fade Romanisasi** + **Listening-First** + **Brankas Kesalahan** + **Backup & Restore JSON Penuh**.
           EOF
 
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
@@ -159,43 +158,85 @@ jobs:
           fi
 
       - name: Prepare release keystore
-        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.build_type == 'release' || inputs.build_type == 'aab') }}
+        id: keystore
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.build_type == 'release' || inputs.build_type == 'aab')) }}
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "Error: KEYSTORE_BASE64 secret is missing. Add KEYSTORE_BASE64, STORE_PASSWORD, and KEY_PASSWORD in GitHub Repo Settings -> Secrets and variables -> Actions."
-            exit 1
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              echo "Error: KEYSTORE_BASE64 secret is missing."
+              exit 1
+            fi
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Release keystore secret not configured; skipping signed AAB build."
+            exit 0
           fi
           echo "$KEYSTORE_BASE64" | base64 --decode > my-upload-key.jks
+          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Build Release APK
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release' }}
+        if: ${{ steps.keystore.outputs.ready == 'true' && github.event_name == 'workflow_dispatch' && inputs.build_type == 'release' }}
         env:
           KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: gradle :app:assembleRelease --no-daemon
 
-      - name: Build Play Store Android App Bundle (.aab)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'aab' }}
+      - name: Build & Verify Play Store Android App Bundle (.aab)
+        if: ${{ steps.keystore.outputs.ready == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.build_type == 'aab')) }}
         env:
           KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle :app:bundleRelease --no-daemon
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+        run: |
+          set -euo pipefail
+          gradle :app:bundleRelease --no-daemon
+          AAB_SRC=$(ls app/build/outputs/bundle/release/*.aab | head -n 1)
+          AAB_OUT="BAEUM-v${VERSION_NAME}-playstore.aab"
+          cp "$AAB_SRC" "$AAB_OUT"
+          jarsigner -verify -certs "$AAB_OUT"
+          echo "Verified signed Play Store AAB: $AAB_OUT ($(du -h "$AAB_OUT" | awk '{print $1}'))"
 
       - name: Upload Play Store AAB Artifact
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'aab' }}
+        if: ${{ steps.keystore.outputs.ready == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.build_type == 'aab')) }}
         uses: actions/upload-artifact@v4
         with:
           name: baeum-${{ steps.version.outputs.version_name }}-playstore-aab
-          path: app/build/outputs/bundle/release/*.aab
+          path: BAEUM-v${{ steps.version.outputs.version_name }}-playstore.aab
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
+
+      - name: Publish Signed Play Store AAB to GitHub Releases
+        if: ${{ steps.keystore.outputs.ready == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.build_type == 'aab')) }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_SHA: ${{ github.sha }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          TAG_NAME: ${{ steps.version.outputs.tag_name }}
+          IS_PRERELEASE: ${{ steps.version.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+          AAB_OUT="BAEUM-v${VERSION_NAME}-playstore.aab"
+          SIZE_MB=$(du -h "$AAB_OUT" | awk '{print $1}')
+          PRERELEASE_FLAG="--prerelease"
+          RELEASE_LABEL="Pre-Release Beta"
+          if [ "$IS_PRERELEASE" != "true" ]; then
+            PRERELEASE_FLAG="--latest"
+            RELEASE_LABEL="Stable Release"
+          fi
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "${AAB_OUT}#BAEUM ${TAG_NAME} Play Store AAB (${SIZE_MB})" --clobber
+          else
+            gh release create "$TAG_NAME" "${AAB_OUT}#BAEUM ${TAG_NAME} Play Store AAB (${SIZE_MB})" \
+              --target "$TARGET_SHA" \
+              --title "BAEUM ${TAG_NAME} (${RELEASE_LABEL})" \
+              $PRERELEASE_FLAG
+          fi
 
       - name: Upload Release APK Artifact
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release' }}
+        if: ${{ steps.keystore.outputs.ready == 'true' && github.event_name == 'workflow_dispatch' && inputs.build_type == 'release' }}
         uses: actions/upload-artifact@v4
         with:
           name: baeum-${{ steps.version.outputs.version_name }}-release-apk
@@ -204,7 +245,7 @@ jobs:
           retention-days: 30
 
       - name: Publish Versioned Release APK to GitHub Releases
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release' }}
+        if: ${{ steps.keystore.outputs.ready == 'true' && github.event_name == 'workflow_dispatch' && inputs.build_type == 'release' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ github.sha }}
@@ -231,3 +272,7 @@ jobs:
               --title "BAEUM ${TAG_NAME} (${RELEASE_LABEL})" \
               $PRERELEASE_FLAG
           fi
+
+      - name: Clean up temporary release keystore
+        if: always()
+        run: rm -f my-upload-key.jks

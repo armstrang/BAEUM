@@ -4,12 +4,12 @@
 
 **Atelier Belajar Bahasa Korea Modern — Dari Nol Hangul Hingga TOPIK II & EPS-TOPIK**
 
-[![Version](https://img.shields.io/badge/version-v0.1--beta--2-a99bff?style=for-the-badge)](https://github.com/armstrang/BAEUM/releases)
-[![Android](https://img.shields.io/badge/Android-7.0%2B%20(API%2024--36)-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/armstrang/BAEUM/releases)
+[![Version](https://img.shields.io/badge/version-v0.1--beta--3-a99bff?style=for-the-badge)](https://github.com/armstrang/BAEUM/releases)
+[![Package](https://img.shields.io/badge/id-com.armstrang.baeum-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/armstrang/BAEUM/releases)
 [![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose%20M3-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Build Android APK](https://github.com/armstrang/BAEUM/actions/workflows/build-apk.yml/badge.svg)](https://github.com/armstrang/BAEUM/actions/workflows/build-apk.yml)
 
-[📥 Unduh APK Beta Terbaru (`v0.1-beta-2`)](https://github.com/armstrang/BAEUM/releases/tag/v0.1-beta-2) · [🗺️ Kurikulum 3 Jalur](#-3-jalur-silabus-terpandu) · [📝 Simulasi TOPIK](#-simulasi-ujian-topik--eps-topik-autentik) · [🔒 Kebijakan Privasi](PRIVACY_POLICY.md)
+[📥 Unduh APK / AAB Beta (`v0.1-beta-3`)](https://github.com/armstrang/BAEUM/releases/tag/v0.1-beta-3) · [🗺️ Kurikulum 3 Jalur](#-3-jalur-silabus-terpandu) · [📝 Simulasi TOPIK](#-simulasi-ujian-topik--eps-topik-autentik) · [🔒 Kebijakan Privasi](PRIVACY_POLICY.md)
 
 </div>
 
@@ -64,11 +64,10 @@ Dirancang menyerupai psikologi dan format ujian resmi NIIED:
 
 ---
 
-## 📥 Cara Instalasi (Android Pre-Release Beta)
+## 📥 Cara Instalasi & Play Store Closed Testing
 
-1. Buka halaman [**GitHub Releases**](https://github.com/armstrang/BAEUM/releases).
-2. Unduh file **`BAEUM-v0.1-beta-2-debug.apk`** pada bagian **Assets** rilis terbaru.
-3. Pasang di perangkat Android (**Android 7.0 / API 24 ke atas** — izinkan *"Install unknown apps"* jika diminta).
+- **Instalasi Langsung di Android (APK)**: Buka [**GitHub Releases**](https://github.com/armstrang/BAEUM/releases) → unduh **`BAEUM-v0.1-beta-3-debug.apk`** (Android 7.0 / API 24+).
+- **Google Play Console (Closed Testing `.aab`)**: Unduh **`BAEUM-v0.1-beta-3-playstore.aab`** (Application ID: **`com.armstrang.baeum`**, sudah ditandatangani dengan *upload keystore* resmi) lalu unggah langsung ke track *Closed Testing* Google Play Console.
 
 ---
 
@@ -79,9 +78,10 @@ BAEUM menggunakan skema **Semantic Versioning Pre-Release** hingga siap rilis pu
 | Versi | Tahap | Fokus Pengembangan |
 | :--- | :--- | :--- |
 | **`0.1-beta-1`** | Beta Awal | 3 Jalur Silabus (30 pelajaran, 60 Susun Kalimat, 8 Bos Tahap), Auto-Fade Romanisasi, *Listening-First*, Brankas Kesalahan, FSRS Sync, Simulasi TOPIK penilaian akhir, Fix Status Bar & Tema Daily Goal |
-| **`0.1-beta-2`** *(saat ini)* | Iterasi Beta 0.1 | Backup & Restore JSON penuh (XP, 30 pelajaran silabus, `★★★`, Bos Tahap, Brankas Kesalahan), badge versi di Pengaturan, aturan R8/ProGuard, dukungan CI `.aab` Play Store, & [`PRIVACY_POLICY.md`](PRIVACY_POLICY.md) |
-| **`0.2-beta-1`** | Beta Major Berikutnya | Paket latihan *Listening* panjang TOPIK II, analitik kelemahan tata bahasa mendalam, & polesan dari hasil uji coba perangkat nyata |
-| **`1.0.0`** | Rilis Final Play Store | Signed Android App Bundle (`.aab`), *R8 shrinking*, audit aksesibilitas & rilis resmi Google Play Store |
+| **`0.1-beta-2`** | Iterasi Beta 0.1 | Backup & Restore JSON penuh (XP, 30 pelajaran silabus, `★★★`, Bos Tahap, Brankas Kesalahan), badge versi di Pengaturan, aturan R8/ProGuard, dukungan CI `.aab` Play Store, & [`PRIVACY_POLICY.md`](PRIVACY_POLICY.md) |
+| **`0.1-beta-3`** *(saat ini)* | Closed Testing Play Store | Migrasi signature & `applicationId` ke **`com.armstrang.baeum`**, signed **`.aab`** siap Play Console Closed Testing, serta rombakan total **120fps Seoul Atelier Motion Engine** (unified physical spring press, parallax route transitions, liquid-morphing dock & track capsule, elastic chip & 3-star reveal, living aurora drift) |
+| **`0.2-beta-1`** | Beta Major Berikutnya | Paket latihan *Listening* panjang TOPIK II, analitik kelemahan tata bahasa mendalam, & polesan dari masukan tester *Closed Testing* |
+| **`1.0.0`** | Rilis Final Play Store | Rilis publik resmi di Google Play Store (`com.armstrang.baeum`) |
 
 ---
 
