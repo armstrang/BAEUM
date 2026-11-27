@@ -870,17 +870,6 @@ class BaeumViewModel(
         updateExamOpenResponse(questionId, formatted)
     }
 
-    fun toggleExamPracticeCheck(questionId: String) {
-        _activeExam.update { session ->
-            if (session == null || session.isSubmitted || session.mode != ExamSessionMode.PRACTICE) session
-            else {
-                val next = session.practiceCheckedIds.toMutableSet()
-                if (!next.add(questionId)) next.remove(questionId)
-                session.copy(practiceCheckedIds = next)
-            }
-        }
-    }
-
     fun toggleExamFlag(questionId: String) {
         _activeExam.update { session ->
             if (session == null || session.isSubmitted) session

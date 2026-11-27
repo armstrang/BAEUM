@@ -600,8 +600,8 @@ private fun ExamBriefingDialog(
                         }
                         Text(
                             bText(
-                                "• 100% pure Korean test paper — transcripts, translations, and model answers unlock after submission.",
-                                "• Naskah soal 100% bahasa Korea — transkrip, pembahasan, dan contoh jawaban terbuka setelah dikumpulkan."
+                                "• End-of-exam grading only — zero right/wrong alerts during the test so you stay calm and focused. Your score, correct answers, listening scripts, and full explanations appear right after submitting.",
+                                "• Penilaian hanya di akhir ujian — tidak ada notifikasi benar/salah di tengah soal agar fokus & mental tetap tenang. Skor, kunci koreksi yang benar, transkrip, dan pembahasan lengkap langsung tampil setelah Anda mengumpulkan."
                             ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface
@@ -648,7 +648,6 @@ fun ActiveExamScreen(
     onToggleEliminateOption: (String, Int) -> Unit,
     onOpenResponseChange: (String, String) -> Unit,
     onDualBlankResponseChange: (String, String, String) -> Unit,
-    onTogglePracticeCheck: (String) -> Unit,
     onToggleFlag: (String) -> Unit,
     onJumpToQuestion: (Int) -> Unit,
     onEnterPeriodTransition: () -> Unit,
@@ -679,7 +678,6 @@ fun ActiveExamScreen(
     var showSubmitDialog by remember { mutableStateOf(false) }
     var showLeaveDialog by remember { mutableStateOf(false) }
     var showOmrSheet by remember { mutableStateOf(false) }
-    var showPracticeScript by remember(session.currentQuestion?.id) { mutableStateOf(false) }
     var hasTriggeredAutoSubmit by remember(session.startedAtEpochMs) { mutableStateOf(false) }
 
     // Speaking per-task phase timer state (Prep -> Speak)
@@ -727,7 +725,6 @@ fun ActiveExamScreen(
 
     val extended = LocalBaeumColors.current
     val isId = isIndonesian()
-    val lang = LocalBaeumLang.current
     val isMock = session.mode == ExamSessionMode.MOCK
 
     // TOPIK II Period 1 -> Period 2 Intermission Overlay
@@ -852,7 +849,6 @@ fun ActiveExamScreen(
         session.mode.localizedLabel()
     }
 
-    val isPracticeChecked = !isMock && q.id in session.practiceCheckedIds
     val isTtsSpeakingThis = ttsStatus is TtsStatus.Speaking && ttsStatus.text == q.audioTranscriptKo
     val remainingAudio = session.remainingAudioPlays(q)
 
@@ -1076,67 +1072,23 @@ fun ActiveExamScreen(
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        val canPlay = session.canPlayAudio(q)
-                        BaeumSecondaryButton(
-                            text = when {
-                                isTtsSpeakingThis -> bText("Stop Audio", "Hentikan Audio")
-                                !canPlay -> bText("Playback Completed (Mock Rule)", "Pemutaran Selesai (Aturan Ujian)")
-                                else -> bText(
-                                    "Play Audio (${if (isMock) "${q.maxAudioPlaysInMock}× max" else "ko-KR"})",
-                                    "Putar Audio (${if (isMock) "maks ${q.maxAudioPlaysInMock}×" else "ko-KR"})"
-                                )
-                            },
-                            enabled = isTtsSpeakingThis || canPlay,
-                            onClick = {
-                                if (isTtsSpeakingThis) onStopExamAudio() else onPlayExamAudio(q.id)
-                            },
-                            modifier = Modifier.weight(1f),
-                            testTag = "exam_play_audio"
-                        )
-                        if (!isMock) {
-                            Surface(
-                                modifier = Modifier
-                                    .defaultMinSize(minHeight = 52.dp)
-                                    .clip(RoundedCornerShape(18.dp))
-                                    .clickable { showPracticeScript = !showPracticeScript },
-                                shape = RoundedCornerShape(18.dp),
-                                color = extended.elevatedSurface,
-                                border = BorderStroke(1.dp, extended.cardBorder)
-                            ) {
-                                Box(
-                                    modifier = Modifier.padding(horizontal = 14.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = if (showPracticeScript) bText("Hide Script", "Tutup Teks") else bText("Script", "Transkrip"),
-                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    if (!isMock && showPracticeScript) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            color = extended.elevatedSurface.copy(alpha = 0.7f),
-                            border = BorderStroke(1.dp, extended.cardBorder)
-                        ) {
-                            Text(
-                                text = q.audioTranscriptKo,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(12.dp)
+                    val canPlay = session.canPlayAudio(q)
+                    BaeumSecondaryButton(
+                        text = when {
+                            isTtsSpeakingThis -> bText("Stop Audio", "Hentikan Audio")
+                            !canPlay -> bText("Playback Completed (Mock Rule)", "Pemutaran Selesai (Aturan Ujian)")
+                            else -> bText(
+                                "Play Audio (${if (isMock) "${q.maxAudioPlaysInMock}× max" else "ko-KR"})",
+                                "Putar Audio (${if (isMock) "maks ${q.maxAudioPlaysInMock}×" else "ko-KR"})"
                             )
-                        }
-                    }
+                        },
+                        enabled = isTtsSpeakingThis || canPlay,
+                        onClick = {
+                            if (isTtsSpeakingThis) onStopExamAudio() else onPlayExamAudio(q.id)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        testTag = "exam_play_audio"
+                    )
                 }
             }
 
@@ -1411,37 +1363,25 @@ fun ActiveExamScreen(
                 }
             } else {
                 // Authentic TOPIK Multiple-Choice Options: Circled ① ② ③ ④ + Strike-through Elimination
+                // Strictly neutral selection during exam — grading & corrections are revealed ONLY at the end!
                 val chosen = session.selectedOptions[q.id]
                 val eliminated = session.eliminatedOptions[q.id].orEmpty()
 
                 q.options.forEachIndexed { idx, opt ->
                     val isSelected = chosen == idx
                     val isEliminated = idx in eliminated
-                    val isCorrectOption = idx == q.correctOptionIndex
-                    val showRightHighlight = isPracticeChecked && isCorrectOption
-                    val showWrongHighlight = isPracticeChecked && isSelected && !isCorrectOption
 
-                    val containerBg = when {
-                        showRightHighlight -> extended.mint.copy(alpha = 0.20f)
-                        showWrongHighlight -> extended.cherryPink.copy(alpha = 0.20f)
-                        isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.70f)
-                        else -> MaterialTheme.colorScheme.surface
+                    val containerBg = if (isSelected) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.70f)
+                    } else {
+                        MaterialTheme.colorScheme.surface
                     }
-                    val borderColor = when {
-                        showRightHighlight -> extended.mint
-                        showWrongHighlight -> extended.cherryPink
-                        isSelected -> MaterialTheme.colorScheme.primary
-                        else -> extended.cardBorder
-                    }
-                    val circleBg = when {
-                        showRightHighlight -> extended.mint
-                        showWrongHighlight -> extended.cherryPink
-                        isSelected -> MaterialTheme.colorScheme.primary
-                        else -> Color.Transparent
-                    }
-                    val circleTextColor = when {
-                        showRightHighlight || showWrongHighlight || isSelected -> MaterialTheme.colorScheme.onPrimary
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else extended.cardBorder
+                    val circleBg = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
+                    val circleTextColor = if (isSelected) {
+                        MaterialTheme.colorScheme.onPrimary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
                     }
 
                     Surface(
@@ -1453,7 +1393,7 @@ fun ActiveExamScreen(
                             .testTag("exam_opt_$idx"),
                         shape = RoundedCornerShape(16.dp),
                         color = containerBg,
-                        border = BorderStroke(if (isSelected || showRightHighlight || showWrongHighlight) 1.5.dp else 1.dp, borderColor)
+                        border = BorderStroke(if (isSelected) 1.5.dp else 1.dp, borderColor)
                     ) {
                         Row(
                             modifier = Modifier
@@ -1502,57 +1442,6 @@ fun ActiveExamScreen(
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
-                        }
-                    }
-                }
-            }
-
-            // Practice Mode Immediate Check & Explanation (STRICTLY hidden in Mock Mode!)
-            if (!isMock) {
-                BaeumSecondaryButton(
-                    text = if (isPracticeChecked) {
-                        bText("Hide Explanation", "Sembunyikan Pembahasan")
-                    } else {
-                        bText("Check Answer & Explanation (Practice)", "Periksa Jawaban & Pembahasan (Latihan)")
-                    },
-                    onClick = { onTogglePracticeCheck(q.id) },
-                    testTag = "exam_practice_check"
-                )
-
-                if (isPracticeChecked) {
-                    val isRight = !q.isOpenEnded && session.selectedOptions[q.id] == q.correctOptionIndex
-                    SeoulCard(
-                        modifier = Modifier.fillMaxWidth(),
-                        borderColor = if (q.isOpenEnded) extended.gold else if (isRight) extended.mint else extended.cherryPink
-                    ) {
-                        if (!q.isOpenEnded) {
-                            val correctBadge = CIRCLED_NUMBERS.getOrElse(q.correctOptionIndex) { "${q.correctOptionIndex + 1}" }
-                            val correctText = q.options.getOrNull(q.correctOptionIndex).orEmpty()
-                            Text(
-                                text = if (isRight) bText("Correct!", "Benar!") else bText("Answer: $correctBadge $correctText", "Jawaban benar: $correctBadge $correctText"),
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                color = if (isRight) extended.mint else extended.cherryPink
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                        }
-                        Text(
-                            text = q.explanationFor(lang),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        if (!q.modelAnswerKo.isNullOrBlank()) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = bText("Model Answer (모범 답안):", "Contoh Jawaban (모범 답안):"),
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                color = extended.mint
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = q.modelAnswerKo,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
                     }
                 }
@@ -1940,8 +1829,8 @@ fun ExamReportScreen(
         return
     }
 
-    var filterMode by remember { mutableStateOf("INCORRECT") } // ALL, INCORRECT, or section name
-    var showAnswerReport by remember { mutableStateOf(false) }
+    var filterMode by remember { mutableStateOf("ALL") } // ALL, INCORRECT, or section name
+    var showAnswerReport by remember { mutableStateOf(true) }
     val extended = LocalBaeumColors.current
     val isId = isIndonesian()
     val lang = LocalBaeumLang.current
@@ -2105,35 +1994,44 @@ fun ExamReportScreen(
             }
 
             val wrongCount = report.questionReviews.count { !it.isCorrect }
-            BaeumPrimaryButton(
-                text = bText(
-                    "Review incorrect answers ($wrongCount)",
-                    "Tinjau jawaban salah ($wrongCount)"
-                ),
-                onClick = {
-                    filterMode = "INCORRECT"
-                    showAnswerReport = true
-                },
-                testTag = "exam_review_incorrect"
-            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                BaeumSecondaryButton(
-                    text = bText("Full report", "Laporan lengkap"),
+                BaeumPrimaryButton(
+                    text = bText("Review mistakes ($wrongCount)", "Koreksi salah ($wrongCount)"),
                     onClick = {
-                        filterMode = "ALL"
+                        filterMode = "INCORRECT"
                         showAnswerReport = true
                     },
                     modifier = Modifier.weight(1f),
-                    testTag = "exam_view_full_report"
+                    testTag = "exam_review_incorrect"
                 )
                 BaeumSecondaryButton(
                     text = bText("Retake exam", "Ulangi ujian"),
                     onClick = { onRetakeExam(report.examType, report.mode, report.paperLength) },
                     modifier = Modifier.weight(1f),
                     testTag = "exam_retake_button"
+                )
+            }
+
+            // End-of-Exam Full Corrections, Answer Keys & Explanations (Always visible by default!)
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = bText("ANSWER CORRECTIONS & EXPLANATIONS", "KOREKSI JAWABAN BENAR & PEMBAHASAN"),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = bText(
+                        "Compare your answers with the official answer keys, scripts, model answers, and explanations below.",
+                        "Bandingkan jawaban Anda dengan kunci jawaban benar, transkrip audio, contoh jawaban, serta pembahasan lengkap di bawah ini."
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
@@ -2146,8 +2044,8 @@ fun ExamReportScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     val chips = listOf(
-                        "INCORRECT" to bText("Wrong ($wrongCount)", "Salah ($wrongCount)"),
-                        "ALL" to bText("All (${report.questionReviews.size})", "Semua (${report.questionReviews.size})")
+                        "ALL" to bText("All (${report.questionReviews.size})", "Semua (${report.questionReviews.size})"),
+                        "INCORRECT" to bText("Corrections ($wrongCount)", "Perlu Koreksi ($wrongCount)")
                     ) + sectionKeys.map { sec -> sec to localizeExamSection(sec, isId) }
 
                     chips.forEach { (key, label) ->

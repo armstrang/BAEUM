@@ -736,7 +736,6 @@ private fun BaeumMainShell(
                                 onToggleEliminateOption = { qId, idx -> viewModel.toggleEliminateExamOption(qId, idx) },
                                 onOpenResponseChange = { qId, txt -> viewModel.updateExamOpenResponse(qId, txt) },
                                 onDualBlankResponseChange = { qId, g, n -> viewModel.updateExamDualBlankResponse(qId, g, n) },
-                                onTogglePracticeCheck = { qId -> viewModel.toggleExamPracticeCheck(qId) },
                                 onToggleFlag = { qId -> viewModel.toggleExamFlag(qId) },
                                 onJumpToQuestion = { idx -> viewModel.jumpToExamQuestion(idx) },
                                 onEnterPeriodTransition = { viewModel.enterExamPeriodTransition() },

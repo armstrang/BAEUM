@@ -39,7 +39,6 @@ data class ActiveExamSession(
     val paperLength: ExamPaperLength = ExamPaperLength.STANDARD,
     val eliminatedOptions: Map<String, Set<Int>> = emptyMap(),
     val audioPlayCounts: Map<String, Int> = emptyMap(),
-    val practiceCheckedIds: Set<String> = emptySet(),
     val activePeriod: Int = 1,
     val totalPeriods: Int = 1,
     val awaitingPeriodTransition: Boolean = false,
