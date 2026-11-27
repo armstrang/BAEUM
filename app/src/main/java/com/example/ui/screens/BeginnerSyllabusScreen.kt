@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.sp
 import com.example.domain.curriculum.BeginnerLesson
 import com.example.domain.curriculum.BeginnerPracticeAction
 import com.example.domain.curriculum.BeginnerSyllabusCatalog
+import com.example.domain.curriculum.RomanizationVisibility
 import com.example.domain.curriculum.SentenceBuildExercise
 import com.example.domain.curriculum.SyllabusTrack
 import com.example.ui.components.BaeumGlassCard
@@ -97,19 +98,23 @@ private fun trackAccentColor(track: SyllabusTrack): Color {
 }
 
 /**
- * 3-Track Progressive Guided Korean Syllabus Roadmap:
+ * 3-Track Progressive Guided Korean Syllabus Roadmap (30 Lessons · 60 Sentence Builders · 8 Stage Bosses):
  * - Track 1: Pemula Nol → Menyusun Kalimat (12 lessons)
- * - Track 2: TOPIK I · 1–2급 (8 lessons)
+ * - Track 2: TOPIK I · 1–2급 (10 lessons, incl. Irregular Verbs & Noun Modifiers)
  * - Track 3: TOPIK II · 3–6급 (8 lessons)
- * Displays 3-Star Gold Mastery (★★★) and seamless graduation bridges between tracks.
+ * Displays 3-Star Gold Mastery (★★★), Mistake Redemption Vault, and 60–90s Stage Bosses!
  */
 @Composable
 fun BeginnerSyllabusScreen(
     completedLessonIds: Set<String>,
     perfectLessonIds: Set<String> = emptySet(),
+    defeatedStageBossNumbers: Set<Int> = emptySet(),
+    mistakeVaultKeys: Set<String> = emptySet(),
     initialTrack: SyllabusTrack? = null,
     onBack: () -> Unit,
-    onOpenLesson: (String) -> Unit
+    onOpenLesson: (String) -> Unit,
+    onOpenStageBoss: (Int) -> Unit = {},
+    onOpenMistakeRedemption: () -> Unit = {}
 ) {
     val extended = LocalBaeumColors.current
     val primary = MaterialTheme.colorScheme.primary
@@ -427,6 +432,68 @@ fun BeginnerSyllabusScreen(
                         )
                     }
 
+                    // Mistake Redemption Vault Banner ("Balas Dendam Kesalahan")
+                    if (mistakeVaultKeys.isNotEmpty()) {
+                        BaeumGlassCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("syllabus_mistake_redemption_card"),
+                            style = BaeumGlassStyle.STANDARD,
+                            accentGlowColor = extended.cherryPink,
+                            borderColor = extended.cherryPink.copy(alpha = 0.55f),
+                            onClick = onOpenMistakeRedemption
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(46.dp)
+                                        .clip(LessonEmblemShape)
+                                        .background(extended.cherryPink.copy(alpha = 0.18f))
+                                        .border(1.dp, extended.cherryPink.copy(alpha = 0.5f), LessonEmblemShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.LocalFireDepartment,
+                                        contentDescription = null,
+                                        tint = extended.cherryPink,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = bText(
+                                            "MISTAKE REDEMPTION · ${mistakeVaultKeys.size} WAITING",
+                                            "BALAS DENDAM KESALAHAN · ${mistakeVaultKeys.size} SOAL"
+                                        ),
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.ExtraBold,
+                                            letterSpacing = 0.8.sp
+                                        ),
+                                        color = extended.cherryPink
+                                    )
+                                    Text(
+                                        text = bText(
+                                            "Turn past slips into mastery (+20 XP each!)",
+                                            "Taklukkan ulang soal yang sempat salah (+20 XP/soal!)"
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = null,
+                                    tint = extended.cherryPink,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                    }
+
                     // Stages & Numbered Lesson Cards for Active Track
                     activeStages.forEachIndexed { stageIdx, stage ->
                         val stageLessons = BeginnerSyllabusCatalog.lessonsForStage(stage.number)
@@ -653,6 +720,74 @@ fun BeginnerSyllabusScreen(
                                         }
                                     }
                                 }
+
+                                // Timed Stage Boss Challenge Card at the end of every stage!
+                                val bossDefeated = stage.number in defeatedStageBossNumbers
+                                val bossAccent = if (bossDefeated) extended.gold else extended.cherryPink
+                                BaeumGlassCard(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("stage_boss_card_${stage.number}"),
+                                    style = BaeumGlassStyle.STANDARD,
+                                    accentGlowColor = bossAccent,
+                                    borderColor = bossAccent.copy(alpha = 0.55f),
+                                    onClick = { onOpenStageBoss(stage.number) }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(CircleShape)
+                                                .background(bossAccent.copy(alpha = 0.18f))
+                                                .border(1.5.dp, bossAccent, CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = stage.bossSealKo,
+                                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                                color = bossAccent
+                                            )
+                                        }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = if (bossDefeated) {
+                                                    bText("STAGE BOSS DEFEATED · SEAL UNLOCKED ✓", "BOS TAHAP TUMBANG · STEMPEL TERBUKA ✓")
+                                                } else {
+                                                    bText(
+                                                        "⚔️ STAGE BOSS · ${stage.bossTimeSeconds}s GAUNTLET (+120 XP)",
+                                                        "⚔️ BOS TAHAP · TANTANGAN ${stage.bossTimeSeconds}d (+120 XP)"
+                                                    )
+                                                },
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    letterSpacing = 0.7.sp
+                                                ),
+                                                color = bossAccent
+                                            )
+                                            Text(
+                                                text = if (bossDefeated) {
+                                                    bText("Replay Boss Challenge anytime to keep sharp", "Ulangi tantangan Bos kapan saja untuk menjaga ketajaman")
+                                                } else if (stageDone == stageLessons.size) {
+                                                    bText("All lessons done — challenge the Boss to claim '${stage.bossSealKo}'!", "Semua pelajaran selesai — kalahkan Bos untuk klaim stempel '${stage.bossSealKo}'!")
+                                                } else {
+                                                    bText("Mixed audio + sentence + rapid check (6 rounds)", "Campuran audio + susun kalimat + cek cepat (6 ronde)")
+                                                },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                            contentDescription = null,
+                                            tint = bossAccent,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -731,6 +866,7 @@ fun BeginnerLessonScreen(
     onSpeakKorean: (String) -> Unit,
     onCheckSound: (Boolean, Int) -> Unit,
     onLessonCompleted: (String, Boolean) -> Unit,
+    onMistakeRecorded: (String) -> Unit = {},
     onOpenNextLesson: (String) -> Unit,
     onOpenNextTrack: (SyllabusTrack) -> Unit = {},
     onOpenPracticeAction: (BeginnerPracticeAction) -> Unit
@@ -758,6 +894,7 @@ fun BeginnerLessonScreen(
     }
     val nextLesson = remember(lesson.id) { BeginnerSyllabusCatalog.nextLessonInTrack(lesson) }
     val nextTrack = remember(lesson.track) { BeginnerSyllabusCatalog.nextTrackAfter(lesson.track) }
+    val romPolicy = remember(lesson.id) { BeginnerSyllabusCatalog.romanizationPolicyFor(lesson) }
 
     var phase by remember(lesson.id) { mutableStateOf(BeginnerLessonPhase.LEARN) }
     var buildIndex by remember(lesson.id) { mutableIntStateOf(0) }
@@ -768,6 +905,8 @@ fun BeginnerLessonScreen(
     var checkCorrectCount by remember(lesson.id) { mutableIntStateOf(0) }
     var wrongShakeSeq by remember(lesson.id) { mutableIntStateOf(0) }
     var completionCommitted by remember(lesson.id) { mutableStateOf(false) }
+    val peekedCardIndices = remember(lesson.id) { mutableStateListOf<Int>() }
+    var audioPromptRevealed by remember(lesson.id, buildIndex) { mutableStateOf(false) }
 
     // Sentence-builder interactive state per exercise
     val activeExercise: SentenceBuildExercise? = lesson.sentenceExercises.getOrNull(buildIndex)
@@ -980,13 +1119,41 @@ fun BeginnerLessonScreen(
                                     }
                                 }
 
-                                Text(
-                                    text = bText("Tap any card to hear native pronunciation", "Ketuk kartu mana saja untuk mendengar pelafalan Korea"),
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = bText("Tap card for Korean audio", "Ketuk kartu untuk audio Korea"),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    val policyBadge = when (romPolicy) {
+                                        RomanizationVisibility.FULL -> bText("Romanization: Full", "Romanisasi: Penuh")
+                                        RomanizationVisibility.TAP_TO_PEEK -> bText("Auto-Fade: Tap to peek", "Auto-Fade: Ketuk intip")
+                                        RomanizationVisibility.EXAM_HIDDEN -> bText("TOPIK II: Exam Mode", "TOPIK II: Mode Ujian")
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(LessonPillShape)
+                                            .background(trackAccent.copy(alpha = 0.12f))
+                                            .border(1.dp, trackAccent.copy(alpha = 0.35f), LessonPillShape)
+                                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                                    ) {
+                                        Text(
+                                            text = policyBadge,
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold
+                                            ),
+                                            color = trackAccent
+                                        )
+                                    }
+                                }
 
                                 lesson.studyCards.forEachIndexed { idx, card ->
+                                    val showRom = romPolicy == RomanizationVisibility.FULL || idx in peekedCardIndices
                                     SeoulCard(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -1000,7 +1167,7 @@ fun BeginnerLessonScreen(
                                         ) {
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Row(
-                                                    verticalAlignment = Alignment.Bottom,
+                                                    verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                 ) {
                                                     Text(
@@ -1008,12 +1175,33 @@ fun BeginnerLessonScreen(
                                                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
                                                         color = MaterialTheme.colorScheme.onSurface
                                                     )
-                                                    Text(
-                                                        text = card.romanization,
-                                                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                                        color = trackAccent,
-                                                        modifier = Modifier.padding(bottom = 2.dp)
-                                                    )
+                                                    if (showRom) {
+                                                        Text(
+                                                            text = card.romanization,
+                                                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                                                            color = trackAccent
+                                                        )
+                                                    } else {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .clip(LessonPillShape)
+                                                                .background(trackAccent.copy(alpha = 0.12f))
+                                                                .border(1.dp, trackAccent.copy(alpha = 0.32f), LessonPillShape)
+                                                                .tactileClickable(pressedScale = 0.94f) {
+                                                                    peekedCardIndices.add(idx)
+                                                                }
+                                                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = bText("Peek reading", "Intip bacaan"),
+                                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                                    fontSize = 10.sp,
+                                                                    fontWeight = FontWeight.Bold
+                                                                ),
+                                                                color = trackAccent
+                                                            )
+                                                        }
+                                                    }
                                                 }
                                                 Spacer(modifier = Modifier.height(3.dp))
                                                 Text(
@@ -1083,6 +1271,14 @@ fun BeginnerLessonScreen(
                         // ==================== PHASE 2: INTERACTIVE SENTENCE BUILDER ====================
                         BeginnerLessonPhase.SENTENCE_BUILD -> {
                             val exercise = activeExercise ?: lesson.sentenceExercises.first()
+                            val isAudioFirst = remember(lesson.id, buildIndex) {
+                                BeginnerSyllabusCatalog.isAudioFirstExercise(lesson, buildIndex)
+                            }
+                            LaunchedEffect(lesson.id, buildIndex, isAudioFirst) {
+                                if (isAudioFirst) {
+                                    onSpeakKorean(exercise.fullSentenceKo)
+                                }
+                            }
                             val assembledTokens = selectedTileIds.mapNotNull { id ->
                                 shuffledBank.firstOrNull { it.first == id }?.second
                             }
@@ -1108,12 +1304,19 @@ fun BeginnerLessonScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = bText(
-                                                "SENTENCE BUILDER ${buildIndex + 1} / ${lesson.sentenceExercises.size}",
-                                                "SUSUN KALIMAT ${buildIndex + 1} / ${lesson.sentenceExercises.size}"
-                                            ),
+                                            text = if (isAudioFirst) {
+                                                bText(
+                                                    "🎧 LISTEN & BUILD ${buildIndex + 1} / ${lesson.sentenceExercises.size}",
+                                                    "🎧 DENGAR & SUSUN ${buildIndex + 1} / ${lesson.sentenceExercises.size}"
+                                                )
+                                            } else {
+                                                bText(
+                                                    "SENTENCE BUILDER ${buildIndex + 1} / ${lesson.sentenceExercises.size}",
+                                                    "SUSUN KALIMAT ${buildIndex + 1} / ${lesson.sentenceExercises.size}"
+                                                )
+                                            },
                                             style = MaterialTheme.typography.labelSmall.copy(
-                                                letterSpacing = 1.3.sp,
+                                                letterSpacing = 1.2.sp,
                                                 fontWeight = FontWeight.ExtraBold
                                             ),
                                             color = if (buildSolved) extended.mint else trackAccent
@@ -1150,11 +1353,72 @@ fun BeginnerLessonScreen(
 
                                     Spacer(modifier = Modifier.height(10.dp))
 
-                                    Text(
-                                        text = bText(exercise.promptEn, exercise.promptId),
-                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
+                                    if (isAudioFirst && !buildSolved) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(LessonOptionShape)
+                                                .background(trackAccent.copy(alpha = 0.14f))
+                                                .border(1.dp, trackAccent.copy(alpha = 0.45f), LessonOptionShape)
+                                                .tactileClickable(pressedScale = 0.96f) {
+                                                    onSpeakKorean(exercise.fullSentenceKo)
+                                                }
+                                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(46.dp)
+                                                    .clip(CircleShape)
+                                                    .background(trackAccent.copy(alpha = 0.24f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                                                    contentDescription = bText("Play sentence", "Putar kalimat"),
+                                                    tint = trackAccent,
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = bText("Tap to hear Korean sentence", "Ketuk untuk mendengar kalimat Korea"),
+                                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.ExtraBold),
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Text(
+                                                    text = if (audioPromptRevealed) {
+                                                        bText(exercise.promptEn, exercise.promptId)
+                                                    } else {
+                                                        bText("Build what you hear — or tap 'Show meaning' below", "Susun sesuai suara — atau ketuk 'Lihat arti' di bawah")
+                                                    },
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                        if (!audioPromptRevealed) {
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = bText("👁 Show meaning cue", "👁 Lihat arti petunjuk"),
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = trackAccent,
+                                                modifier = Modifier
+                                                    .clip(LessonPillShape)
+                                                    .tactileClickable(pressedScale = 0.94f) {
+                                                        audioPromptRevealed = true
+                                                    }
+                                                    .padding(horizontal = 6.dp, vertical = 4.dp)
+                                            )
+                                        }
+                                    } else {
+                                        Text(
+                                            text = bText(exercise.promptEn, exercise.promptId),
+                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
 
                                     Spacer(modifier = Modifier.height(14.dp))
 
@@ -1442,6 +1706,7 @@ fun BeginnerLessonScreen(
                                                 streakCount = 0
                                                 wrongShakeSeq += 1
                                                 onCheckSound(false, 0)
+                                                onMistakeRecorded(BeginnerSyllabusCatalog.mistakeKeyForBuild(lesson.id, buildIndex))
                                             }
                                         },
                                         testTag = "sentence_builder_check_btn"
@@ -1471,6 +1736,14 @@ fun BeginnerLessonScreen(
                         // ==================== PHASE 3: 3-QUESTION QUICK CHECK ====================
                         BeginnerLessonPhase.MINI_CHECK -> {
                             val check = lesson.miniChecks[checkIndex.coerceIn(0, lesson.miniChecks.lastIndex)]
+                            val isAudioCheck = remember(lesson.id, checkIndex) {
+                                BeginnerSyllabusCatalog.isAudioPromptCheck(lesson, checkIndex)
+                            }
+                            LaunchedEffect(lesson.id, checkIndex, isAudioCheck) {
+                                if (isAudioCheck) {
+                                    onSpeakKorean(check.speakOnTapKo)
+                                }
+                            }
                             val isAnswered = selectedOption != null
                             val isCorrect = selectedOption == check.correctOption
 
@@ -1499,10 +1772,17 @@ fun BeginnerLessonScreen(
                                             horizontalAlignment = Alignment.CenterHorizontally
                                         ) {
                                             Text(
-                                                text = bText(
-                                                    "QUICK CHECK ${qIdx + 1} / ${lesson.miniChecks.size}",
-                                                    "CEK CEPAT ${qIdx + 1} / ${lesson.miniChecks.size}"
-                                                ),
+                                                text = if (isAudioCheck) {
+                                                    bText(
+                                                        "🎧 EAR CHECK ${qIdx + 1} / ${lesson.miniChecks.size}",
+                                                        "🎧 LATIHAN TELINGA ${qIdx + 1} / ${lesson.miniChecks.size}"
+                                                    )
+                                                } else {
+                                                    bText(
+                                                        "QUICK CHECK ${qIdx + 1} / ${lesson.miniChecks.size}",
+                                                        "CEK CEPAT ${qIdx + 1} / ${lesson.miniChecks.size}"
+                                                    )
+                                                },
                                                 style = MaterialTheme.typography.labelSmall.copy(
                                                     letterSpacing = 1.4.sp,
                                                     fontWeight = FontWeight.Bold
@@ -1578,6 +1858,7 @@ fun BeginnerLessonScreen(
                                                         streakCount = 0
                                                         wrongShakeSeq += 1
                                                         onCheckSound(false, 0)
+                                                        onMistakeRecorded(BeginnerSyllabusCatalog.mistakeKeyForCheck(lesson.id, checkIndex))
                                                     }
                                                 }
                                                 .testTag("beginner_check_opt_$optIdx")

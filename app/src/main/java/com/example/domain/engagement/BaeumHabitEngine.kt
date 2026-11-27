@@ -108,7 +108,9 @@ data class EngagementProfileState(
     val unlockedStampIds: Set<String> = emptySet(),
     val soundEffectsEnabled: Boolean = true,
     val completedBeginnerLessonIds: Set<String> = emptySet(),
-    val perfectSyllabusLessonIds: Set<String> = emptySet()
+    val perfectSyllabusLessonIds: Set<String> = emptySet(),
+    val defeatedStageBossNumbers: Set<Int> = emptySet(),
+    val mistakeVaultKeys: Set<String> = emptySet()
 )
 
 /**
@@ -156,7 +158,9 @@ data class HabitDashboardSnapshot(
     val allStamps: List<DojangStamp> = BaeumHabitEngine.allStamps,
     val soundEffectsEnabled: Boolean = true,
     val completedBeginnerLessonIds: Set<String> = emptySet(),
-    val perfectSyllabusLessonIds: Set<String> = emptySet()
+    val perfectSyllabusLessonIds: Set<String> = emptySet(),
+    val defeatedStageBossNumbers: Set<Int> = emptySet(),
+    val mistakeVaultKeys: Set<String> = emptySet()
 )
 
 /**

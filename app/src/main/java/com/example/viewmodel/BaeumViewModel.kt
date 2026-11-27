@@ -280,7 +280,9 @@ class BaeumViewModel(
             unlockedStampIds = eng.unlockedStampIds,
             soundEffectsEnabled = eng.soundEffectsEnabled,
             completedBeginnerLessonIds = eng.completedBeginnerLessonIds,
-            perfectSyllabusLessonIds = eng.perfectSyllabusLessonIds
+            perfectSyllabusLessonIds = eng.perfectSyllabusLessonIds,
+            defeatedStageBossNumbers = eng.defeatedStageBossNumbers,
+            mistakeVaultKeys = eng.mistakeVaultKeys
         )
     }
         .conflate()
@@ -713,6 +715,8 @@ class BaeumViewModel(
             )
             val newlyPerfected = isPerfect && lesson.id !in prevPerfect
             repository.recordStudySeconds(lesson.estimatedMinutes * 45)
+            // Feed newly learned syllabus keywords straight into FSRS daily review queue!
+            repository.seedSyllabusWordsIntoFsrs(catalog.coreKeywordsFor(lesson))
             userPreferencesRepository.recordStudyActivity(todayKey)
 
             val nowDone = prevDone + lesson.id
@@ -761,6 +765,71 @@ class BaeumViewModel(
                         showConfetti = true
                     )
                 )
+            }
+        }
+    }
+
+    fun recordSyllabusMistake(mistakeKey: String) {
+        if (mistakeKey.isBlank()) return
+        viewModelScope.launch {
+            userPreferencesRepository.recordSyllabusMistake(mistakeKey)
+        }
+    }
+
+    fun redeemSyllabusMistake(mistakeKey: String) {
+        if (mistakeKey.isBlank()) return
+        val bonus = com.example.domain.curriculum.BeginnerSyllabusCatalog.REDEMPTION_BONUS_XP
+        val todayKey = BaeumRepository.localDayKey()
+        soundEffects.playCorrect(6)
+        viewModelScope.launch {
+            val resolved = userPreferencesRepository.resolveSyllabusMistake(mistakeKey, bonus)
+            repository.recordStudySeconds(25)
+            userPreferencesRepository.recordStudyActivity(todayKey)
+            if (resolved) {
+                emitCelebration(
+                    CelebrationBannerEvent(
+                        kind = CelebrationKind.DAILY_SPARK,
+                        titleEn = "Mistake Redeemed · +$bonus XP!",
+                        titleId = "Kesalahan Ditaklukkan · +$bonus XP!",
+                        subtitleEn = "Your Korean memory just got stronger!",
+                        subtitleId = "Memori bahasa Koreamu makin tajam!",
+                        badgeKo = "극복",
+                        xpDelta = bonus,
+                        showConfetti = false
+                    )
+                )
+            }
+        }
+    }
+
+    fun completeStageBoss(stageNumber: Int, passed: Boolean, correctCount: Int, totalCount: Int) {
+        val stage = com.example.domain.curriculum.BeginnerSyllabusCatalog.stageByNumber(stageNumber) ?: return
+        val todayKey = BaeumRepository.localDayKey()
+        val reward = com.example.domain.curriculum.BeginnerSyllabusCatalog.STAGE_BOSS_XP
+        if (passed) {
+            soundEffects.playLevelUp()
+        } else {
+            soundEffects.playStampUnlock()
+        }
+        viewModelScope.launch {
+            repository.recordStudySeconds(65)
+            userPreferencesRepository.recordStudyActivity(todayKey)
+            if (passed) {
+                val newlyDefeated = userPreferencesRepository.recordStageBossDefeated(stageNumber, reward)
+                if (newlyDefeated) {
+                    emitCelebration(
+                        CelebrationBannerEvent(
+                            kind = CelebrationKind.DAILY_SEAL,
+                            titleEn = "Stage Boss Defeated · +$reward XP!",
+                            titleId = "Bos Tahap Tumbang · +$reward XP!",
+                            subtitleEn = "Unlocked Dojang Seal '${stage.bossSealKo}' ($correctCount/$totalCount)!",
+                            subtitleId = "Stempel Dojang '${stage.bossSealKo}' terbuka ($correctCount/$totalCount)!",
+                            badgeKo = stage.bossSealKo,
+                            xpDelta = reward,
+                            showConfetti = true
+                        )
+                    )
+                }
             }
         }
     }

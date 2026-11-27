@@ -32,6 +32,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Read app versionName from Gradle
+        id: version
+        run: |
+          VERSION_NAME=$(grep -E 'versionName\s*=' app/build.gradle.kts | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+          TAG_NAME="v${VERSION_NAME}"
+          if echo "$VERSION_NAME" | grep -qiE '(alpha|beta|rc)'; then
+            IS_PRERELEASE="true"
+          else
+            IS_PRERELEASE="false"
+          fi
+          echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          echo "tag_name=${TAG_NAME}" >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=${IS_PRERELEASE}" >> "$GITHUB_OUTPUT"
+          echo "Detected version=${VERSION_NAME}, tag=${TAG_NAME}, prerelease=${IS_PRERELEASE}"
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -78,52 +93,69 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug' }}
         uses: actions/upload-artifact@v4
         with:
-          name: baeum-debug-apk
+          name: baeum-${{ steps.version.outputs.version_name }}-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish Downloadable Debug APK to GitHub Releases
+      - name: Publish Versioned Debug APK to GitHub Releases
         if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && (github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug') }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           SOURCE_REF: ${{ github.head_ref || github.ref_name }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          TAG_NAME: ${{ steps.version.outputs.tag_name }}
+          IS_PRERELEASE: ${{ steps.version.outputs.is_prerelease }}
         run: |
           set -euo pipefail
           APK_SRC=$(ls app/build/outputs/apk/debug/*.apk | head -n 1)
-          APK_OUT="BAEUM-v1.0-debug.apk"
+          APK_OUT="BAEUM-v${VERSION_NAME}-debug.apk"
           cp "$APK_SRC" "$APK_OUT"
           SHA256=$(sha256sum "$APK_OUT" | awk '{print $1}')
           SIZE_MB=$(du -h "$APK_OUT" | awk '{print $1}')
 
-          cat > release-notes.md <<EOF
-          ## Unduh BAEUM Android APK Langsung
-          Klik **\`${APK_OUT}\`** (${SIZE_MB}) pada bagian **Assets** di bawah untuk langsung mengunduh dan memasang aplikasi di perangkat Android (Android 7.0+ / minSdk 24).
+          RELEASE_LABEL="Pre-Release Beta"
+          PRERELEASE_FLAG="--prerelease"
+          if [ "$IS_PRERELEASE" != "true" ]; then
+            RELEASE_LABEL="Stable Release"
+            PRERELEASE_FLAG="--latest"
+          fi
 
+          cat > release-notes.md <<EOF
+          ## BAEUM \`${TAG_NAME}\` (${RELEASE_LABEL})
+
+          Klik **\`${APK_OUT}\`** (${SIZE_MB}) pada bagian **Assets** di bawah untuk langsung mengunduh dan memasang aplikasi di perangkat Android (Android 7.0+ / \`minSdk 24\`).
+
+          - **Versi**: \`${VERSION_NAME}\` (${RELEASE_LABEL})
           - **Branch**: \`${SOURCE_REF}\`
           - **Commit**: \`${TARGET_SHA}\`
           - **Unit Tests**: \`:app:testDebugUnitTest\` ✓
           - **SHA-256**: \`${SHA256}\`
 
-          ### Fitur Utama Versi Ini
-          - **Seoul Atelier Luxury UI/UX**: tipografi Hangul penuh, kontras WCAG AA Dark/Light, kanvas tulis Hangul Bezier halus, motion/chart zero-alloc 120fps.
-          - **Simulasi Ujian Autentik TOPIK I/II, EPS-TOPIK & TOPIK Speaking**: penilaian khusus di akhir ujian + skor, koreksi kunci jawaban, dan penjelasan lengkap.
-          - **Seoul Atelier Habit & Flow Engine**: 10 Peringkat Korea + XP, Streak Shield otomatis, 7-Day Rhythm, **Daily Seoul Spark**, **Daily Atelier Quests**, **60s Seoul Blitz** (SEOUL FEVER & +2s bonus), **12 Stempel Dojang**, konfeti 120fps, dan efek suara pentatonis Korea.
+          ### Sorotan Fitur \`${TAG_NAME}\`
+          - **3 Jalur Silabus Terpandu (30 Pelajaran · 60 Susun Kalimat · 8 Bos Tahap)**:
+            - **Pemula Nol → Susun Kalimat (12 Pelajaran)**: Hangul dari nol, *Batchim*, *Liaison*, Sapaan, menyusun kalimat S-O-P, partikel inti, angka, kafe & rumus \`~아요/~어요\`.
+            - **TOPIK I · 1–2급 (10 Pelajaran)**: Kala lampau/depan, negasi \`안/못\`, keinginan/harus, penghubung, jam \`부터~까지\`, arah, perbandingan, **Kata Kerja Tidak Beraturan (\`ㅂ/ㄷ/르/으/ㄹ\`)**, **Modifier Kata Benda (\`~(으)ㄴ/~는/~(으)ㄹ\`)**, serta strategi ujian TOPIK I.
+            - **TOPIK II · 3–6급 (8 Pelajaran)**: Sebab formal, pengalaman, kutipan tidak langsung, kontras/pasif, gaya tulis *Haerache* (\`~는다/ㄴ다/다\`), dan Menulis #51–54.
+          - **Auto-Fade Romanisasi**: Tampil penuh di Pemula Tahap 1–2 → *Ketuk Intip* di Pemula 3–4 & TOPIK I → Tersembunyi default ala ujian asli di TOPIK II.
+          - **Mode Dengar & Susun (*Listening-First*) + Brankas Balas Dendam Kesalahan (*Redemption Drill*) + Sinkronisasi FSRS Otomatis**.
+          - **Tantangan Bos Tahap (*Stage Boss 60–90d*)**: 8 tantangan akhir tahap dengan Stempel Dojang eksklusif & bonus +120 XP.
+          - **Simulasi Ujian TOPIK I/II, EPS-TOPIK & Speaking Autentik**: Penilaian khusus di akhir ujian + rapor koreksi & penjelasan lengkap.
           EOF
 
-          if gh release view latest-apk >/dev/null 2>&1; then
-            gh release upload latest-apk "${APK_OUT}#BAEUM v1.0 Android APK (${SIZE_MB})" --clobber
-            gh release edit latest-apk \
-              --title "BAEUM v1.0 — Latest Android APK" \
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "${APK_OUT}#BAEUM ${TAG_NAME} Android APK (${SIZE_MB})" --clobber
+            gh release edit "$TAG_NAME" \
+              --title "BAEUM ${TAG_NAME} (${RELEASE_LABEL})" \
               --notes-file release-notes.md \
-              --latest
+              $PRERELEASE_FLAG
           else
-            gh release create latest-apk "${APK_OUT}#BAEUM v1.0 Android APK (${SIZE_MB})" \
+            gh release create "$TAG_NAME" "${APK_OUT}#BAEUM ${TAG_NAME} Android APK (${SIZE_MB})" \
               --target "$TARGET_SHA" \
-              --title "BAEUM v1.0 — Latest Android APK" \
+              --title "BAEUM ${TAG_NAME} (${RELEASE_LABEL})" \
               --notes-file release-notes.md \
-              --latest
+              $PRERELEASE_FLAG
           fi
 
       - name: Prepare release keystore
@@ -149,27 +181,36 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release' }}
         uses: actions/upload-artifact@v4
         with:
-          name: baeum-release-apk
+          name: baeum-${{ steps.version.outputs.version_name }}-release-apk
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish Downloadable Release APK to GitHub Releases
+      - name: Publish Versioned Release APK to GitHub Releases
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TARGET_SHA: ${{ github.sha }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          TAG_NAME: ${{ steps.version.outputs.tag_name }}
+          IS_PRERELEASE: ${{ steps.version.outputs.is_prerelease }}
         run: |
           set -euo pipefail
           APK_SRC=$(ls app/build/outputs/apk/release/*.apk | head -n 1)
-          APK_OUT="BAEUM-v1.0-release.apk"
+          APK_OUT="BAEUM-v${VERSION_NAME}-release.apk"
           cp "$APK_SRC" "$APK_OUT"
           SIZE_MB=$(du -h "$APK_OUT" | awk '{print $1}')
-          if gh release view latest-apk >/dev/null 2>&1; then
-            gh release upload latest-apk "${APK_OUT}#BAEUM v1.0 Release APK (${SIZE_MB})" --clobber
+          PRERELEASE_FLAG="--prerelease"
+          RELEASE_LABEL="Pre-Release Beta"
+          if [ "$IS_PRERELEASE" != "true" ]; then
+            PRERELEASE_FLAG="--latest"
+            RELEASE_LABEL="Stable Release"
+          fi
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "${APK_OUT}#BAEUM ${TAG_NAME} Release APK (${SIZE_MB})" --clobber
           else
-            gh release create latest-apk "${APK_OUT}#BAEUM v1.0 Release APK (${SIZE_MB})" \
+            gh release create "$TAG_NAME" "${APK_OUT}#BAEUM ${TAG_NAME} Release APK (${SIZE_MB})" \
               --target "$TARGET_SHA" \
-              --title "BAEUM v1.0 — Latest Android APK" \
-              --latest
+              --title "BAEUM ${TAG_NAME} (${RELEASE_LABEL})" \
+              $PRERELEASE_FLAG
           fi

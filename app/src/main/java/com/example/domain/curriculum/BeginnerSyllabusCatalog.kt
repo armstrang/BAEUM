@@ -58,7 +58,19 @@ enum class SyllabusTrack(
 }
 
 /**
- * Stage grouping inside a Guided Syllabus Track.
+ * Progressive romanization policy ("Auto-Fade Romanization") to prevent Latin-script dependency:
+ * - FULL: Stage 1–2 (Hangul decoding, Lessons 1–6)
+ * - TAP_TO_PEEK: Stage 3–4 (Sentence Building) & TOPIK I (1–2급)
+ * - EXAM_HIDDEN: TOPIK II (3–6급) — mirrors authentic exam conditions with optional tap-to-peek
+ */
+enum class RomanizationVisibility {
+    FULL,
+    TAP_TO_PEEK,
+    EXAM_HIDDEN
+}
+
+/**
+ * Stage grouping inside a Guided Syllabus Track, crowned by a timed Stage Boss Challenge.
  */
 data class BeginnerStage(
     val number: Int,
@@ -68,7 +80,9 @@ data class BeginnerStage(
     val titleId: String,
     val subtitleEn: String,
     val subtitleId: String,
-    val accentTag: String // "primary" | "mint" | "gold" | "cherry"
+    val accentTag: String, // "primary" | "mint" | "gold" | "cherry"
+    val bossSealKo: String = "승",
+    val bossTimeSeconds: Int = 75
 )
 
 /**
@@ -86,7 +100,7 @@ data class BeginnerStudyCard(
 
 /**
  * Interactive Tap-to-Assemble Word / Sentence Builder challenge included in every guided lesson.
- * Teaches Korean syllable assembly and Subject-Object-Verb sentence order by active recall.
+ * Supports both translation-to-Korean and Listening-First (Audio-to-Sentence) modes.
  */
 data class SentenceBuildExercise(
     val promptEn: String,
@@ -96,7 +110,8 @@ data class SentenceBuildExercise(
     val fullSentenceKo: String,
     val romanization: String,
     val hintEn: String,
-    val hintId: String
+    val hintId: String,
+    val isAudioFirst: Boolean = false
 )
 
 /**
@@ -110,7 +125,8 @@ data class BeginnerMiniCheck(
     val correctOption: String,
     val explanationEn: String,
     val explanationId: String,
-    val speakOnTapKo: String = stimulusKo
+    val speakOnTapKo: String = stimulusKo,
+    val isAudioPrompt: Boolean = false
 )
 
 /**
@@ -155,9 +171,31 @@ data class BeginnerLesson(
 )
 
 /**
- * Structured 3-Track Progressive Korean Curriculum:
+ * Parsed entry stored inside the Mistake Redemption Vault ("Balas Dendam Kesalahan").
+ */
+sealed class SyllabusMistakeItem {
+    abstract val key: String
+    abstract val lesson: BeginnerLesson
+
+    data class SentenceBuildMistake(
+        override val key: String,
+        override val lesson: BeginnerLesson,
+        val exerciseIndex: Int,
+        val exercise: SentenceBuildExercise
+    ) : SyllabusMistakeItem()
+
+    data class MiniCheckMistake(
+        override val key: String,
+        override val lesson: BeginnerLesson,
+        val checkIndex: Int,
+        val check: BeginnerMiniCheck
+    ) : SyllabusMistakeItem()
+}
+
+/**
+ * Structured 3-Track Progressive Korean Curriculum (30 Lessons · 60 Sentence Builders · 8 Stage Bosses):
  * - Track 1 (BEGINNER, 12 lessons): Zero-background Hangul → Interactive Sentence Building → Everyday Seoul
- * - Track 2 (TOPIK_I, 8 lessons): Dedicated TOPIK I (1–2급) grammar, daily communication & exam skills
+ * - Track 2 (TOPIK_I, 10 lessons): Dedicated TOPIK I (1–2급) grammar, irregulars, modifiers & exam skills
  * - Track 3 (TOPIK_II, 8 lessons): Dedicated TOPIK II (3–6급) discourse, Haerache & Writing #51–54 mastery
  */
 object BeginnerSyllabusCatalog {
@@ -167,6 +205,8 @@ object BeginnerSyllabusCatalog {
     const val TOPIK_II_LESSON_XP = 90
     const val PERFECT_STAR_BONUS_XP = 25
     const val GRADUATION_BONUS_XP = 150
+    const val STAGE_BOSS_XP = 120
+    const val REDEMPTION_BONUS_XP = 20
 
     val allStages: List<BeginnerStage> = listOf(
         // ==================== TRACK 1: BEGINNER (ZERO -> SENTENCE) ====================
@@ -178,7 +218,9 @@ object BeginnerSyllabusCatalog {
             titleId = "Tahap 1 · Membaca Hangul Pertama",
             subtitleEn = "Master basic vowels, core consonants & syllable blocks in minutes.",
             subtitleId = "Kuasai vokal dasar, konsonan inti & cara menyusun blok suku kata dalam hitungan menit.",
-            accentTag = "primary"
+            accentTag = "primary",
+            bossSealKo = "훈",
+            bossTimeSeconds = 60
         ),
         BeginnerStage(
             number = 2,
@@ -188,7 +230,9 @@ object BeginnerSyllabusCatalog {
             titleId = "Tahap 2 · Bacaan Alami & Batchim",
             subtitleEn = "Unlock Y-vowels, final consonants (batchim), tense letters & smooth linking.",
             subtitleId = "Pahami vokal-Y, konsonan akhir (batchim), huruf ganda & rahasia sambung bunyi.",
-            accentTag = "mint"
+            accentTag = "mint",
+            bossSealKo = "울",
+            bossTimeSeconds = 65
         ),
         BeginnerStage(
             number = 3,
@@ -198,7 +242,9 @@ object BeginnerSyllabusCatalog {
             titleId = "Tahap 3 · Sapaan & Menyusun Kalimat Pertama",
             subtitleEn = "Speak politely, introduce yourself & assemble real Korean S-O-V sentences.",
             subtitleId = "Menyapa sopan, memperkenalkan diri & merangkai kalimat Korea (S-O-P) dengan partikel inti.",
-            accentTag = "gold"
+            accentTag = "gold",
+            bossSealKo = "문",
+            bossTimeSeconds = 75
         ),
         BeginnerStage(
             number = 4,
@@ -208,7 +254,9 @@ object BeginnerSyllabusCatalog {
             titleId = "Tahap 4 · Menyusun Kalimat Harian di Seoul",
             subtitleEn = "Numbers, cafe orders & conjugating everyday Korean verbs into complete sentences.",
             subtitleId = "Angka Korea, memesan di kafe & mengubah kata kerja harian menjadi kalimat lengkap.",
-            accentTag = "cherry"
+            accentTag = "cherry",
+            bossSealKo = "별",
+            bossTimeSeconds = 75
         ),
 
         // ==================== TRACK 2: TOPIK I (1-2급) ====================
@@ -220,17 +268,21 @@ object BeginnerSyllabusCatalog {
             titleId = "Tahap 1 · Kala, Negasi & Penghubung TOPIK I",
             subtitleEn = "Talk about past & future, express ability/desire & connect two clauses smoothly.",
             subtitleId = "Bercerita masa lalu & rencana, menyatakan bisa/ingin serta menggabungkan 2 kalimat.",
-            accentTag = "primary"
+            accentTag = "primary",
+            bossSealKo = "결",
+            bossTimeSeconds = 80
         ),
         BeginnerStage(
             number = 6,
             track = SyllabusTrack.TOPIK_I,
-            titleKo = "토픽 1 실전 완성",
-            titleEn = "Stage 2 · Daily Seoul Scenarios & TOPIK I Strategy",
-            titleId = "Tahap 2 · Situasi Harian & Strategi Ujian TOPIK I",
-            subtitleEn = "Schedules, directions, comparisons, polite requests & high-score TOPIK I reading patterns.",
-            subtitleId = "Jadwal waktu, petunjuk arah, perbandingan, permintaan sopan & trik soal TOPIK I.",
-            accentTag = "mint"
+            titleKo = "토픽 1 실전·도약",
+            titleEn = "Stage 2 · Daily Scenarios, Irregulars, Modifiers & Strategy",
+            titleId = "Tahap 2 · Situasi Harian, Irregular, Modifier & Strategi TOPIK I",
+            subtitleEn = "Schedules, directions, irregular verbs (ㅂ/ㄷ/르), noun modifiers & TOPIK I strategy.",
+            subtitleId = "Jadwal, arah, kata kerja tak beraturan (ㅂ/ㄷ/르), modifier benda & strategi ujian TOPIK I.",
+            accentTag = "mint",
+            bossSealKo = "길",
+            bossTimeSeconds = 85
         ),
 
         // ==================== TRACK 3: TOPIK II (3-6급) ====================
@@ -242,7 +294,9 @@ object BeginnerSyllabusCatalog {
             titleId = "Tahap 1 · Nuansa Menengah & Kalimat Tidak Langsung",
             subtitleEn = "Formal reasons, life experiences, quoting others & contrast/concession structures.",
             subtitleId = "Sebab-akibat formal, pengalaman, kutipan tidak langsung & struktur kontras/konsesi.",
-            accentTag = "gold"
+            accentTag = "gold",
+            bossSealKo = "논",
+            bossTimeSeconds = 90
         ),
         BeginnerStage(
             number = 8,
@@ -252,7 +306,9 @@ object BeginnerSyllabusCatalog {
             titleId = "Tahap 2 · Ragam Tulis Haerache & Menulis #51–54",
             subtitleEn = "Master formal written ~는다/ㄴ다 style, notices (#51–52), graph trends (#53) & essays (#54).",
             subtitleId = "Kuasai gaya tulis formal ~는다/ㄴ다, soal #51–52, analisis grafik #53 & esai #54.",
-            accentTag = "cherry"
+            accentTag = "cherry",
+            bossSealKo = "필",
+            bossTimeSeconds = 90
         )
     )
 
@@ -1771,8 +1827,169 @@ object BeginnerSyllabusCatalog {
         ),
 
         BeginnerLesson(
-            id = "t1_08_topik1_exam_strategy",
+            id = "t1_08_irregular_verbs",
             number = 8,
+            stageNumber = 6,
+            track = SyllabusTrack.TOPIK_I,
+            estimatedMinutes = 5,
+            emblemKo = "불",
+            titleEn = "Irregular Verbs Made Easy (ㅂ · ㄷ · 르 · 으 · ㄹ)",
+            titleId = "Kata Kerja Tidak Beraturan Tanpa Pusing (ㅂ · ㄷ · 르 · 으 · ㄹ)",
+            goalEn = "Conjugate everyday irregulars like 춥다→추워요, 듣다→들어요 & 모르다→몰라요 cleanly.",
+            goalId = "Mengubah kata kerja tak beraturan wajib seperti 춥다→추워요, 듣다→들어요 & 모르다→몰라요 dengan tepat.",
+            overviewEn = "This lesson is the #1 bridge between beginner and intermediate Korean! Most verbs follow standard ~아요/~어요, but 5 tiny sound-smoothing families shift slightly before vowels: ㅂ→우 (춥다→추워요), ㄷ→ㄹ (듣다→들어요), 르→ㄹ+라/러 (모르다→몰라요), ㅡ drops (쓰다→써요), and ㄹ drops before ㄴ/ㅂ/ㅅ (살다→사세요).",
+            overviewId = "Pelajaran ini adalah jembatan #1 menuju bahasa Korea tingkat menengah! Sebagian besar kata kerja mengikuti rumus standar ~아요/~어요, tetapi 5 kelompok kecil berubah halus sebelum vokal: ㅂ→우 (춥다→추워요), ㄷ→ㄹ (듣다→들어요), 르→ㄹ+라/러 (모르다→몰라요), ㅡ gugur (쓰다→써요), dan ㄹ gugur sebelum ㄴ/ㅂ/ㅅ (살다→사세요).",
+            keyRuleEn = "5 Mini-Shortcuts: ㅂ→워 (추워요/더워요), ㄷ→ㄹ (들어요/걸어요), 르→ㄹ라/ㄹ러 (몰라요/빨라요), ㅡ drops (써요/바빠요), ㄹ drops before ㅅ (사세요)!",
+            keyRuleId = "5 Rumus Kilat: ㅂ→워 (추워요/더워요), ㄷ→ㄹ (들어요/걸어요), 르→ㄹ라/ㄹ러 (몰라요/빨라요), ㅡ hilang (써요/바빠요), ㄹ hilang sebelum ㅅ (사세요)!",
+            studyCards = listOf(
+                BeginnerStudyCard("춥다 → 추워요", "chup-da → chu-wo-yo", "Cold → It is cold (ㅂ irregular)", "Dingin → Dingin sekali (ㅂ tidak beraturan)", "ㅂ turns into 우 + 어요 → 워요! Same for 덥다→더워요, 어렵다→어려워요", "ㅂ berubah jadi 우 + 어요 → 워요! Sama dengan 덥다→더워요, 어렵다→어려워요"),
+                BeginnerStudyCard("듣다 → 들어요", "deut-da → deu-reo-yo", "To listen → I listen (ㄷ irregular)", "Mendengarkan → Saya mendengar (ㄷ tidak beraturan)", "ㄷ softens to ㄹ before a vowel → 들어요! Same for 걷다→걸어요", "ㄷ melunak jadi ㄹ sebelum vokal → 들어요! Sama dengan 걷다→걸어요"),
+                BeginnerStudyCard("모르다 → 몰라요", "mo-reu-da → mol-la-yo", "Not know → I don't know (르 irregular)", "Tidak tahu → Saya tidak tahu (르 tidak beraturan)", "ㅡ drops & ㄹ doubles: 모르 → 몰라요! Same for 빠르다→빨라요", "ㅡ hilang & ㄹ menjadi ganda: 모르 → 몰라요! Sama dengan 빠르다→빨라요"),
+                BeginnerStudyCard("바쁘다 → 바빠요", "ba-ppeu-da → ba-ppa-yo", "Busy → I'm busy (ㅡ drop)", "Sibuk → Saya sibuk (ㅡ gugur)", "Drop ㅡ and look at the previous vowel ㅏ → 바빠요!", "Buang ㅡ lalu ikuti vokal sebelumnya (ㅏ) → 바빠요!"),
+                BeginnerStudyCard("쓰다 → 써요", "sseu-da → sseo-yo", "Write / Use → I write (ㅡ drop)", "Menulis / Memakai → Saya menulis", "Single-syllable ㅡ stems always take 어요 → 써요, 커요!", "Akar 1 suku kata berakhiran ㅡ selalu memakai 어요 → 써요, 커요!"),
+                BeginnerStudyCard("살다 → 사세요", "sal-da → sa-se-yo", "To live → Live politely (ㄹ drop)", "Tinggal → Tinggal (sopan)", "ㄹ politely steps aside before ㅅ/ㄴ/ㅂ → 사세요, 압니다!", "ㄹ gugur sebelum huruf ㅅ/ㄴ/ㅂ → 사세요, 압니다!")
+            ),
+            sentenceExercises = listOf(
+                SentenceBuildExercise(
+                    promptEn = "Build using ㄷ irregular: 'I listen to Korean music'",
+                    promptId = "Susun dengan irregular ㄷ: 'Saya mendengarkan musik Korea'",
+                    targetTokens = listOf("저는", "한국 음악을", "들어요"),
+                    distractorTokens = listOf("듣어요"),
+                    fullSentenceKo = "저는 한국 음악을 들어요",
+                    romanization = "jeo-neun han-guk eu-ma-geul deu-reo-yo",
+                    hintEn = "듣다 is ㄷ-irregular → 들어요 (NOT 듣어요)!",
+                    hintId = "듣다 adalah irregular ㄷ → 들어요 (BUKAN 듣어요)!"
+                ),
+                SentenceBuildExercise(
+                    promptEn = "Listen & assemble (ㅂ irregular): 'Today the weather is very cold'",
+                    promptId = "Dengar & susun (irregular ㅂ): 'Hari ini cuacanya sangat dingin'",
+                    targetTokens = listOf("오늘", "날씨가", "너무", "추워요"),
+                    distractorTokens = listOf("춥어요"),
+                    fullSentenceKo = "오늘 날씨가 너무 추워요",
+                    romanization = "o-neul nal-ssi-ga neo-mu chu-wo-yo",
+                    hintEn = "춥다 is ㅂ-irregular → 추워요!",
+                    hintId = "춥다 adalah irregular ㅂ → 추워요!",
+                    isAudioFirst = true
+                )
+            ),
+            miniChecks = listOf(
+                BeginnerMiniCheck(
+                    promptEn = "How do you conjugate 어렵다 (difficult — ㅂ irregular) into polite ~요?",
+                    promptId = "Bagaimana bentuk sopan ~요 dari 어렵다 (sulit — irregular ㅂ)?",
+                    stimulusKo = "어렵다 → ?",
+                    options = listOf("어려워요", "어렵어요", "어려아요", "어렵워요"),
+                    correctOption = "어려워요",
+                    explanationEn = "Drop ㅂ and add 워요 → 어려워요 (It is difficult)!",
+                    explanationId = "Ganti ㅂ menjadi 워요 → 어려워요 (Sulit)!"
+                ),
+                BeginnerMiniCheck(
+                    promptEn = "Conjugate 모르다 (not know — 르 irregular) into polite present tense:",
+                    promptId = "Ubah 모르다 (tidak tahu — irregular 르) ke bentuk sopan sehari-hari:",
+                    stimulusKo = "모르다 → ?",
+                    options = listOf("몰라요", "모르어요", "모라요", "몰러요"),
+                    correctOption = "몰라요",
+                    explanationEn = "르 doubles ㄹ and pairs with ㅏ (from 오 in 모) → 몰라요!",
+                    explanationId = "르 menggandakan ㄹ dan ikut vokal ㅗ pada 모 → 몰라요!"
+                ),
+                BeginnerMiniCheck(
+                    promptEn = "Complete with ㄷ irregular 걷다 (to walk): '매일 공원에서 ___.'",
+                    promptId = "Lengkapi dengan irregular ㄷ 걷다 (berjalan): '매일 공원에서 ___.'",
+                    stimulusKo = "매일 공원에서 ___",
+                    options = listOf("걸어요", "걷어요", "거어요", "걸아요"),
+                    correctOption = "걸어요",
+                    explanationEn = "걷다 changes ㄷ → ㄹ before 어요 → 걸어요 (walk)!",
+                    explanationId = "걷다 mengubah ㄷ → ㄹ sebelum 어요 → 걸어요 (berjalan)!"
+                )
+            ),
+            practiceAction = BeginnerPracticeAction.GRAMMAR_STUDIO,
+            practiceLabelEn = "Review irregular verbs in Grammar Studio",
+            practiceLabelId = "Ulas kata kerja tidak beraturan di Studio Tata Bahasa",
+            xpReward = TOPIK_I_LESSON_XP
+        ),
+
+        BeginnerLesson(
+            id = "t1_09_noun_modifiers",
+            number = 9,
+            stageNumber = 6,
+            track = SyllabusTrack.TOPIK_I,
+            estimatedMinutes = 5,
+            emblemKo = "는",
+            titleEn = "Noun Modifiers — The Bridge to TOPIK II (~(으)ㄴ / ~는 / ~(으)ㄹ)",
+            titleId = "Modifier Kata Benda — Jembatan TOPIK II (~(으)ㄴ / ~는 / ~(으)ㄹ)",
+            goalEn = "Describe nouns with verbs & adjectives: 'the food I ate', 'music I like', 'friend I'll meet'.",
+            goalId = "Menerangkan kata benda dengan kata kerja: 'makanan yang dimakan', 'lagu yang disukai', 'teman yang akan ditemui'.",
+            overviewEn = "In English & Indonesian, descriptions go AFTER the noun ('food THAT I ate yesterday'). In Korean, the entire description goes BEFORE the noun using 3 magic time-tags! Action verbs: Past = ~(으)ㄴ, Present = ~는, Future = ~(으)ㄹ! Adjectives always use ~(으)ㄴ (좋은 날씨, 예쁜 꽃).",
+            overviewId = "Dalam bahasa Indonesia, keterangan ditaruh SETELAH kata benda ('makanan YANG saya makan kemarin'). Dalam bahasa Korea, seluruh keterangannya ditaruh SEBELUM kata benda memakai 3 penanda waktu ajaib! Kata kerja: Lampau = ~(으)ㄴ, Sekarang = ~는, Masa Depan = ~(으)ㄹ! Kata sifat selalu pakai ~(으)ㄴ (좋은 날씨).",
+            keyRuleEn = "3-Tense Noun Map: Past Verb ~(으)ㄴ (어제 먹은 음식) | Present Verb ~는 (좋아하는 노래) | Future Verb ~(으)ㄹ (내일 만날 친구)!",
+            keyRuleId = "Peta 3 Kala Modifier: Lampau ~(으)ㄴ (어제 먹은 음식) | Sekarang ~는 (좋아하는 노래) | Akan Datang ~(으)ㄹ (내일 만날 친구)!",
+            studyCards = listOf(
+                BeginnerStudyCard("좋아하는 노래", "jo-a-ha-neun no-rae", "A song that I like (Present ~는)", "Lagu yang saya sukai (Sekarang ~는)", "Action verb + 는 + Noun — zero batchim change!", "Kata kerja + 는 + Kata Benda — langsung tempel tanpa ubah batchim!"),
+                BeginnerStudyCard("어제 먹은 음식", "eo-je meo-geun eum-sik", "Food I ate yesterday (Past ~은)", "Makanan yang dimakan kemarin (Lampau ~은)", "Past verb with batchim (먹) → attach 은!", "Kata kerja lampau ber-batchim (먹) → pasang 은!"),
+                BeginnerStudyCard("어제 본 영화", "eo-je bon yeong-hwa", "Movie I watched yesterday (Past ~ㄴ)", "Film yang ditonton kemarin (Lampau ~ㄴ)", "Past verb without batchim (보) → attach ㄴ (본)!", "Kata kerja lampau tanpa batchim (보) → pasang ㄴ (본)!"),
+                BeginnerStudyCard("내일 만날 친구", "nae-il man-nal chin-gu", "Friend I will meet tomorrow (Future ~ㄹ)", "Teman yang akan ditemui besok (Depan ~ㄹ)", "Future modifier ~(으)ㄹ + Noun = 'to [verb] / that will [verb]'", "Modifier masa depan ~(으)ㄹ + Benda = 'yang akan...'"),
+                BeginnerStudyCard("좋은 날씨 / 맛있는 빵", "jo-eun nal-ssi / ma-sin-neun ppang", "Nice weather / Delicious bread", "Cuaca bagus / Roti yang enak", "Adjectives use ~(으)ㄴ, EXCEPT 있다/없다 which take ~는 (맛있는)!", "Kata sifat pakai ~(으)ㄴ, KECUALI 있다/없다 yang selalu pakai ~는 (맛있는)!")
+            ),
+            sentenceExercises = listOf(
+                SentenceBuildExercise(
+                    promptEn = "Build using Present Modifier ~는: 'This is the song I like'",
+                    promptId = "Susun dengan Modifier ~는: 'Ini adalah lagu yang saya sukai'",
+                    targetTokens = listOf("이것은", "제가", "좋아하는", "노래예요"),
+                    distractorTokens = listOf("좋아한"),
+                    fullSentenceKo = "이것은 제가 좋아하는 노래예요",
+                    romanization = "i-geo-seun je-ga jo-a-ha-neun no-rae-ye-yo",
+                    hintEn = "Place 제가 좋아하는 (that I like) RIGHT BEFORE 노래예요 (song)!",
+                    hintId = "Taruh 제가 좋아하는 (yang saya sukai) TEPAT SEBELUM 노래예요 (lagu)!"
+                ),
+                SentenceBuildExercise(
+                    promptEn = "Listen & assemble (Past Modifier ~(으)ㄴ): 'The food I ate yesterday was delicious'",
+                    promptId = "Dengar & susun (Modifier Lampau ~(으)ㄴ): 'Makanan yang saya makan kemarin enak'",
+                    targetTokens = listOf("어제", "먹은", "음식이", "맛있었어요"),
+                    distractorTokens = listOf("먹는"),
+                    fullSentenceKo = "어제 먹은 음식이 맛있었어요",
+                    romanization = "eo-je meo-geun eum-si-gi ma-si-sseo-sseo-yo",
+                    hintEn = "어제 (yesterday) matches past modifier 먹은 + 음식이!",
+                    hintId = "어제 (kemarin) berpasangan dengan modifier lampau 먹은 + 음식이!",
+                    isAudioFirst = true
+                )
+            ),
+            miniChecks = listOf(
+                BeginnerMiniCheck(
+                    promptEn = "Choose the right modifier for 'the book I will read tomorrow (내일 읽다)':",
+                    promptId = "Pilih modifier yang tepat untuk 'buku yang akan dibaca besok (내일 읽다)':",
+                    stimulusKo = "내일 ___ 책",
+                    options = listOf("읽을 (내일 읽을 책)", "읽은 (past)", "읽는 (present)", "읽고"),
+                    correctOption = "읽을 (내일 읽을 책)",
+                    explanationEn = "내일 (tomorrow) signals future modifier ~(으)ㄹ → 읽을 책!",
+                    explanationId = "내일 (besok) menandakan modifier masa depan ~(으)ㄹ → 읽을 책!"
+                ),
+                BeginnerMiniCheck(
+                    promptEn = "How do you say 'delicious Korean food' using 맛있다?",
+                    promptId = "Bagaimana menyebut 'makanan Korea yang enak' menggunakan 맛있다?",
+                    stimulusKo = "___ 한국 음식",
+                    options = listOf("맛있는", "맛있은", "맛있ㄴ", "맛있을"),
+                    correctOption = "맛있는",
+                    explanationEn = "All ~있다 / ~없다 adjectives ALWAYS take ~는 → 맛있는, 재미있는!",
+                    explanationId = "Semua kata sifat ~있다 / ~없다 SELALU memakai ~는 → 맛있는, 재미있는!"
+                ),
+                BeginnerMiniCheck(
+                    promptEn = "What does 저기서 커피를 마시는 사람이 제 친구예요 mean?",
+                    promptId = "Apa arti 저기서 커피를 마시는 사람이 제 친구예요?",
+                    stimulusKo = "커피를 마시는 사람",
+                    options = listOf("The person drinking coffee over there is my friend", "The person who will buy coffee", "My friend hates coffee", "I drank coffee with a stranger"),
+                    correctOption = "The person drinking coffee over there is my friend",
+                    explanationEn = "마시는 사람 = the person who is drinking (right now)!",
+                    explanationId = "마시는 사람 = orang yang sedang minum!"
+                )
+            ),
+            practiceAction = BeginnerPracticeAction.GRAMMAR_STUDIO,
+            practiceLabelEn = "Master modifiers in Grammar Studio",
+            practiceLabelId = "Dalami modifier di Studio Tata Bahasa",
+            xpReward = TOPIK_I_LESSON_XP
+        ),
+
+        BeginnerLesson(
+            id = "t1_10_topik1_exam_strategy",
+            number = 10,
             stageNumber = 6,
             track = SyllabusTrack.TOPIK_I,
             estimatedMinutes = 5,
@@ -2495,6 +2712,9 @@ object BeginnerSyllabusCatalog {
     fun stagesForTrack(track: SyllabusTrack): List<BeginnerStage> =
         allStages.filter { it.track == track }
 
+    fun stageByNumber(stageNumber: Int): BeginnerStage? =
+        allStages.firstOrNull { it.number == stageNumber }
+
     fun lessonsForTrack(track: SyllabusTrack): List<BeginnerLesson> =
         allLessons.filter { it.track == track }
 
@@ -2503,6 +2723,80 @@ object BeginnerSyllabusCatalog {
 
     fun lessonsForStage(stageNumber: Int): List<BeginnerLesson> =
         allLessons.filter { it.stageNumber == stageNumber }
+
+    /**
+     * Progressive Auto-Fade Romanization Policy:
+     * - Beginner Stages 1–2 (Hangul decoding): FULL
+     * - Beginner Stages 3–4 (Sentence Building) & TOPIK I: TAP_TO_PEEK
+     * - TOPIK II (3–6급): EXAM_HIDDEN (authentic exam feel, tap to peek if needed)
+     */
+    fun romanizationPolicyFor(lesson: BeginnerLesson): RomanizationVisibility = when {
+        lesson.track == SyllabusTrack.BEGINNER && lesson.stageNumber <= 2 -> RomanizationVisibility.FULL
+        lesson.track == SyllabusTrack.TOPIK_II -> RomanizationVisibility.EXAM_HIDDEN
+        else -> RomanizationVisibility.TAP_TO_PEEK
+    }
+
+    /**
+     * Activates Listening-First (Audio-to-Sentence) mode automatically on the 2nd sentence builder
+     * from Stage 2 onward (or whenever explicitly flagged on the exercise).
+     */
+    fun isAudioFirstExercise(lesson: BeginnerLesson, exerciseIndex: Int): Boolean {
+        val ex = lesson.sentenceExercises.getOrNull(exerciseIndex) ?: return false
+        return ex.isAudioFirst || (lesson.stageNumber >= 2 && exerciseIndex == 1)
+    }
+
+    /**
+     * Activates Listening Minimal-Pair ear discrimination on selected Hangul decoding checks.
+     */
+    fun isAudioPromptCheck(lesson: BeginnerLesson, checkIndex: Int): Boolean {
+        val chk = lesson.miniChecks.getOrNull(checkIndex) ?: return false
+        return chk.isAudioPrompt || (lesson.stageNumber <= 2 && checkIndex == 0)
+    }
+
+    /**
+     * Extracts clean Korean Hangul vocabulary tokens from a lesson so completing it
+     * automatically feeds matching words into Room's FSRS daily review queue.
+     */
+    fun coreKeywordsFor(lesson: BeginnerLesson): Set<String> {
+        val regex = Regex("[가-힣]{1,8}")
+        val out = LinkedHashSet<String>()
+        lesson.studyCards.forEach { card ->
+            regex.findAll(card.hangul).forEach { m ->
+                val token = m.value
+                if (token.length >= 2 || lesson.stageNumber == 1) out.add(token)
+            }
+        }
+        lesson.sentenceExercises.forEach { ex ->
+            ex.targetTokens.forEach { raw ->
+                regex.findAll(raw).forEach { m ->
+                    if (m.value.length >= 2) out.add(m.value)
+                }
+            }
+        }
+        return out
+    }
+
+    fun mistakeKeyForBuild(lessonId: String, exerciseIndex: Int): String =
+        "$lessonId::build::$exerciseIndex"
+
+    fun mistakeKeyForCheck(lessonId: String, checkIndex: Int): String =
+        "$lessonId::check::$checkIndex"
+
+    fun resolveMistakeItem(mistakeKey: String): SyllabusMistakeItem? {
+        val parts = mistakeKey.split("::")
+        if (parts.size != 3) return null
+        val lesson = lessonById(parts[0]) ?: return null
+        val idx = parts[2].toIntOrNull() ?: return null
+        return when (parts[1]) {
+            "build" -> lesson.sentenceExercises.getOrNull(idx)?.let {
+                SyllabusMistakeItem.SentenceBuildMistake(mistakeKey, lesson, idx, it)
+            }
+            "check" -> lesson.miniChecks.getOrNull(idx)?.let {
+                SyllabusMistakeItem.MiniCheckMistake(mistakeKey, lesson, idx, it)
+            }
+            else -> null
+        }
+    }
 
     fun nextLessonInTrack(currentLesson: BeginnerLesson): BeginnerLesson? =
         lessonsForTrack(currentLesson.track).firstOrNull { it.number == currentLesson.number + 1 }
@@ -2515,7 +2809,7 @@ object BeginnerSyllabusCatalog {
 
     /**
      * Automatically determines the learner's current guided track:
-     * BEGINNER -> once 12/12 graduated -> TOPIK_I -> once 8/8 graduated -> TOPIK_II.
+     * BEGINNER -> once 12/12 graduated -> TOPIK_I -> once 10/10 graduated -> TOPIK_II.
      */
     fun activeTrackFor(completedIds: Set<String>): SyllabusTrack = when {
         !isTrackGraduated(completedIds, SyllabusTrack.BEGINNER) -> SyllabusTrack.BEGINNER

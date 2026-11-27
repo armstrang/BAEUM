@@ -187,6 +187,42 @@ class BaeumRepository(
     }
 
     /**
+     * Feeds newly learned Guided Syllabus words into the learner's active FSRS daily review queue
+     * without overwriting any vocabulary items that already have review history.
+     */
+    suspend fun seedSyllabusWordsIntoFsrs(
+        hangulKeywords: Set<String>,
+        nowEpochMs: Long = System.currentTimeMillis(),
+        maxItemsPerLesson: Int = 6
+    ): Int = withContext(Dispatchers.IO) {
+        if (hangulKeywords.isEmpty()) return@withContext 0
+        val cleanKeys = hangulKeywords.map { it.trim() }.filter { it.isNotBlank() }.toSet()
+        if (cleanKeys.isEmpty()) return@withContext 0
+
+        val allVocab = db.vocabDao().getAllVocabOnce()
+        val toSchedule = ArrayList<VocabEntity>(maxItemsPerLesson)
+        for (item in allVocab) {
+            if (toSchedule.size >= maxItemsPerLesson) break
+            if (item.reps > 0 || item.dueEpochMs > 0L) continue
+            val ko = item.hangul.trim()
+            val matched = ko in cleanKeys ||
+                cleanKeys.any { kw -> kw.length >= 2 && (ko == kw || (ko.length >= 2 && kw.startsWith(ko))) }
+            if (matched) {
+                toSchedule.add(
+                    item.copy(
+                        stage = "LEARNING",
+                        dueEpochMs = nowEpochMs
+                    )
+                )
+            }
+        }
+        if (toSchedule.isNotEmpty()) {
+            db.vocabDao().upsertAll(toSchedule)
+        }
+        toSchedule.size
+    }
+
+    /**
      * Atomically updates a card using genuine FSRS-4.5 scheduling, writes ReviewLog,
      * and increments today's local-timezone DailyStudyEntity.
      */

@@ -110,6 +110,7 @@ import com.example.ui.screens.HangulWritingScreen
 import com.example.ui.screens.HomeDashboardScreen
 import com.example.ui.screens.LearningHubScreen
 import com.example.ui.screens.LiveConversationScreen
+import com.example.ui.screens.MistakeRedemptionScreen
 import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.PronunciationLabScreen
 import com.example.ui.screens.QuizCenterScreen
@@ -121,6 +122,7 @@ import com.example.ui.screens.SpeakingAssessmentScreen
 import com.example.ui.screens.SpeakingHistoryScreen
 import com.example.ui.screens.SpeakingHubScreen
 import com.example.ui.screens.SplashScreen
+import com.example.ui.screens.StageBossScreen
 import com.example.ui.screens.TopikCenterScreen
 import com.example.ui.screens.VocabularyLibraryScreen
 import com.example.ui.screens.WordDetailScreen
@@ -142,6 +144,8 @@ object BaeumRoutes {
 
     const val BEGINNER_SYLLABUS = "beginner_syllabus?track={track}"
     const val BEGINNER_LESSON = "beginner_lesson/{lessonId}"
+    const val STAGE_BOSS = "stage_boss/{stageNumber}"
+    const val MISTAKE_REDEMPTION = "mistake_redemption"
     const val HANGUL_STUDIO = "hangul_studio"
     const val HANGUL_WRITING = "hangul_writing"
     const val TOPIK_CENTER = "topik_center"
@@ -170,6 +174,8 @@ object BaeumRoutes {
     }
 
     fun beginnerLessonRoute(lessonId: String): String = "beginner_lesson/${Uri.encode(lessonId)}"
+
+    fun stageBossRoute(stageNumber: Int): String = "stage_boss/$stageNumber"
 
     fun vocabularyRoute(curriculum: String? = null, sub: String? = null): String {
         val c = Uri.encode(curriculum.orEmpty())
@@ -395,6 +401,7 @@ private fun BaeumMainShell(
                                 },
                                 onOpenBeginnerSyllabus = { navController.navigate(BaeumRoutes.syllabusRoute()) },
                                 onOpenSyllabusTrack = { track -> navController.navigate(BaeumRoutes.syllabusRoute(track)) },
+                                onOpenMistakeRedemption = { navController.navigate(BaeumRoutes.MISTAKE_REDEMPTION) },
                                 onStartNextBeginnerLesson = { lessonId ->
                                     navController.navigate(BaeumRoutes.beginnerLessonRoute(lessonId))
                                 }
@@ -505,10 +512,18 @@ private fun BaeumMainShell(
                             BeginnerSyllabusScreen(
                                 completedLessonIds = habitSnapshot.completedBeginnerLessonIds,
                                 perfectLessonIds = habitSnapshot.perfectSyllabusLessonIds,
+                                defeatedStageBossNumbers = habitSnapshot.defeatedStageBossNumbers,
+                                mistakeVaultKeys = habitSnapshot.mistakeVaultKeys,
                                 initialTrack = trackArg,
                                 onBack = { navController.popBackStack() },
                                 onOpenLesson = { lessonId ->
                                     navController.navigate(BaeumRoutes.beginnerLessonRoute(lessonId))
+                                },
+                                onOpenStageBoss = { stageNum ->
+                                    navController.navigate(BaeumRoutes.stageBossRoute(stageNum))
+                                },
+                                onOpenMistakeRedemption = {
+                                    navController.navigate(BaeumRoutes.MISTAKE_REDEMPTION)
                                 }
                             )
                         }
@@ -528,6 +543,7 @@ private fun BaeumMainShell(
                                 onSpeakKorean = { viewModel.speakKorean(it) },
                                 onCheckSound = { ok, step -> viewModel.playBeginnerCheckSound(ok, step) },
                                 onLessonCompleted = { id, isPerfect -> viewModel.completeBeginnerLesson(id, isPerfect) },
+                                onMistakeRecorded = { key -> viewModel.recordSyllabusMistake(key) },
                                 onOpenNextLesson = { nextId ->
                                     navController.navigate(BaeumRoutes.beginnerLessonRoute(nextId)) {
                                         popUpTo(BaeumRoutes.BEGINNER_LESSON) { inclusive = true }
@@ -565,6 +581,35 @@ private fun BaeumMainShell(
                                         }
                                     }
                                 }
+                            )
+                        }
+
+                        composable(
+                            route = BaeumRoutes.STAGE_BOSS,
+                            arguments = listOf(navArgument("stageNumber") { type = NavType.IntType })
+                        ) { entry ->
+                            val habitSnapshot by viewModel.habitSnapshot.collectAsStateWithLifecycle()
+                            val stageNumber = entry.arguments?.getInt("stageNumber") ?: 1
+                            StageBossScreen(
+                                stageNumber = stageNumber,
+                                isAlreadyDefeated = stageNumber in habitSnapshot.defeatedStageBossNumbers,
+                                onBack = { navController.popBackStack() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onCheckSound = { ok, step -> viewModel.playBeginnerCheckSound(ok, step) },
+                                onBossFinished = { stg, passed, correct, total ->
+                                    viewModel.completeStageBoss(stg, passed, correct, total)
+                                }
+                            )
+                        }
+
+                        composable(BaeumRoutes.MISTAKE_REDEMPTION) {
+                            val habitSnapshot by viewModel.habitSnapshot.collectAsStateWithLifecycle()
+                            MistakeRedemptionScreen(
+                                mistakeKeys = habitSnapshot.mistakeVaultKeys,
+                                onBack = { navController.popBackStack() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onCheckSound = { ok, step -> viewModel.playBeginnerCheckSound(ok, step) },
+                                onRedeemMistake = { key -> viewModel.redeemSyllabusMistake(key) }
                             )
                         }
 

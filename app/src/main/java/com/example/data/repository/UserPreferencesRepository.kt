@@ -124,6 +124,15 @@ interface UserPreferencesRepository {
         xpReward: Int = com.example.domain.curriculum.BeginnerSyllabusCatalog.LESSON_XP_REWARD,
         isPerfect: Boolean = false
     ): Boolean
+    suspend fun recordStageBossDefeated(
+        stageNumber: Int,
+        xpReward: Int = com.example.domain.curriculum.BeginnerSyllabusCatalog.STAGE_BOSS_XP
+    ): Boolean
+    suspend fun recordSyllabusMistake(mistakeKey: String)
+    suspend fun resolveSyllabusMistake(
+        mistakeKey: String,
+        bonusXp: Int = com.example.domain.curriculum.BeginnerSyllabusCatalog.REDEMPTION_BONUS_XP
+    ): Boolean
 
     suspend fun clearAllPreferences()
 }
@@ -163,7 +172,7 @@ class DataStoreUserPreferencesRepository(
         val DAILY_REMINDER_HOUR = intPreferencesKey("daily_reminder_hour")
         val DAILY_REMINDER_MINUTE = intPreferencesKey("daily_reminder_minute")
 
-        // Engagement, XP, Streak Shield, Daily Spark/Seal, Blitz, Dojang Stamps & Beginner Syllabus
+        // Engagement, XP, Streak Shield, Daily Spark/Seal, Blitz, Dojang Stamps & Guided Syllabus
         val TOTAL_XP = intPreferencesKey("engagement_total_xp")
         val STREAK_SHIELDS = intPreferencesKey("engagement_streak_shields")
         val LAST_SHIELD_USED_DAY_KEY = stringPreferencesKey("engagement_last_shield_used_day")
@@ -176,6 +185,8 @@ class DataStoreUserPreferencesRepository(
         val SOUND_EFFECTS_ENABLED = booleanPreferencesKey("engagement_sound_effects_enabled")
         val COMPLETED_BEGINNER_LESSONS = stringPreferencesKey("engagement_completed_beginner_lessons")
         val PERFECT_SYLLABUS_LESSONS = stringPreferencesKey("engagement_perfect_syllabus_lessons")
+        val DEFEATED_STAGE_BOSSES = stringPreferencesKey("engagement_defeated_stage_bosses")
+        val SYLLABUS_MISTAKE_VAULT = stringPreferencesKey("engagement_syllabus_mistake_vault")
     }
 
     private val safePreferencesFlow: Flow<Preferences> = dataStore.data
@@ -589,6 +600,52 @@ class DataStoreUserPreferencesRepository(
         return newlyCompleted
     }
 
+    override suspend fun recordStageBossDefeated(stageNumber: Int, xpReward: Int): Boolean {
+        if (stageNumber <= 0) return false
+        var newlyDefeated = false
+        dataStore.edit { prefs ->
+            val existing = parseIntIds(prefs[Keys.DEFEATED_STAGE_BOSSES])
+            if (stageNumber !in existing) {
+                newlyDefeated = true
+                val updated = existing + stageNumber
+                prefs[Keys.DEFEATED_STAGE_BOSSES] = updated.sorted().joinToString(",")
+                val curXp = (prefs[Keys.TOTAL_XP] ?: 0).coerceAtLeast(0)
+                prefs[Keys.TOTAL_XP] = curXp + xpReward.coerceAtLeast(0)
+            }
+        }
+        return newlyDefeated
+    }
+
+    override suspend fun recordSyllabusMistake(mistakeKey: String) {
+        val cleanKey = mistakeKey.trim()
+        if (cleanKey.isBlank()) return
+        dataStore.edit { prefs ->
+            val existing = parseStampIds(prefs[Keys.SYLLABUS_MISTAKE_VAULT])
+            if (cleanKey !in existing) {
+                // Keep a focused, motivating vault (most recent 24 unique mistakes)
+                val updated = (existing + cleanKey).toList().takeLast(24)
+                prefs[Keys.SYLLABUS_MISTAKE_VAULT] = updated.joinToString(",")
+            }
+        }
+    }
+
+    override suspend fun resolveSyllabusMistake(mistakeKey: String, bonusXp: Int): Boolean {
+        val cleanKey = mistakeKey.trim()
+        if (cleanKey.isBlank()) return false
+        var resolved = false
+        dataStore.edit { prefs ->
+            val existing = parseStampIds(prefs[Keys.SYLLABUS_MISTAKE_VAULT])
+            if (cleanKey in existing) {
+                resolved = true
+                val remaining = existing - cleanKey
+                prefs[Keys.SYLLABUS_MISTAKE_VAULT] = remaining.sorted().joinToString(",")
+                val curXp = (prefs[Keys.TOTAL_XP] ?: 0).coerceAtLeast(0)
+                prefs[Keys.TOTAL_XP] = curXp + bonusXp.coerceAtLeast(0)
+            }
+        }
+        return resolved
+    }
+
     override suspend fun clearAllPreferences() {
         dataStore.edit { it.clear() }
     }
@@ -630,12 +687,19 @@ class DataStoreUserPreferencesRepository(
         unlockedStampIds = parseStampIds(prefs[Keys.UNLOCKED_STAMP_IDS]),
         soundEffectsEnabled = prefs[Keys.SOUND_EFFECTS_ENABLED] ?: true,
         completedBeginnerLessonIds = parseStampIds(prefs[Keys.COMPLETED_BEGINNER_LESSONS]),
-        perfectSyllabusLessonIds = parseStampIds(prefs[Keys.PERFECT_SYLLABUS_LESSONS])
+        perfectSyllabusLessonIds = parseStampIds(prefs[Keys.PERFECT_SYLLABUS_LESSONS]),
+        defeatedStageBossNumbers = parseIntIds(prefs[Keys.DEFEATED_STAGE_BOSSES]),
+        mistakeVaultKeys = parseStampIds(prefs[Keys.SYLLABUS_MISTAKE_VAULT])
     )
 
     private fun parseStampIds(raw: String?): Set<String> {
         if (raw.isNullOrBlank()) return emptySet()
         return raw.split(",").mapNotNull { it.trim().ifBlank { null } }.toSet()
+    }
+
+    private fun parseIntIds(raw: String?): Set<Int> {
+        if (raw.isNullOrBlank()) return emptySet()
+        return raw.split(",").mapNotNull { it.trim().toIntOrNull() }.toSet()
     }
 
     private fun mapStreakState(prefs: Preferences): LearningStreakState {

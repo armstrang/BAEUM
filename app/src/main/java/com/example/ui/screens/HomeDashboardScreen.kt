@@ -155,6 +155,7 @@ fun HomeDashboardScreen(
     onQuestAction: (String) -> Unit = {},
     onOpenBeginnerSyllabus: () -> Unit = {},
     onOpenSyllabusTrack: (SyllabusTrack?) -> Unit = { onOpenBeginnerSyllabus() },
+    onOpenMistakeRedemption: () -> Unit = {},
     onStartNextBeginnerLesson: (String) -> Unit = {}
 ) {
     val extended = LocalBaeumColors.current
@@ -554,7 +555,9 @@ fun HomeDashboardScreen(
             BeginnerSyllabusHomeCard(
                 completedIds = habitSnapshot.completedBeginnerLessonIds,
                 perfectIds = habitSnapshot.perfectSyllabusLessonIds,
+                mistakeCount = habitSnapshot.mistakeVaultKeys.size,
                 onOpenTrack = onOpenSyllabusTrack,
+                onOpenMistakeRedemption = onOpenMistakeRedemption,
                 onStartNextLesson = onStartNextBeginnerLesson
             )
         }
@@ -1463,7 +1466,9 @@ private fun DailyAtelierQuestsCard(
 private fun BeginnerSyllabusHomeCard(
     completedIds: Set<String>,
     perfectIds: Set<String>,
+    mistakeCount: Int = 0,
     onOpenTrack: (SyllabusTrack?) -> Unit,
+    onOpenMistakeRedemption: () -> Unit = {},
     onStartNextLesson: (String) -> Unit
 ) {
     val extended = LocalBaeumColors.current
@@ -1589,8 +1594,8 @@ private fun BeginnerSyllabusHomeCard(
         Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = bText(
-                "${nextLesson.goalEn} (~${nextLesson.estimatedMinutes} min · Build + Check)",
-                "${nextLesson.goalId} (~${nextLesson.estimatedMinutes} mnt · Susun Kalimat + Cek)"
+                "${nextLesson.goalEn} (~${nextLesson.estimatedMinutes} min · Build + Listen)",
+                "${nextLesson.goalId} (~${nextLesson.estimatedMinutes} mnt · Susun + Dengar)"
             ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1642,6 +1647,36 @@ private fun BeginnerSyllabusHomeCard(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+            }
+        }
+
+        if (mistakeCount > 0) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(HabitPillShape)
+                    .background(extended.cherryPink.copy(alpha = 0.14f))
+                    .border(1.dp, extended.cherryPink.copy(alpha = 0.45f), HabitPillShape)
+                    .tactileClickable(pressedScale = 0.96f, onClick = onOpenMistakeRedemption)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = bText(
+                        "🔥 Redeem $mistakeCount past mistake(s) (+20 XP each)",
+                        "🔥 Balas Dendam $mistakeCount soal salah (+20 XP/soal)"
+                    ),
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                    color = extended.cherryPink
+                )
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = extended.cherryPink,
+                    modifier = Modifier.size(16.dp)
+                )
             }
         }
 
