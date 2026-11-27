@@ -621,7 +621,7 @@ object LearningScoringEngine {
         // Dynamically weight active pillars so beginners with only flashcards/quizzes still get an honest score
         var weightSum = 0.0
         var weightedTotal = 0.0
-        if (reviewed.isNotEmpty()) { weightedTotal += vocabRetentionScore * 0.35; weightSum += 0.35 }
+        if (reviewedCount > 0) { weightedTotal += vocabRetentionScore * 0.35; weightSum += 0.35 }
         if (recentQuizzes.isNotEmpty()) { weightedTotal += quizScore * 0.25; weightSum += 0.25 }
         if (recentExams.isNotEmpty()) { weightedTotal += examScore * 0.25; weightSum += 0.25 }
         if (recentSpeaking.isNotEmpty()) { weightedTotal += speakingScore * 0.15; weightSum += 0.15 }
@@ -635,13 +635,13 @@ object LearningScoringEngine {
         val tier = when {
             overall >= 85 && mastered >= 80 -> "TOPIK II Advanced Track (5–6급)"
             overall >= 70 && mastered >= 35 -> "TOPIK II Intermediate Track (3–4급)"
-            overall >= 50 && reviewed.size >= 20 -> "TOPIK I Upper Beginner (2급)"
+            overall >= 50 && reviewedCount >= 20 -> "TOPIK I Upper Beginner (2급)"
             overall >= 20 -> "TOPIK I Foundation (1급)"
             else -> "Getting Started (Hangul & 1급)"
         }
 
         val nextAction = when {
-            reviewed.isEmpty() -> "Complete your first Smart Flashcard session to initialize FSRS tracking."
+            reviewedCount == 0 -> "Complete your first Smart Flashcard session to initialize FSRS tracking."
             leechCount >= 3 -> "Clear $leechCount difficult leech word(s) using Weak Items Quiz."
             recentQuizzes.isEmpty() -> "Take a Smart Quiz to benchmark active vocabulary recall."
             recentExams.isEmpty() -> "Try a timed TOPIK I or EPS-TOPIK Mock Exam for baseline scoring."
