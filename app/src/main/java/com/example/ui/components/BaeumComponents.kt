@@ -58,7 +58,12 @@ import com.example.R
 import com.example.data.repository.DayForecastPoint
 import com.example.ui.theme.BaeumMotion
 import com.example.ui.theme.LocalBaeumColors
+import com.example.ui.theme.luxuryShimmer
+import com.example.ui.theme.tactileBindClick
 import com.example.ui.theme.tactileClickable
+import com.example.ui.theme.tactilePressScale
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.graphics.graphicsLayer
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -133,23 +138,32 @@ fun BaeumPrimaryButton(
         }
     }
 
-    val glowColor = if (enabled) primary.copy(alpha = 0.36f) else Color.Transparent
+    val glowColor = if (enabled) primary.copy(alpha = 0.38f) else Color.Transparent
+    val interactionSource = remember { MutableInteractionSource() }
+    val enabledAlphaState = animateFloatAsState(
+        targetValue = if (enabled) 1f else 0.72f,
+        animationSpec = if (extended.reducedMotion) tween(0) else tween(220, easing = BaeumMotion.VelvetEasing),
+        label = "primary_btn_enabled_alpha"
+    )
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(54.dp)
             .then(if (testTag.isNotEmpty()) Modifier.testTag(testTag) else Modifier)
+            .tactilePressScale(interactionSource = interactionSource, enabled = enabled, pressedScale = 0.964f)
+            .graphicsLayer { alpha = enabledAlphaState.value }
             .shadow(
-                elevation = if (enabled) 10.dp else 0.dp,
+                elevation = if (enabled) 11.dp else 0.dp,
                 shape = ButtonPillShape,
                 ambientColor = glowColor,
                 spotColor = glowColor
             )
             .clip(ButtonPillShape)
             .background(bgBrush)
+            .luxuryShimmer(enabled = enabled, durationMillis = 5200, shimmerAlpha = 0.13f)
             .border(width = 1.dp, brush = rimBrush, shape = ButtonPillShape)
-            .tactileClickable(enabled = enabled, pressedScale = 0.972f, onClick = onClick),
+            .tactileBindClick(interactionSource = interactionSource, enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -168,7 +182,7 @@ fun BaeumPrimaryButton(
 }
 
 /**
- * Calm layered secondary button with crisp hairline border and tactile spring press.
+ * Calm layered secondary button with crisp hairline border and unified tactile spring press.
  */
 @Composable
 fun BaeumSecondaryButton(
@@ -207,12 +221,14 @@ fun BaeumSecondaryButton(
         )
     }
     val lightShadow = if (extended.isDark) Color.Transparent else Color(0x18192138)
+    val interactionSource = remember { MutableInteractionSource() }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(52.dp)
             .then(if (testTag.isNotEmpty()) Modifier.testTag(testTag) else Modifier)
+            .tactilePressScale(interactionSource = interactionSource, enabled = enabled, pressedScale = 0.968f)
             .shadow(
                 elevation = if (!extended.isDark && enabled) 4.dp else 0.dp,
                 shape = ButtonPillShape,
@@ -222,7 +238,7 @@ fun BaeumSecondaryButton(
             .clip(ButtonPillShape)
             .background(fillBrush)
             .border(width = 1.dp, brush = borderBrush, shape = ButtonPillShape)
-            .tactileClickable(enabled = enabled, pressedScale = 0.974f, onClick = onClick),
+            .tactileBindClick(interactionSource = interactionSource, enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
@@ -315,9 +331,11 @@ fun BaeumBrandHeader(
         }
         if (onSettingsClick != null) {
             Spacer(modifier = Modifier.width(12.dp))
+            val settingsInteraction = remember { MutableInteractionSource() }
             Box(
                 modifier = Modifier
                     .size(48.dp)
+                    .tactilePressScale(interactionSource = settingsInteraction, pressedScale = 0.90f)
                     .shadow(
                         elevation = if (extended.isDark) 0.dp else 5.dp,
                         shape = CircleShape,
@@ -327,7 +345,7 @@ fun BaeumBrandHeader(
                     .clip(CircleShape)
                     .background(iconFillBrush)
                     .border(width = 1.dp, brush = iconBorderBrush, shape = CircleShape)
-                    .tactileClickable(pressedScale = 0.92f, onClick = onSettingsClick)
+                    .tactileBindClick(interactionSource = settingsInteraction, onClick = onSettingsClick)
                     .testTag("settings_icon_button"),
                 contentAlignment = Alignment.Center
             ) {
@@ -365,6 +383,7 @@ fun BaeumTopBar(
             }
         )
     }
+    val backInteraction = remember { MutableInteractionSource() }
 
     Row(
         modifier = Modifier
@@ -375,6 +394,7 @@ fun BaeumTopBar(
         Box(
             modifier = Modifier
                 .size(48.dp)
+                .tactilePressScale(interactionSource = backInteraction, pressedScale = 0.89f)
                 .shadow(
                     elevation = if (extended.isDark) 0.dp else 5.dp,
                     shape = CircleShape,
@@ -384,7 +404,7 @@ fun BaeumTopBar(
                 .clip(CircleShape)
                 .background(fillBrush)
                 .border(width = 1.dp, brush = borderBrush, shape = CircleShape)
-                .tactileClickable(pressedScale = 0.90f, onClick = onBack)
+                .tactileBindClick(interactionSource = backInteraction, onClick = onBack)
                 .testTag("topbar_back_button"),
             contentAlignment = Alignment.Center
         ) {

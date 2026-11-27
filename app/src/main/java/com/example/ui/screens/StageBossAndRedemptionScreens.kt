@@ -68,6 +68,7 @@ import com.example.ui.components.SeoulCard
 import com.example.ui.theme.BaeumMotion
 import com.example.ui.theme.LocalBaeumColors
 import com.example.ui.theme.bText
+import com.example.ui.theme.breathingPulse
 import com.example.ui.theme.gentleShake
 import com.example.ui.theme.tactileClickable
 import kotlinx.coroutines.delay
@@ -161,11 +162,16 @@ fun StageBossScreen(
         }
     }
 
-    val timerAccent = when {
+    val targetTimerAccent = when {
         remainingSeconds <= 15 -> extended.cherryPink
         remainingSeconds <= 30 -> extended.gold
         else -> extended.mint
     }
+    val timerAccent by androidx.compose.animation.animateColorAsState(
+        targetValue = targetTimerAccent,
+        animationSpec = androidx.compose.animation.core.tween(if (extended.reducedMotion) 0 else 280),
+        label = "boss_timer_accent"
+    )
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -200,6 +206,12 @@ fun StageBossScreen(
                     ) {
                         Row(
                             modifier = Modifier
+                                .breathingPulse(
+                                    enabled = remainingSeconds <= 15,
+                                    minScale = 0.96f,
+                                    maxScale = 1.07f,
+                                    durationMillis = 620
+                                )
                                 .clip(BossPillShape)
                                 .background(timerAccent.copy(alpha = 0.16f))
                                 .border(1.dp, timerAccent.copy(alpha = 0.45f), BossPillShape)

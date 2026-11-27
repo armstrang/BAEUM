@@ -3,6 +3,7 @@ package com.example.ui.screens
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -594,6 +595,9 @@ fun SmartFlashcardScreen(
                             BaeumGlassCard(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .animateContentSize(
+                                        animationSpec = if (extended.reducedMotion) tween(0) else BaeumMotion.sizeSpring()
+                                    )
                                     .testTag("flashcard_main_surface"),
                                 style = BaeumGlassStyle.FLASHCARD,
                                 onClick = if (!session.isRevealed) onReveal else null,
@@ -686,13 +690,8 @@ fun SmartFlashcardScreen(
 
                                 AnimatedVisibility(
                                     visible = session.isRevealed,
-                                    enter = if (extended.reducedMotion) {
-                                        fadeIn(tween(0))
-                                    } else {
-                                        fadeIn(tween(280, easing = BaeumMotion.SilkEasing)) +
-                                            expandVertically(animationSpec = BaeumMotion.silkSpring())
-                                    },
-                                    exit = fadeOut(tween(if (extended.reducedMotion) 0 else 140))
+                                    enter = BaeumMotion.silkExpandEnter(extended.reducedMotion),
+                                    exit = BaeumMotion.silkCollapseExit(extended.reducedMotion)
                                 ) {
                                     Column(
                                         modifier = Modifier.fillMaxWidth(),

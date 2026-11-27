@@ -27,7 +27,8 @@ import androidx.compose.ui.unit.dp
 import com.example.ui.theme.BaeumTheme
 import com.example.ui.theme.LocalBaeumColors
 import com.example.ui.theme.ThemeMode
-import com.example.ui.theme.tactileClickable
+import com.example.ui.theme.tactileBindClick
+import com.example.ui.theme.tactilePressScale
 
 /**
  * Visual depth presets for [BaeumGlassCard] tailored to dashboard widgets,
@@ -144,8 +145,21 @@ fun BaeumGlassCard(
         }
     }
 
+    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+
     Box(
         modifier = modifier
+            .then(
+                if (onClick != null) {
+                    Modifier.tactilePressScale(
+                        interactionSource = interactionSource,
+                        enabled = true,
+                        pressedScale = 0.972f
+                    )
+                } else {
+                    Modifier
+                }
+            )
             .shadow(
                 elevation = if (isDark) shadowElevation else (shadowElevation * 0.72f),
                 shape = shape,
@@ -207,7 +221,11 @@ fun BaeumGlassCard(
             .border(width = borderWidth, brush = borderBrush, shape = shape)
             .then(
                 if (onClick != null) {
-                    Modifier.tactileClickable(pressedScale = 0.976f, onClick = onClick)
+                    Modifier.tactileBindClick(
+                        interactionSource = interactionSource,
+                        enabled = true,
+                        onClick = onClick
+                    )
                 } else {
                     Modifier
                 }

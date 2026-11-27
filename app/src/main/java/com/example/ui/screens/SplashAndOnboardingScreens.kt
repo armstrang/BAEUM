@@ -101,15 +101,55 @@ fun SplashScreen(
     } else {
         val infinite = rememberInfiniteTransition(label = "splash_halo")
         infinite.animateFloat(
-            initialValue = 0.96f,
-            targetValue = 1.06f,
+            initialValue = 0.94f,
+            targetValue = 1.08f,
             animationSpec = infiniteRepeatable(
-                animation = tween(2600, easing = FastOutSlowInEasing),
+                animation = tween(2400, easing = FastOutSlowInEasing),
                 repeatMode = RepeatMode.Reverse
             ),
             label = "halo_pulse"
         )
     }
+    val emblemFloatState = if (extended.reducedMotion) {
+        androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    } else {
+        val infinite = rememberInfiniteTransition(label = "splash_float")
+        infinite.animateFloat(
+            initialValue = -5f,
+            targetValue = 5f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(2800, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "emblem_levitate"
+        )
+    }
+    val loadingSweepState = if (extended.reducedMotion) {
+        androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0.58f) }
+    } else {
+        val infinite = rememberInfiniteTransition(label = "splash_progress")
+        infinite.animateFloat(
+            initialValue = 0.20f,
+            targetValue = 0.88f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1500, easing = BaeumMotion.SilkEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "splash_bar_sweep"
+        )
+    }
+    var entered by androidx.compose.runtime.remember { mutableStateOf(extended.reducedMotion) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { entered = true }
+    val entranceScaleState = androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (entered) 1f else 0.86f,
+        animationSpec = if (extended.reducedMotion) tween(0) else BaeumMotion.luxurySpring(),
+        label = "splash_emblem_scale"
+    )
+    val entranceAlphaState = androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (entered) 1f else 0f,
+        animationSpec = if (extended.reducedMotion) tween(0) else tween(480, easing = BaeumMotion.SilkEasing),
+        label = "splash_emblem_alpha"
+    )
 
     Box(
         modifier = Modifier
@@ -119,13 +159,20 @@ fun SplashScreen(
         contentAlignment = Alignment.Center
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 32.dp),
+            modifier = Modifier
+                .padding(horizontal = 32.dp)
+                .graphicsLayer {
+                    alpha = entranceAlphaState.value
+                    val s = entranceScaleState.value
+                    scaleX = s
+                    scaleY = s
+                },
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Box(
                     modifier = Modifier
-                        .size(164.dp)
+                        .size(168.dp)
                         .graphicsLayer {
                             val s = haloScaleState.value
                             scaleX = s
@@ -135,8 +182,8 @@ fun SplashScreen(
                         .background(
                             Brush.radialGradient(
                                 listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.34f),
-                                    extended.gold.copy(alpha = 0.14f),
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.36f),
+                                    extended.gold.copy(alpha = 0.16f),
                                     Color.Transparent
                                 )
                             )
@@ -145,6 +192,9 @@ fun SplashScreen(
                 Box(
                     modifier = Modifier
                         .size(118.dp)
+                        .graphicsLayer {
+                            translationY = emblemFloatState.value.dp.toPx()
+                        }
                         .shadow(20.dp, CircleShape, ambientColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                         .clip(CircleShape)
                         .border(
@@ -210,8 +260,8 @@ fun SplashScreen(
                 }
             } else {
                 ProgressBarSlim(
-                    progress = 0.52f,
-                    modifier = Modifier.width(136.dp),
+                    progress = loadingSweepState.value,
+                    modifier = Modifier.width(142.dp),
                     height = 6.dp
                 )
             }
@@ -266,7 +316,7 @@ fun OnboardingScreen(
 
     val levels = listOf(
         Triple("Zero", bText("Complete beginner (Zero)", "Pemula total (dari nol)"), bText("Hangul → Sentence Building (12-lesson path)", "Hangul → Menyusun Kalimat (12 pelajaran)")),
-        Triple("Beginner", bText("Basic Hangul & phrases", "Hangul dasar & frasa"), bText("TOPIK I (1–2급) dedicated 8-lesson syllabus", "Silabus khusus TOPIK I (1–2급) · 8 pelajaran")),
+        Triple("Beginner", bText("Basic Hangul & phrases", "Hangul dasar & frasa"), bText("TOPIK I (1–2급) dedicated 10-lesson syllabus", "Silabus khusus TOPIK I (1–2급) · 10 pelajaran")),
         Triple("Intermediate", bText("Everyday communication", "Komunikasi sehari-hari"), bText("TOPIK II (3–4급) dedicated 8-lesson syllabus", "Silabus khusus TOPIK II (3–4급) · 8 pelajaran")),
         Triple("Advanced", bText("Professional & academic", "Profesional & akademis"), bText("TOPIK II (5–6급) & formal writing mastery", "TOPIK II (5–6급) & penulisan formal"))
     )
