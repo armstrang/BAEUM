@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -7,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,9 +36,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.local.CurriculumPathway
 import com.example.data.local.VocabEntity
+import com.example.domain.curriculum.BeginnerSyllabusCatalog
+import com.example.domain.curriculum.SyllabusTrack
 import com.example.ui.components.BaeumBrandHeader
 import com.example.ui.components.BaeumGlassCard
 import com.example.ui.components.BaeumGlassStyle
@@ -44,16 +51,25 @@ import com.example.ui.components.BaeumSecondaryButton
 import com.example.ui.components.BaeumTopBar
 import com.example.ui.components.ProgressBarSlim
 import com.example.ui.components.SeoulCard
+import com.example.ui.theme.BaeumMotion
 import com.example.ui.theme.LocalBaeumColors
 import com.example.ui.theme.StaggeredEntrance
 import com.example.ui.theme.bText
 import com.example.ui.theme.isIndonesian
+import com.example.ui.theme.tactileClickable
 
-// SCREEN 04 / 24 — Learning Hub (Four independent pathways)
+private val PathwayEmblemShape = RoundedCornerShape(18.dp)
+private val TrackChipShape = RoundedCornerShape(12.dp)
+private val TopikLevelOrder = listOf("1급", "2급", "3급", "4급", "5급", "6급")
+
+// SCREEN 04 / 24 — Learning Hub (3-Track Guided Syllabi + Core Curricula)
 @Composable
 fun LearningHubScreen(
     allVocab: List<VocabEntity>,
+    completedBeginnerLessons: Set<String> = emptySet(),
     onOpenSettings: () -> Unit,
+    onOpenBeginnerSyllabus: () -> Unit = {},
+    onOpenSyllabusTrack: (SyllabusTrack) -> Unit = { onOpenBeginnerSyllabus() },
     onSelectHangul: () -> Unit,
     onSelectTopik: () -> Unit,
     onSelectEpsTopik: () -> Unit,
@@ -62,108 +78,244 @@ fun LearningHubScreen(
     onOpenQuizCenter: () -> Unit
 ) {
     val extended = LocalBaeumColors.current
-    fun progressFor(pathway: String): Float {
-        val list = allVocab.filter { it.curriculum == pathway }
-        if (list.isEmpty()) return 0f
-        return list.count { it.reps > 0 }.toFloat() / list.size
+    val primary = MaterialTheme.colorScheme.primary
+    // Single-pass O(N) progress calculation without intermediate 6,600-element lists
+    val progressByPathway = remember(allVocab) {
+        val counts = HashMap<String, IntArray>(6)
+        for (item in allVocab) {
+            val arr = counts.getOrPut(item.curriculum) { IntArray(2) }
+            arr[1]++
+            if (item.reps > 0) arr[0]++
+        }
+        counts.mapValues { (_, arr) -> if (arr[1] == 0) 0f else arr[0].toFloat() / arr[1] }
+    }
+    val totalSyllabusDone = remember(completedBeginnerLessons) {
+        BeginnerSyllabusCatalog.totalCompletionCount(completedBeginnerLessons)
+    }
+    val totalSyllabusLessons = BeginnerSyllabusCatalog.allLessons.size
+    val totalSyllabusProgress = remember(completedBeginnerLessons) {
+        BeginnerSyllabusCatalog.totalCompletionFraction(completedBeginnerLessons)
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .widthIn(max = 680.dp)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter
     ) {
-        StaggeredEntrance(index = 0) {
-            BaeumBrandHeader(
-                title = bText("Learn Korean", "Belajar Korea"),
-                subtitle = bText("Curated pathways crafted for mastery", "Jalur belajar terstruktur menuju kefasihan"),
-                onSettingsClick = onOpenSettings
-            )
-        }
-
-        Spacer(modifier = Modifier.height(2.dp))
-
-        StaggeredEntrance(index = 1) {
-            PathwayCard(
-                emblem = "한",
-                title = bText("Hangul Fundamentals", "Dasar Hangul"),
-                subtitle = bText(
-                    "Alphabet, syllable blocks, batchim & stroke order",
-                    "Alfabet, blok suku kata, batchim & urutan goresan"
-                ),
-                progress = progressFor(CurriculumPathway.HANGUL),
-                accent = MaterialTheme.colorScheme.primary,
-                onClick = onSelectHangul,
-                testTag = "pathway_hangul"
-            )
-        }
-        StaggeredEntrance(index = 2) {
-            PathwayCard(
-                emblem = "급",
-                title = "TOPIK 1–6급",
-                subtitle = bText(
-                    "6,600+ academic vocabulary, grammar & exam mastery",
-                    "6.600+ kosakata akademik, tata bahasa & persiapan ujian"
-                ),
-                progress = progressFor(CurriculumPathway.TOPIK),
-                accent = extended.mint,
-                onClick = onSelectTopik,
-                testTag = "pathway_topik"
-            )
-        }
-        StaggeredEntrance(index = 3) {
-            PathwayCard(
-                emblem = "일",
-                title = "EPS-TOPIK",
-                subtitle = bText(
-                    "Industrial safety, manufacturing & workplace Korean",
-                    "Keselamatan kerja, manufaktur & bahasa Korea di tempat kerja"
-                ),
-                progress = progressFor(CurriculumPathway.EPS_TOPIK),
-                accent = extended.gold,
-                onClick = onSelectEpsTopik,
-                testTag = "pathway_eps"
-            )
-        }
-        StaggeredEntrance(index = 4) {
-            PathwayCard(
-                emblem = "말",
-                title = bText("Everyday Korean", "Korea Sehari-hari"),
-                subtitle = bText(
-                    "Seoul life conversations & polite speech levels",
-                    "Percakapan hidup di Seoul & tingkat kesopanan bicara"
-                ),
-                progress = progressFor(CurriculumPathway.EVERYDAY),
-                accent = extended.cherryPink,
-                onClick = onSelectEveryday,
-                testTag = "pathway_everyday"
-            )
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-        StaggeredEntrance(index = 5) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                BaeumSecondaryButton(
-                    text = bText("Grammar Studio", "Studio Tata Bahasa"),
-                    onClick = onOpenGrammarStudio,
-                    modifier = Modifier.weight(1f),
-                    testTag = "learn_grammar_button"
-                )
-                BaeumSecondaryButton(
-                    text = bText("Quiz Center", "Pusat Kuis"),
-                    onClick = onOpenQuizCenter,
-                    modifier = Modifier.weight(1f),
-                    testTag = "learn_quiz_button"
+        Column(
+            modifier = Modifier
+                .widthIn(max = 680.dp)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            StaggeredEntrance(index = 0) {
+                BaeumBrandHeader(
+                    title = bText("Learn Korean", "Belajar Korea"),
+                    subtitle = bText("Clear guided tracks from zero to TOPIK II", "Jalur belajar terarah dari nol hingga TOPIK II"),
+                    onSettingsClick = onOpenSettings
                 )
             }
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            // #1 Featured 3-Track Guided Syllabus Hub (Pemula Nol -> TOPIK I -> TOPIK II)
+            StaggeredEntrance(index = 1) {
+                BaeumGlassCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("pathway_beginner_syllabus"),
+                    style = BaeumGlassStyle.HERO,
+                    accentGlowColor = extended.mint,
+                    borderColor = extended.mint.copy(alpha = 0.45f),
+                    onClick = { onOpenSyllabusTrack(BeginnerSyllabusCatalog.activeTrackFor(completedBeginnerLessons)) }
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(PathwayEmblemShape)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(extended.mint.copy(alpha = 0.26f), extended.mint.copy(alpha = 0.08f))
+                                    )
+                                )
+                                .border(1.dp, extended.mint.copy(alpha = 0.5f), PathwayEmblemShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "길",
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
+                                color = extended.mint
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = bText("3-Track Guided Syllabi", "3 Jalur Silabus Terpandu"),
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "$totalSyllabusDone/$totalSyllabusLessons",
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold),
+                                    color = extended.mint
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = bText(
+                                    "Distinct interactive syllabi with Sentence Building: Zero → TOPIK I → TOPIK II",
+                                    "Silabus berbeda di tiap level + latihan Susun Kalimat: Pemula Nol → TOPIK I → TOPIK II"
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    ProgressBarSlim(progress = totalSyllabusProgress, color = extended.mint)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 3 Direct Track Entry Pills
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        SyllabusTrack.entries.forEach { track ->
+                            val tAccent = when (track) {
+                                SyllabusTrack.BEGINNER -> extended.mint
+                                SyllabusTrack.TOPIK_I -> primary
+                                SyllabusTrack.TOPIK_II -> extended.gold
+                            }
+                            val tDone = BeginnerSyllabusCatalog.completionCount(completedBeginnerLessons, track)
+                            val tTotal = BeginnerSyllabusCatalog.lessonsForTrack(track).size
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = 48.dp)
+                                    .clip(TrackChipShape)
+                                    .background(tAccent.copy(alpha = 0.14f))
+                                    .border(1.dp, tAccent.copy(alpha = 0.45f), TrackChipShape)
+                                    .tactileClickable(pressedScale = 0.95f) { onOpenSyllabusTrack(track) }
+                                    .testTag("learn_track_pill_${track.name.lowercase()}")
+                                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = bText(track.shortLabelEn, track.shortLabelId),
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        ),
+                                        color = tAccent,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "$tDone/$tTotal",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            StaggeredEntrance(index = 2) {
+                PathwayCard(
+                    emblem = "한",
+                    title = bText("Hangul Fundamentals", "Dasar Hangul"),
+                    subtitle = bText(
+                        "Alphabet, syllable blocks, batchim & stroke order",
+                        "Alfabet, blok suku kata, batchim & urutan goresan"
+                    ),
+                    progress = progressByPathway[CurriculumPathway.HANGUL] ?: 0f,
+                    accent = MaterialTheme.colorScheme.primary,
+                    onClick = onSelectHangul,
+                    testTag = "pathway_hangul"
+                )
+            }
+            StaggeredEntrance(index = 2) {
+                PathwayCard(
+                    emblem = "급",
+                    title = "TOPIK 1–6급",
+                    subtitle = bText(
+                        "6,600+ academic vocabulary, grammar & exam mastery",
+                        "6.600+ kosakata akademik, tata bahasa & persiapan ujian"
+                    ),
+                    progress = progressByPathway[CurriculumPathway.TOPIK] ?: 0f,
+                    accent = extended.mint,
+                    onClick = onSelectTopik,
+                    testTag = "pathway_topik"
+                )
+            }
+            StaggeredEntrance(index = 3) {
+                PathwayCard(
+                    emblem = "일",
+                    title = "EPS-TOPIK",
+                    subtitle = bText(
+                        "Industrial safety, manufacturing & workplace Korean",
+                        "Keselamatan kerja, manufaktur & bahasa Korea di tempat kerja"
+                    ),
+                    progress = progressByPathway[CurriculumPathway.EPS_TOPIK] ?: 0f,
+                    accent = extended.gold,
+                    onClick = onSelectEpsTopik,
+                    testTag = "pathway_eps"
+                )
+            }
+            StaggeredEntrance(index = 4) {
+                PathwayCard(
+                    emblem = "말",
+                    title = bText("Everyday Korean", "Korea Sehari-hari"),
+                    subtitle = bText(
+                        "Seoul life conversations & polite speech levels",
+                        "Percakapan hidup di Seoul & tingkat kesopanan bicara"
+                    ),
+                    progress = progressByPathway[CurriculumPathway.EVERYDAY] ?: 0f,
+                    accent = extended.cherryPink,
+                    onClick = onSelectEveryday,
+                    testTag = "pathway_everyday"
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            StaggeredEntrance(index = 5) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    BaeumSecondaryButton(
+                        text = bText("Grammar Studio", "Studio Tata Bahasa"),
+                        onClick = onOpenGrammarStudio,
+                        modifier = Modifier.weight(1f),
+                        testTag = "learn_grammar_button"
+                    )
+                    BaeumSecondaryButton(
+                        text = bText("Quiz Center", "Pusat Kuis"),
+                        onClick = onOpenQuizCenter,
+                        modifier = Modifier.weight(1f),
+                        testTag = "learn_quiz_button"
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
         }
-        Spacer(modifier = Modifier.height(12.dp))
     }
 }
 
@@ -178,7 +330,9 @@ private fun PathwayCard(
     testTag: String
 ) {
     val pct = (progress * 100).toInt()
-    val emblemShape = RoundedCornerShape(18.dp)
+    val emblemBrush = remember(accent) {
+        Brush.verticalGradient(listOf(accent.copy(alpha = 0.24f), accent.copy(alpha = 0.08f)))
+    }
     BaeumGlassCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -194,13 +348,9 @@ private fun PathwayCard(
             Box(
                 modifier = Modifier
                     .size(50.dp)
-                    .clip(emblemShape)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(accent.copy(alpha = 0.24f), accent.copy(alpha = 0.08f))
-                        )
-                    )
-                    .border(1.dp, accent.copy(alpha = 0.45f), emblemShape),
+                    .clip(PathwayEmblemShape)
+                    .background(emblemBrush)
+                    .border(1.dp, accent.copy(alpha = 0.45f), PathwayEmblemShape),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -240,41 +390,67 @@ private fun PathwayCard(
     }
 }
 
-// SCREEN 07 / 24 — TOPIK Center (Levels 1–6)
+// SCREEN 07 / 24 — TOPIK Center (Levels 1–6 + Separate TOPIK I & II Guided Syllabi)
 @Composable
 fun TopikCenterScreen(
     allVocab: List<VocabEntity>,
+    completedSyllabusLessons: Set<String> = emptySet(),
     onBack: () -> Unit,
     onOpenLevelVocab: (String) -> Unit,
     onStartLevelFlashcards: (String?) -> Unit,
     onOpenGrammar: () -> Unit,
-    onOpenExam: () -> Unit
+    onOpenExam: () -> Unit,
+    onOpenSyllabusTrack: (SyllabusTrack) -> Unit = {}
 ) {
-    val topikVocab = remember(allVocab) { allVocab.filter { it.curriculum == CurriculumPathway.TOPIK } }
-    val levelOrder = listOf("1급", "2급", "3급", "4급", "5급", "6급")
-    val byLevel = remember(topikVocab) { topikVocab.groupBy { it.subCategory } }
-    val cumulativeCounts = remember(byLevel) {
-        var running = 0
-        levelOrder.associateWith { lvl ->
-            running += byLevel[lvl]?.size ?: 0
-            running
-        }
+    val extended = LocalBaeumColors.current
+    val topik1Done = remember(completedSyllabusLessons) {
+        BeginnerSyllabusCatalog.completionCount(completedSyllabusLessons, SyllabusTrack.TOPIK_I)
     }
+    val topik1Total = remember { BeginnerSyllabusCatalog.lessonsForTrack(SyllabusTrack.TOPIK_I).size }
+    val topik2Done = remember(completedSyllabusLessons) {
+        BeginnerSyllabusCatalog.completionCount(completedSyllabusLessons, SyllabusTrack.TOPIK_II)
+    }
+    val topik2Total = remember { BeginnerSyllabusCatalog.lessonsForTrack(SyllabusTrack.TOPIK_II).size }
+
+    // Single-pass O(N) level statistics computation
+    val topikStats = remember(allVocab) {
+        val counts = HashMap<String, IntArray>(8)
+        var total = 0
+        for (item in allVocab) {
+            if (item.curriculum == CurriculumPathway.TOPIK) {
+                total++
+                val arr = counts.getOrPut(item.subCategory) { IntArray(2) }
+                arr[0]++ // size
+                if (item.reps > 0) arr[1]++ // learned
+            }
+        }
+        var running = 0
+        val cumulative = HashMap<String, Int>(8)
+        for (lvl in TopikLevelOrder) {
+            running += counts[lvl]?.get(0) ?: 0
+            cumulative[lvl] = running
+        }
+        Triple(total, counts, cumulative)
+    }
+    val topikTotal = topikStats.first
+    val countsByLevel = topikStats.second
+    val cumulativeCounts = topikStats.third
 
     val isId = isIndonesian()
     fun levelStatus(level: String): String {
-        val list = byLevel[level].orEmpty()
-        if (list.isEmpty()) return if (isId) "Kurikulum siap" else "Curriculum ready"
-        val learned = list.count { it.reps > 0 }
-        val cumul = cumulativeCounts[level] ?: list.size
+        val arr = countsByLevel[level]
+        val size = arr?.get(0) ?: 0
+        if (size == 0) return if (isId) "Kurikulum siap" else "Curriculum ready"
+        val learned = arr?.get(1) ?: 0
+        val cumul = cumulativeCounts[level] ?: size
         return if (learned == 0) {
             if (level == "1급") {
-                if (isId) "${list.size} kata" else "${list.size} words"
+                if (isId) "$size kata" else "$size words"
             } else {
-                "+${list.size} • $cumul total"
+                "+$size • $cumul total"
             }
         } else {
-            "${(learned * 100) / list.size}% • $learned/${list.size}"
+            "${(learned * 100) / size}% • $learned/$size"
         }
     }
 
@@ -282,18 +458,19 @@ fun TopikCenterScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("TOPIK Center", "Pusat TOPIK"),
-            subtitle = bText("Korean proficiency • ${topikVocab.size} words", "Kemahiran Korea • ${topikVocab.size} kata"),
+            subtitle = bText("Korean proficiency • $topikTotal words", "Kemahiran Korea • $topikTotal kata"),
             onBack = onBack
         )
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 680.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -309,7 +486,7 @@ fun TopikCenterScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "TOPIK • ${topikVocab.size}",
+                        text = "TOPIK • $topikTotal",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -317,12 +494,68 @@ fun TopikCenterScreen(
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = bText(
-                        "Structured vocabulary across TOPIK I (1–2급) and TOPIK II (3–6급). Study tracks are practice curricula, not official certification.",
-                        "Kosakata terstruktur untuk TOPIK I (1–2급) dan TOPIK II (3–6급). Jalur ini adalah kurikulum latihan, bukan sertifikasi resmi."
+                        "Separate guided syllabi and structured vocabulary across TOPIK I (1–2급) and TOPIK II (3–6급).",
+                        "Silabus terpandu terpisah serta kosakata terstruktur untuk TOPIK I (1–2급) dan TOPIK II (3–6급)."
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+
+            // Dedicated TOPIK I vs TOPIK II Guided Syllabus Launchers
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                BaeumGlassCard(
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("topik_center_syllabus_1"),
+                    style = BaeumGlassStyle.STANDARD,
+                    accentGlowColor = MaterialTheme.colorScheme.primary,
+                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                    onClick = { onOpenSyllabusTrack(SyllabusTrack.TOPIK_I) }
+                ) {
+                    Text(
+                        text = bText("TOPIK I SYLLABUS", "SILABUS TOPIK I"),
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = bText("$topik1Done/$topik1Total Lessons", "$topik1Done/$topik1Total Pelajaran"),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = bText("Tenses, connectors & exam tips", "Kala, penghubung & trik ujian"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                BaeumGlassCard(
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("topik_center_syllabus_2"),
+                    style = BaeumGlassStyle.STANDARD,
+                    accentGlowColor = extended.gold,
+                    borderColor = extended.gold.copy(alpha = 0.45f),
+                    onClick = { onOpenSyllabusTrack(SyllabusTrack.TOPIK_II) }
+                ) {
+                    Text(
+                        text = bText("TOPIK II SYLLABUS", "SILABUS TOPIK II"),
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                        color = extended.gold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = bText("$topik2Done/$topik2Total Lessons", "$topik2Done/$topik2Total Pelajaran"),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = bText("Haerache & Writing #51–54", "Haerache & Menulis #51–54"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             Text(
@@ -405,21 +638,32 @@ fun EpsTopikCenterScreen(
     onOpenEpsExam: () -> Unit
 ) {
     val isId = isIndonesian()
-    val epsCategories = listOf(
-        Triple("Daily communication", "Komunikasi harian", "일상생활"),
-        Triple("Manufacturing", "Manufaktur", "제조업"),
-        Triple("Workplace safety", "Keselamatan kerja", "산업안전"),
-        Triple("Agriculture", "Pertanian", "농업"),
-        Triple("Fisheries", "Perikanan", "어업"),
-        Triple("Workplace culture", "Budaya kerja", "직장문화")
-    )
-    val epsVocab = remember(allVocab) { allVocab.filter { it.curriculum == CurriculumPathway.EPS_TOPIK } }
+    val epsCategories = remember {
+        listOf(
+            Triple("Daily communication", "Komunikasi harian", "일상생활"),
+            Triple("Manufacturing", "Manufaktur", "제조업"),
+            Triple("Workplace safety", "Keselamatan kerja", "산업안전"),
+            Triple("Agriculture", "Pertanian", "농업"),
+            Triple("Fisheries", "Perikanan", "어업"),
+            Triple("Workplace culture", "Budaya kerja", "직장문화")
+        )
+    }
+    val epsCountsBySubCat = remember(allVocab) {
+        val map = HashMap<String, Int>(8)
+        for (item in allVocab) {
+            if (item.curriculum == CurriculumPathway.EPS_TOPIK) {
+                map[item.subCategory] = (map[item.subCategory] ?: 0) + 1
+            }
+        }
+        map
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = "EPS-TOPIK",
@@ -429,8 +673,8 @@ fun EpsTopikCenterScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 680.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -463,7 +707,7 @@ fun EpsTopikCenterScreen(
             }
 
             epsCategories.forEach { (eng, idLabel, kor) ->
-                val count = epsVocab.count { it.subCategory == eng }
+                val count = epsCountsBySubCat[eng] ?: 0
                 SeoulCard(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -524,28 +768,42 @@ fun EverydayKoreanScreen(
     onStartConversation: () -> Unit
 ) {
     val isId = isIndonesian()
+    val extended = LocalBaeumColors.current
     var selectedSituation by remember { mutableIntStateOf(0) }
-    val speechComparisons = listOf(
-        Triple(if (isId) "Sapaan" else "Greeting", "안녕? 잘 지냈어?", "안녕하세요? 잘 지내셨어요?  |  안녕하십니까?"),
-        Triple(if (isId) "Makan" else "Eating", "밥 먹었어?", if (isId) "밥 먹었어요?  |  진지 드셨습니까? (Honorifik)" else "밥 먹었어요?  |  진지 드셨습니까? (Honorific)"),
-        Triple(if (isId) "Terima kasih" else "Thanking", "고마워!", "고마워요.  |  정말 감사합니다."),
-        Triple(if (isId) "Maaf" else "Apologizing", "미안해.", "죄송해요.  |  대단히 죄송합니다.")
-    )
-    val categories = listOf(
-        Triple("Cafe & Dining", "Kafe & Makan", "카페 • 식당"),
-        Triple("Shopping", "Belanja", "쇼핑 • 계산"),
-        Triple("Transportation", "Transportasi", "지하철 • 택시"),
-        Triple("Travel", "Perjalanan", "여행 • 예약"),
-        Triple("Interviews", "Wawancara Kerja", "면접 • 직장"),
-        Triple("Social & Honorifics", "Sosial & Honorifik", "높임말 • 예절")
-    )
-    val everydayVocab = remember(allVocab) { allVocab.filter { it.curriculum == CurriculumPathway.EVERYDAY } }
+    val speechComparisons = remember(isId) {
+        listOf(
+            Triple(if (isId) "Sapaan" else "Greeting", "안녕? 잘 지냈어?", "안녕하세요? 잘 지내셨어요?  |  안녕하십니까?"),
+            Triple(if (isId) "Makan" else "Eating", "밥 먹었어?", if (isId) "밥 먹었어요?  |  진지 드셨습니까? (Honorifik)" else "밥 먹었어요?  |  진지 드셨습니까? (Honorific)"),
+            Triple(if (isId) "Terima kasih" else "Thanking", "고마워!", "고마워요.  |  정말 감사합니다."),
+            Triple(if (isId) "Maaf" else "Apologizing", "미안해.", "죄송해요.  |  대단히 죄송합니다.")
+        )
+    }
+    val categories = remember {
+        listOf(
+            Triple("Cafe & Dining", "Kafe & Makan", "카페 • 식당"),
+            Triple("Shopping", "Belanja", "쇼핑 • 계산"),
+            Triple("Transportation", "Transportasi", "지하철 • 택시"),
+            Triple("Travel", "Perjalanan", "여행 • 예약"),
+            Triple("Interviews", "Wawancara Kerja", "면접 • 직장"),
+            Triple("Social & Honorifics", "Sosial & Honorifik", "높임말 • 예절")
+        )
+    }
+    val everydayCountsBySubCat = remember(allVocab) {
+        val map = HashMap<String, Int>(8)
+        for (item in allVocab) {
+            if (item.curriculum == CurriculumPathway.EVERYDAY) {
+                map[item.subCategory] = (map[item.subCategory] ?: 0) + 1
+            }
+        }
+        map
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("Everyday Korean", "Korea Sehari-hari"),
@@ -555,8 +813,8 @@ fun EverydayKoreanScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 680.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -581,47 +839,59 @@ fun EverydayKoreanScreen(
                     speechComparisons.forEachIndexed { idx, (label, _, _) ->
                         val active = idx == selectedSituation
                         SeoulCard(
-                            modifier = Modifier.weight(1f),
-                            cornerRadius = 12.dp,
-                            containerColor = if (active) MaterialTheme.colorScheme.primary else LocalBaeumColors.current.elevatedSurface,
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp, horizontal = 4.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .defaultMinSize(minHeight = 48.dp),
+                            cornerRadius = 14.dp,
+                            containerColor = if (active) MaterialTheme.colorScheme.primary else extended.elevatedSurface,
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp, horizontal = 6.dp),
                             onClick = { selectedSituation = idx }
                         ) {
                             Text(
                                 text = label,
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                                 color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                                maxLines = 1
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }
                 }
                 Spacer(modifier = Modifier.height(12.dp))
-                val (_, casual, formal) = speechComparisons[selectedSituation]
-                SeoulCard(
-                    containerColor = LocalBaeumColors.current.elevatedSurface,
-                    cornerRadius = 14.dp,
-                    onClick = { onSpeakKorean(casual) }
-                ) {
-                    Text(
-                        bText("반말 (Close friends / younger)", "반말 (Teman akrab / lebih muda)"),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = LocalBaeumColors.current.gold
-                    )
-                    Text(casual, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                SeoulCard(
-                    containerColor = LocalBaeumColors.current.elevatedSurface,
-                    cornerRadius = 14.dp,
-                    onClick = { onSpeakKorean(formal.substringBefore("|").trim()) }
-                ) {
-                    Text(
-                        bText("해요체 / 합니다체 (Polite & Honorific)", "해요체 / 합니다체 (Sopan & Honorifik)"),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = LocalBaeumColors.current.mint
-                    )
-                    Text(formal, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                AnimatedContent(
+                    targetState = selectedSituation,
+                    transitionSpec = { BaeumMotion.subtleCrossfadeTransform(extended.reducedMotion) },
+                    label = "everyday_speech_level"
+                ) { sitIdx ->
+                    val (_, casual, formal) = speechComparisons[sitIdx]
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SeoulCard(
+                            containerColor = extended.elevatedSurface,
+                            cornerRadius = 14.dp,
+                            onClick = { onSpeakKorean(casual) }
+                        ) {
+                            Text(
+                                bText("반말 (Close friends / younger)", "반말 (Teman akrab / lebih muda)"),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = extended.gold
+                            )
+                            Text(casual, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        SeoulCard(
+                            containerColor = extended.elevatedSurface,
+                            cornerRadius = 14.dp,
+                            onClick = { onSpeakKorean(formal.substringBefore("|").trim()) }
+                        ) {
+                            Text(
+                                bText("해요체 / 합니다체 (Polite & Honorific)", "해요체 / 합니다체 (Sopan & Honorifik)"),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = extended.mint
+                            )
+                            Text(formal, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
                 }
             }
 
@@ -631,7 +901,7 @@ fun EverydayKoreanScreen(
                 color = MaterialTheme.colorScheme.onBackground
             )
             categories.forEach { (cat, idLabel, ko) ->
-                val count = everydayVocab.count { it.subCategory == cat }
+                val count = everydayCountsBySubCat[cat] ?: 0
                 SeoulCard(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { onOpenCategoryVocab(cat) }

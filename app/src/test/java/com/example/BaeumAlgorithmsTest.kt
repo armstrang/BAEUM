@@ -172,23 +172,27 @@ class BaeumAlgorithmsTest {
     fun mockExamGeneratorSynthesizesWeightedPapersAndGradesWithFourAxisRubric() {
         val bank = loadFullWordBank()
 
-        // Dynamic TOPIK I Mock Paper: 20 questions (10 Listening + 10 Reading)
+        // Compact TOPIK I Mock Paper: 20 questions (10 Listening + 10 Reading)
         val topik1A = ExamEngine.startExam(ExamType.TOPIK_I, ExamSessionMode.MOCK, bank, Random(101))
         val topik1B = ExamEngine.startExam(ExamType.TOPIK_I, ExamSessionMode.MOCK, bank, Random(202))
         assertEquals(20, topik1A.questions.size)
         assertEquals(10, topik1A.questions.count { it.section == "Listening" })
         assertEquals(10, topik1A.questions.count { it.section == "Reading" })
-        assertNotEquals("Different mock attempts should generate fresh questions", topik1A.questions.map { it.id }, topik1B.questions.map { it.id })
+        assertNotEquals("Different mock attempts should sample fresh question papers", topik1A.questions.map { it.id }, topik1B.questions.map { it.id })
 
-        // Dynamic TOPIK II Mock Paper: 8 Listening + 10 Reading + 2 Writing = 20 questions
+        // Authentic 2-Period TOPIK II Mock Paper: 1교시 (10 Listening + 4 Writing [51-54]) + 2교시 (10 Reading) = 24 questions
         val topik2 = ExamEngine.startExam(ExamType.TOPIK_II, ExamSessionMode.MOCK, bank, Random(303))
-        assertEquals(8, topik2.questions.count { it.section == "Listening" })
+        assertEquals(2, topik2.totalPeriods)
+        assertEquals(10, topik2.questions.count { it.section == "Listening" })
+        assertEquals(4, topik2.questions.count { it.section == "Writing" })
         assertEquals(10, topik2.questions.count { it.section == "Reading" })
-        assertEquals(2, topik2.questions.count { it.section == "Writing" })
+        assertEquals(listOf(51, 52, 53, 54), topik2.questions.filter { it.section == "Writing" }.map { it.writingTaskNumber })
 
-        // Dynamic EPS-TOPIK Mock Paper: 10 Listening + 10 Reading = 20 questions
+        // Compact EPS-TOPIK Mock Paper: 10 Reading + 10 Listening = 20 questions (Reading first per HRD Korea order)
         val eps = ExamEngine.startExam(ExamType.EPS_TOPIK, ExamSessionMode.MOCK, bank, Random(404))
         assertEquals(20, eps.questions.size)
+        assertEquals("Reading", eps.questions.first().section)
+        assertEquals("Listening", eps.questions.last().section)
 
         // 4-axis Korean Open-Response Rubric distinguishes real Korean essay from spam/blank
         val goodEssay = LearningScoringEngine.evaluateKoreanOpenResponse(
@@ -206,19 +210,19 @@ class BaeumAlgorithmsTest {
         assertTrue("Good essay should score >= 0.80, got ${goodEssay.totalRatio}", goodEssay.totalRatio >= 0.80)
         assertTrue("Spam essay must be heavily penalized, got ${spamEssay.totalRatio}", spamEssay.totalRatio < 0.35)
 
-        // Grade full TOPIK II Mock Exam with perfect MC + strong essay -> Level 6 (Practice)
+        // Grade full TOPIK II Mock Exam with perfect MC + model-quality 51-54 writing -> Level 6 (Practice)
         val perfectMc = topik2.questions.filter { !it.isOpenEnded }.associate { it.id to it.correctOptionIndex }
         val strongOpen = topik2.questions.filter { it.isOpenEnded }.associate { q ->
-            q.id to ("현대 사회에서 ${q.expectedKeywords.joinToString("과 ")} 문제는 매우 중요하다. " +
-                "그러나 여러 원인이 있기 때문에 사회 전체가 함께 노력해야 한다. 따라서 구체적인 해결 방안이 필요하다.")
+            q.id to (q.modelAnswerKo ?: "현대 사회에서 ${q.expectedKeywords.joinToString("과 ")} 문제는 중요하다. 따라서 노력이 필요하다.")
         }
         val report = ExamEngine.gradeSession(
             session = topik2.copy(selectedOptions = perfectMc, openResponses = strongOpen),
-            finishedAtEpochMs = topik2.startedAtEpochMs + 1_200_000L
+            finishedAtEpochMs = topik2.startedAtEpochMs + 1_800_000L
         )
-        assertTrue("Expected Level 6 practice band, got ${report.totalScore} (${report.estimatedLevel})", report.totalScore >= 250)
+        assertTrue("Expected Level 6 practice band (>=230), got ${report.totalScore} (${report.estimatedLevel})", report.totalScore >= 230)
         assertEquals(LetterGrade.S, report.grade)
         assertTrue(report.tierBreakdowns.size >= 2)
+        assertTrue(report.cutoffLadder.any { it.label.contains("6급") && it.achieved })
         assertTrue(report.questionReviews.any { it.rubricScore != null })
     }
 

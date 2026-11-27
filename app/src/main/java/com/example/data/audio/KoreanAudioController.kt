@@ -71,7 +71,10 @@ class KoreanAudioController(context: Context) {
     val speechRecognitionService: KoreanSpeechRecognitionService =
         KoreanSpeechRecognitionService(appContext)
 
+    @Volatile
+    private var isReleased: Boolean = false
     private var tts: TextToSpeech? = null
+    private var pendingSpeakText: String? = null
     private var speechRate: Float = 1.0f
 
     private var activeConsumer: RecognitionConsumer = RecognitionConsumer.NONE
@@ -162,32 +165,79 @@ class KoreanAudioController(context: Context) {
         }
     }
 
+    private fun shutdownTtsEngine() {
+        val existing = tts
+        tts = null
+        if (existing != null) {
+            runCatching { existing.stop() }
+            runCatching { existing.shutdown() }
+        }
+    }
+
     private fun initTts() {
-        tts = TextToSpeech(appContext) { status ->
+        if (isReleased) return
+        shutdownTtsEngine()
+        _ttsStatus.value = TtsStatus.Initializing
+
+        var createdEngine: TextToSpeech? = null
+        val engine = TextToSpeech(appContext) { status ->
+            val current = createdEngine
+            if (isReleased || current == null || current !== tts) {
+                runCatching { current?.stop() }
+                runCatching { current?.shutdown() }
+                return@TextToSpeech
+            }
             if (status == TextToSpeech.SUCCESS) {
-                val engine = tts ?: return@TextToSpeech
-                val result = engine.setLanguage(Locale.KOREAN)
+                val result = current.setLanguage(Locale.KOREAN)
                 if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    pendingSpeakText = null
                     _ttsStatus.value = TtsStatus.Unavailable(
                         "Korean (ko-KR) voice pack is not installed on this device. Install Korean TTS in Android Settings."
                     )
                 } else {
-                    engine.setSpeechRate(speechRate)
-                    engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    current.setSpeechRate(speechRate)
+                    current.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                         override fun onStart(utteranceId: String?) {}
                         override fun onDone(utteranceId: String?) {
-                            _ttsStatus.value = TtsStatus.Ready
+                            if (!isReleased) {
+                                _ttsStatus.value = TtsStatus.Ready
+                            }
+                        }
+                        override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                            if (!isReleased && _ttsStatus.value is TtsStatus.Speaking) {
+                                _ttsStatus.value = TtsStatus.Ready
+                            }
+                        }
+                        override fun onError(utteranceId: String?, errorCode: Int) {
+                            if (!isReleased) {
+                                _ttsStatus.value = TtsStatus.Unavailable("Audio playback failed (code $errorCode). Tap to retry.")
+                            }
                         }
                         @Deprecated("Deprecated in Java")
                         override fun onError(utteranceId: String?) {
-                            _ttsStatus.value = TtsStatus.Unavailable("Audio playback failed. Tap to retry.")
+                            if (!isReleased) {
+                                _ttsStatus.value = TtsStatus.Unavailable("Audio playback failed. Tap to retry.")
+                            }
                         }
                     })
                     _ttsStatus.value = TtsStatus.Ready
+                    val queued = pendingSpeakText
+                    pendingSpeakText = null
+                    if (!queued.isNullOrBlank()) {
+                        speakKorean(queued)
+                    }
                 }
             } else {
+                pendingSpeakText = null
                 _ttsStatus.value = TtsStatus.Unavailable("Text-to-Speech engine unavailable on this device.")
             }
+        }
+        createdEngine = engine
+        if (isReleased) {
+            runCatching { engine.stop() }
+            runCatching { engine.shutdown() }
+        } else {
+            tts = engine
         }
     }
 
@@ -197,12 +247,19 @@ class KoreanAudioController(context: Context) {
     }
 
     fun speakKorean(text: String) {
-        if (text.isBlank()) return
+        if (isReleased || text.isBlank()) return
         val engine = tts
-        if (engine == null || _ttsStatus.value is TtsStatus.Unavailable) {
+        val status = _ttsStatus.value
+        if (engine == null || status is TtsStatus.Unavailable) {
+            pendingSpeakText = text
             initTts()
             return
         }
+        if (status is TtsStatus.Initializing) {
+            pendingSpeakText = text
+            return
+        }
+        pendingSpeakText = null
         engine.setSpeechRate(speechRate)
         _ttsStatus.value = TtsStatus.Speaking(text)
         val utteranceId = UUID.randomUUID().toString()
@@ -213,7 +270,8 @@ class KoreanAudioController(context: Context) {
     }
 
     fun stopSpeaking() {
-        tts?.stop()
+        pendingSpeakText = null
+        runCatching { tts?.stop() }
         if (_ttsStatus.value is TtsStatus.Speaking) {
             _ttsStatus.value = TtsStatus.Ready
         }
@@ -230,6 +288,7 @@ class KoreanAudioController(context: Context) {
      * pronunciation practice drills (fast silence detection + n-best results + live partials).
      */
     fun startPronunciationRecognition(shortWordDrill: Boolean = true) {
+        if (isReleased) return
         stopPlayback()
         stopSpeaking()
         stopLocalRecorderIfActive()
@@ -268,6 +327,7 @@ class KoreanAudioController(context: Context) {
      * for Live Conversation turns.
      */
     fun startKoreanListening() {
+        if (isReleased) return
         stopPlayback()
         stopSpeaking()
         cleanupTempAudio()
@@ -302,10 +362,11 @@ class KoreanAudioController(context: Context) {
     }
 
     private fun startLocalRecorderOnly(): Boolean {
+        var recorder: MediaRecorder? = null
         return try {
             val file = File(appContext.cacheDir, "baeum_rec_${System.currentTimeMillis()}.m4a")
             activeRecordingFile = file
-            val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 MediaRecorder(appContext)
             } else {
                 @Suppress("DEPRECATION")
@@ -322,6 +383,9 @@ class KoreanAudioController(context: Context) {
             startRecorderTicker()
             true
         } catch (_: Exception) {
+            runCatching { recorder?.reset() }
+            runCatching { recorder?.release() }
+            mediaRecorder = null
             cleanupTempAudio()
             false
         }
@@ -329,13 +393,15 @@ class KoreanAudioController(context: Context) {
 
     fun stopListening() {
         stopRecorderTicker()
-        if (mediaRecorder != null) {
+        val recorder = mediaRecorder
+        if (recorder != null) {
+            mediaRecorder = null
             try {
-                mediaRecorder?.stop()
+                recorder.stop()
             } catch (_: Exception) {
             } finally {
-                mediaRecorder?.release()
-                mediaRecorder = null
+                runCatching { recorder.reset() }
+                runCatching { recorder.release() }
             }
             _captureState.value = SpeechCaptureState.TechnicalFailure(
                 message = "Audio recorded (${elapsedSeconds}s). Speech-to-text is unavailable on this device — play back your recording and type your Korean response below.",
@@ -353,36 +419,53 @@ class KoreanAudioController(context: Context) {
     }
 
     fun playLastRecording(path: String?) {
-        if (path.isNullOrBlank()) return
+        if (isReleased || path.isNullOrBlank()) return
         val file = File(path)
         if (!file.exists()) return
         stopPlayback()
+        var player: MediaPlayer? = null
         try {
-            mediaPlayer = MediaPlayer().apply {
+            player = MediaPlayer().apply {
                 setDataSource(file.absolutePath)
-                setOnCompletionListener {
+                setOnCompletionListener { mp ->
                     _isPlayingRecording.value = false
-                    release()
-                    mediaPlayer = null
+                    runCatching { mp.release() }
+                    if (mediaPlayer === mp) {
+                        mediaPlayer = null
+                    }
+                }
+                setOnErrorListener { mp, _, _ ->
+                    _isPlayingRecording.value = false
+                    runCatching { mp.release() }
+                    if (mediaPlayer === mp) {
+                        mediaPlayer = null
+                    }
+                    true
                 }
                 prepare()
                 start()
             }
+            mediaPlayer = player
             _isPlayingRecording.value = true
         } catch (_: Exception) {
+            runCatching { player?.release() }
+            mediaPlayer = null
             _isPlayingRecording.value = false
         }
     }
 
     fun stopPlayback() {
-        try {
-            mediaPlayer?.stop()
-            mediaPlayer?.release()
-        } catch (_: Exception) {
-        } finally {
-            mediaPlayer = null
-            _isPlayingRecording.value = false
+        val player = mediaPlayer
+        mediaPlayer = null
+        if (player != null) {
+            runCatching {
+                if (player.isPlaying) {
+                    player.stop()
+                }
+            }
+            runCatching { player.release() }
         }
+        _isPlayingRecording.value = false
     }
 
     fun resetCapture() {
@@ -399,18 +482,20 @@ class KoreanAudioController(context: Context) {
 
     private fun stopLocalRecorderIfActive() {
         stopRecorderTicker()
-        try {
-            mediaRecorder?.release()
-        } catch (_: Exception) {
-        }
+        val recorder = mediaRecorder
         mediaRecorder = null
+        if (recorder != null) {
+            runCatching { recorder.stop() }
+            runCatching { recorder.reset() }
+            runCatching { recorder.release() }
+        }
     }
 
     private fun startRecorderTicker() {
         stopRecorderTicker()
         recorderTickerJob = controllerScope.launch {
             var tick = 0
-            while (mediaRecorder != null) {
+            while (mediaRecorder != null && !isReleased) {
                 delay(200L)
                 tick++
                 if (tick % 5 == 0) elapsedSeconds++
@@ -442,12 +527,36 @@ class KoreanAudioController(context: Context) {
         activeRecordingFile = null
     }
 
+    /**
+     * Stops active audio playback, TTS, and microphone capture when the host Activity
+     * enters the background without tearing down the reusable TTS engine.
+     */
+    fun onHostStop() {
+        stopSpeaking()
+        stopPlayback()
+        stopLocalRecorderIfActive()
+        if (activeConsumer != RecognitionConsumer.NONE) {
+            speechRecognitionService.cancel()
+            activeConsumer = RecognitionConsumer.NONE
+        }
+        if (_captureState.value is SpeechCaptureState.Listening) {
+            _captureState.value = SpeechCaptureState.Idle
+        }
+        val pronState = _pronunciationRecognitionState.value
+        if (pronState is SpeechRecognitionState.Preparing ||
+            pronState is SpeechRecognitionState.Listening ||
+            pronState is SpeechRecognitionState.Processing
+        ) {
+            _pronunciationRecognitionState.value = SpeechRecognitionState.Idle
+        }
+    }
+
     fun release() {
+        isReleased = true
+        pendingSpeakText = null
         resetCapture()
         resetPronunciationRecognition()
-        tts?.stop()
-        tts?.shutdown()
-        tts = null
+        shutdownTtsEngine()
         speechRecognitionService.destroy()
         controllerScope.cancel()
     }

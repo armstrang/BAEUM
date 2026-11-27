@@ -57,6 +57,13 @@ interface ReviewLogDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(logs: List<ReviewLogEntity>)
 
+    @Query(
+        "DELETE FROM review_logs WHERE id = (" +
+            "SELECT id FROM review_logs WHERE vocabId = :vocabId AND dayKey = :dayKey " +
+            "ORDER BY timestampEpochMs DESC, id DESC LIMIT 1)"
+    )
+    suspend fun deleteLatestForVocabOnDay(vocabId: String, dayKey: String): Int
+
     @Query("DELETE FROM review_logs")
     suspend fun clearAll()
 }
@@ -152,6 +159,9 @@ interface GrammarBookmarkDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(bookmark: GrammarBookmarkEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(bookmarks: List<GrammarBookmarkEntity>)
 
     @Query("DELETE FROM grammar_bookmarks WHERE grammarId = :grammarId")
     suspend fun delete(grammarId: String)

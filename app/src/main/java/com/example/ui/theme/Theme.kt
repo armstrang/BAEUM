@@ -9,6 +9,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -40,15 +41,15 @@ val LocalBaeumColors = staticCompositionLocalOf {
         gold = SeoulGold,
         cardBorder = SeoulBorderDark,
         elevatedSurface = SeoulElevated,
-        glassFillTop = Color(0xE8161F38),
-        glassFillBottom = Color(0xE00E1528),
+        glassFillTop = Color(0xF519223B),
+        glassFillBottom = Color(0xF2121A2E),
         glassHighlightBorder = SeoulSpecularRimDark,
         buttonGradientStart = SeoulLavenderBright,
         buttonGradientEnd = SeoulLavenderDim,
-        ambientGlowPrimary = Color(0x2E7A68E8),
-        ambientGlowSecondary = Color(0x1E6BE3D5),
-        ambientGlowGold = Color(0x18F6D38A),
-        dockSurface = Color(0xEB0E1426),
+        ambientGlowPrimary = Color(0x267B6BE6),
+        ambientGlowSecondary = Color(0x1867D8CB),
+        ambientGlowGold = Color(0x14F3C77B),
+        dockSurface = Color(0xF512192D),
         isDark = true,
         reducedMotion = false
     )
@@ -57,15 +58,15 @@ val LocalBaeumColors = staticCompositionLocalOf {
 private val SeoulNightColorScheme = darkColorScheme(
     primary = SeoulLavender,
     onPrimary = SeoulMidnight,
-    primaryContainer = Color(0xFF24234E),
+    primaryContainer = Color(0xFF252452),
     onPrimaryContainer = SeoulLavenderBright,
     secondary = SeoulMint,
     onSecondary = SeoulMidnight,
-    secondaryContainer = Color(0xFF12363B),
+    secondaryContainer = Color(0xFF143A3F),
     onSecondaryContainer = SeoulMint,
     tertiary = SeoulGold,
     onTertiary = SeoulMidnight,
-    tertiaryContainer = Color(0xFF392E1C),
+    tertiaryContainer = Color(0xFF3C301C),
     onTertiaryContainer = SeoulGold,
     background = SeoulMidnight,
     onBackground = SeoulMoonWhite,
@@ -74,10 +75,10 @@ private val SeoulNightColorScheme = darkColorScheme(
     surfaceVariant = SeoulElevated,
     onSurfaceVariant = SeoulMuted,
     outline = SeoulBorderDark,
-    outlineVariant = Color(0xFF1D2640),
+    outlineVariant = Color(0xFF222D46),
     error = SeoulCherryPink,
     onError = SeoulMidnight,
-    errorContainer = Color(0xFF3F1D2C),
+    errorContainer = Color(0xFF421E2E),
     onErrorContainer = SeoulCherryPink
 )
 
@@ -88,12 +89,12 @@ private val SeoulMorningColorScheme = lightColorScheme(
     onPrimaryContainer = MorningPrimaryDeep,
     secondary = MorningMint,
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFD2F3EE),
-    onSecondaryContainer = Color(0xFF065951),
+    secondaryContainer = Color(0xFFD5F4EF),
+    onSecondaryContainer = Color(0xFF06564E),
     tertiary = MorningGold,
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFFAE8C3),
-    onTertiaryContainer = Color(0xFF704300),
+    tertiaryContainer = Color(0xFFFAEBD0),
+    onTertiaryContainer = Color(0xFF6B3F00),
     background = MorningBackground,
     onBackground = MorningText,
     surface = MorningSurface,
@@ -101,18 +102,18 @@ private val SeoulMorningColorScheme = lightColorScheme(
     surfaceVariant = MorningSubtle,
     onSurfaceVariant = MorningSecondaryText,
     outline = MorningBorderLight,
-    outlineVariant = Color(0xFFD6D1EA),
+    outlineVariant = Color(0xFFE3DFF2),
     error = MorningCherryPink,
     onError = Color.White,
-    errorContainer = Color(0xFFFFDCE6),
-    onErrorContainer = Color(0xFF8C1437)
+    errorContainer = Color(0xFFFFDEE8),
+    onErrorContainer = Color(0xFF881336)
 )
 
 private val BaeumShapes = Shapes(
-    small = RoundedCornerShape(16.dp),
-    medium = RoundedCornerShape(22.dp),
-    large = RoundedCornerShape(28.dp),
-    extraLarge = RoundedCornerShape(34.dp)
+    small = RoundedCornerShape(14.dp),
+    medium = RoundedCornerShape(20.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(30.dp)
 )
 
 enum class ThemeMode { SYSTEM, DARK, LIGHT }
@@ -131,50 +132,53 @@ fun BaeumTheme(
     }
 
     val colorScheme = if (useDark) SeoulNightColorScheme else SeoulMorningColorScheme
-    val extendedColors = if (useDark) {
-        BaeumExtendedColors(
-            mint = SeoulMint,
-            cherryPink = SeoulCherryPink,
-            gold = SeoulGold,
-            cardBorder = SeoulBorderDark,
-            elevatedSurface = SeoulElevated,
-            glassFillTop = Color(0xEB17203A),
-            glassFillBottom = Color(0xE00E1529),
-            glassHighlightBorder = SeoulSpecularRimDark,
-            buttonGradientStart = SeoulLavenderBright,
-            buttonGradientEnd = SeoulLavenderDim,
-            ambientGlowPrimary = Color(0x2E7A68E8),
-            ambientGlowSecondary = Color(0x1E6BE3D5),
-            ambientGlowGold = Color(0x18F6D38A),
-            dockSurface = Color(0xF00D1325),
-            isDark = true,
-            reducedMotion = reducedMotion
-        )
-    } else {
-        BaeumExtendedColors(
-            mint = MorningMint,
-            cherryPink = MorningCherryPink,
-            gold = MorningGold,
-            cardBorder = MorningBorderLight,
-            elevatedSurface = MorningSubtle,
-            glassFillTop = Color(0xFFFFFFFF),
-            glassFillBottom = Color(0xFFF8F7FD),
-            glassHighlightBorder = MorningSpecularRimLight,
-            buttonGradientStart = MorningPrimary,
-            buttonGradientEnd = MorningPrimaryDeep,
-            ambientGlowPrimary = Color(0x18523DC4),
-            ambientGlowSecondary = Color(0x120A7D72),
-            ambientGlowGold = Color(0x109C6000),
-            dockSurface = Color(0xFAFFFFFF),
-            isDark = false,
-            reducedMotion = reducedMotion
-        )
+    val extendedColors = remember(useDark, reducedMotion) {
+        if (useDark) {
+            BaeumExtendedColors(
+                mint = SeoulMint,
+                cherryPink = SeoulCherryPink,
+                gold = SeoulGold,
+                cardBorder = SeoulBorderDark,
+                elevatedSurface = SeoulElevated,
+                glassFillTop = Color(0xF519223B),
+                glassFillBottom = Color(0xF2121A2E),
+                glassHighlightBorder = SeoulSpecularRimDark,
+                buttonGradientStart = SeoulLavenderBright,
+                buttonGradientEnd = SeoulLavenderDim,
+                ambientGlowPrimary = Color(0x267B6BE6),
+                ambientGlowSecondary = Color(0x1867D8CB),
+                ambientGlowGold = Color(0x14F3C77B),
+                dockSurface = Color(0xF512192D),
+                isDark = true,
+                reducedMotion = reducedMotion
+            )
+        } else {
+            BaeumExtendedColors(
+                mint = MorningMint,
+                cherryPink = MorningCherryPink,
+                gold = MorningGold,
+                cardBorder = MorningBorderLight,
+                elevatedSurface = MorningSubtle,
+                glassFillTop = Color(0xFFFFFFFF),
+                glassFillBottom = Color(0xFFFBFBFF),
+                glassHighlightBorder = MorningSpecularRimLight,
+                buttonGradientStart = MorningPrimary,
+                buttonGradientEnd = MorningPrimaryDeep,
+                ambientGlowPrimary = Color(0x145B46C8),
+                ambientGlowSecondary = Color(0x0E0B7469),
+                ambientGlowGold = Color(0x0C8C5300),
+                dockSurface = Color(0xFCFFFFFF),
+                isDark = false,
+                reducedMotion = reducedMotion
+            )
+        }
     }
+    val typography = remember(fontScale) { buildBaeumTypography(fontScale) }
 
     CompositionLocalProvider(LocalBaeumColors provides extendedColors) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = buildBaeumTypography(fontScale),
+            typography = typography,
             shapes = BaeumShapes,
             content = content
         )

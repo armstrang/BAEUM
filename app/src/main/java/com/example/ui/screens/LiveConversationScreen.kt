@@ -61,7 +61,6 @@ import com.example.data.seed.localizedTitle
 import com.example.data.seed.localizedTranslation
 import com.example.domain.speaking.ConversationPhase
 import com.example.domain.speaking.LiveConversationState
-import com.example.ui.components.AiCoachFeedbackCard
 import com.example.ui.components.BaeumPrimaryButton
 import com.example.ui.components.BaeumSecondaryButton
 import com.example.ui.components.BaeumTopBar
@@ -72,6 +71,7 @@ import com.example.ui.theme.LocalBaeumColors
 import com.example.ui.theme.bText
 import com.example.ui.theme.isIndonesian
 import com.example.ui.theme.localizedLabel
+import java.util.Locale
 
 // SCREEN 18 / 24 — Live Conversation (Record, preview, edit, evaluate 0–10, advance uniquely)
 @Composable
@@ -158,7 +158,10 @@ fun LiveConversationScreen(
     val currentPrompt = state.currentPrompt
     val turnNum = (state.currentTurnIndex + 1).coerceAtMost(state.totalTurns)
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         BaeumTopBar(
             title = state.scenario.localizedTitle(isId),
             subtitle = bText(
@@ -174,6 +177,7 @@ fun LiveConversationScreen(
             modifier = Modifier
                 .weight(1f)
                 .widthIn(max = 660.dp)
+                .fillMaxWidth()
                 .verticalScroll(scrollState)
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -228,14 +232,6 @@ fun LiveConversationScreen(
                 }
             }
 
-            // Latest AI Coach & Acoustic Cadence Insight Card
-            state.latestAiCoachFeedback?.let { coachFeedback ->
-                AiCoachFeedbackCard(
-                    feedback = coachFeedback,
-                    onSpeakKorean = onSpeakKorean
-                )
-            }
-
             // Current Active Partner Prompt Bubble
             if (currentPrompt != null) {
                 SeoulCard(
@@ -287,7 +283,7 @@ fun LiveConversationScreen(
                                 Text(localizedTranslation, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(bText("Hint: $localizedHint", "Petunjuk: $localizedHint"), style = MaterialTheme.typography.labelSmall, color = extended.mint)
                             }
-                            TextButton(onClick = onToggleHint, contentPadding = PaddingValues(0.dp)) {
+                            TextButton(onClick = onToggleHint) {
                                 Text(
                                     if (state.showOptionalHint) bText("Hide assistance", "Sembunyikan bantuan")
                                     else bText("Show optional translation & hint", "Tampilkan terjemahan & petunjuk"),
@@ -315,7 +311,7 @@ fun LiveConversationScreen(
 
             // Recording / Preview / Transcript Dock (Blueprint Screen 18)
             SeoulCard(modifier = Modifier.fillMaxWidth()) {
-                val durText = String.format("%02d:%02d", state.lastRecordingSeconds / 60, state.lastRecordingSeconds % 60)
+                val durText = String.format(Locale.US, "%02d:%02d", state.lastRecordingSeconds / 60, state.lastRecordingSeconds % 60)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,

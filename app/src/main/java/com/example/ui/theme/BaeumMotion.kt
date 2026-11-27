@@ -1,5 +1,6 @@
 package com.example.ui.theme
 
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -13,7 +14,12 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -32,21 +38,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
- * Curated motion language & physics primitives for Baeum's "Seoul Night Atelier" experience.
+ * Curated motion language & physics primitives for Baeum's "Seoul Atelier" experience.
  */
 object BaeumMotion {
     /** Quintic ease-out curve for cinematic screen and hero transitions. */
@@ -78,6 +83,45 @@ object BaeumMotion {
         dampingRatio = Spring.DampingRatioMediumBouncy,
         stiffness = 360f
     )
+
+    /**
+     * Unified directional slide + silk fade transition for stepped content (questions, steps, cards).
+     * Automatically collapses to an instant cut when [reducedMotion] is enabled.
+     */
+    fun directionalContentTransform(
+        forward: Boolean,
+        reducedMotion: Boolean,
+        durationMs: Int = 280
+    ): ContentTransform {
+        if (reducedMotion) {
+            return fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+        }
+        val slideSpec = tween<IntOffset>(durationMs, easing = SilkEasing)
+        val exitMs = (durationMs * 0.68f).toInt()
+        val direction = if (forward) 1 else -1
+        return (slideInHorizontally(slideSpec) { direction * (it * 0.14f).toInt() } +
+            fadeIn(tween(durationMs, easing = SilkEasing)) +
+            scaleIn(initialScale = 0.975f, animationSpec = tween(durationMs, easing = SilkEasing)))
+            .togetherWith(
+                slideOutHorizontally(tween(exitMs, easing = SilkEasing)) { -direction * (it * 0.10f).toInt() } +
+                    fadeOut(tween(exitMs))
+            )
+    }
+
+    /**
+     * Subtle editorial crossfade for switching tabs, grammar cards, or speech levels.
+     */
+    fun subtleCrossfadeTransform(
+        reducedMotion: Boolean,
+        durationMs: Int = 220
+    ): ContentTransform {
+        if (reducedMotion) {
+            return fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+        }
+        return (fadeIn(tween(durationMs, easing = VelvetEasing)) +
+            scaleIn(initialScale = 0.985f, animationSpec = tween(durationMs, easing = VelvetEasing)))
+            .togetherWith(fadeOut(tween((durationMs * 0.65f).toInt())))
+    }
 }
 
 /**
@@ -102,62 +146,68 @@ fun rememberAnimatedInt(
 
 /**
  * Adds luxury tactile spring compression + gentle ripple + subtle haptic feedback to any clickable surface.
+ * Uses a single `pressProgress` animation (0f..1f) read strictly in `graphicsLayer` draw phase
+ * and bypasses animations altogether when [reducedMotion] is enabled or [enabled] is false.
  */
 fun Modifier.tactileClickable(
     enabled: Boolean = true,
-    pressedScale: Float = 0.968f,
+    pressedScale: Float = 0.972f,
     hapticEnabled: Boolean = true,
     onClick: () -> Unit
 ): Modifier = composed {
     val reducedMotion = LocalBaeumColors.current.reducedMotion
     val haptics = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
 
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed && enabled && !reducedMotion) pressedScale else 1f,
-        animationSpec = BaeumMotion.silkSpring(),
-        label = "tactile_scale"
+    val clickModifier = Modifier.clickable(
+        interactionSource = interactionSource,
+        indication = ripple(bounded = true),
+        enabled = enabled,
+        onClick = {
+            if (hapticEnabled) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
+            onClick()
+        }
     )
-    val pressAlpha by animateFloatAsState(
-        targetValue = if (isPressed && enabled && !reducedMotion) 0.94f else 1f,
-        animationSpec = tween(120),
-        label = "tactile_alpha"
+
+    if (reducedMotion || !enabled) {
+        return@composed this.then(clickModifier)
+    }
+
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressProgressState = animateFloatAsState(
+        targetValue = if (isPressed) 1f else 0f,
+        animationSpec = BaeumMotion.silkSpring(),
+        label = "tactile_press"
     )
 
     this
         .graphicsLayer {
-            scaleX = scale
-            scaleY = scale
-            alpha = pressAlpha
+            val p = pressProgressState.value
+            val s = 1f - (1f - pressedScale) * p
+            scaleX = s
+            scaleY = s
+            alpha = 1f - (0.06f * p)
         }
-        .clickable(
-            interactionSource = interactionSource,
-            indication = ripple(bounded = true),
-            enabled = enabled,
-            onClick = {
-                if (hapticEnabled) {
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                }
-                onClick()
-            }
-        )
+        .then(clickModifier)
 }
 
 /**
- * Adds a delicate diagonal glass light-sweep glint across hero surfaces and primary CTAs.
- * Automatically disabled when reducedMotion is enabled.
+ * Adds a delicate diagonal glass light-sweep glint across opt-in surfaces.
+ * Pre-caches a single [Brush] inside `drawWithCache` and translates it per frame via GPU transform
+ * for zero per-frame allocations while honoring reduced motion.
  */
 fun Modifier.luxuryShimmer(
     enabled: Boolean = true,
     durationMillis: Int = 4600,
-    shimmerAlpha: Float = 0.16f
+    shimmerAlpha: Float = 0.14f
 ): Modifier = composed {
     val reducedMotion = LocalBaeumColors.current.reducedMotion
     if (!enabled || reducedMotion) return@composed this
 
     val transition = rememberInfiniteTransition(label = "luxury_shimmer")
-    val progress by transition.animateFloat(
+    val progressState = transition.animateFloat(
         initialValue = -0.6f,
         targetValue = 1.6f,
         animationSpec = infiniteRepeatable(
@@ -167,24 +217,32 @@ fun Modifier.luxuryShimmer(
         label = "shimmer_sweep"
     )
 
-    this.drawWithContent {
-        drawContent()
-        if (progress in -0.35f..1.35f) {
-            val w = size.width
-            val h = size.height
-            val centerX = w * progress
-            val bandW = w * 0.34f
-            drawRect(
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        Color.Transparent,
-                        Color.White.copy(alpha = shimmerAlpha),
-                        Color.Transparent
-                    ),
-                    start = Offset(centerX - bandW, 0f),
-                    end = Offset(centerX + bandW, h)
-                )
-            )
+    this.drawWithCache {
+        val w = size.width.coerceAtLeast(1f)
+        val h = size.height.coerceAtLeast(1f)
+        val bandW = w * 0.34f
+        val cachedBrush = Brush.linearGradient(
+            colors = listOf(
+                Color.Transparent,
+                Color.White.copy(alpha = shimmerAlpha),
+                Color.Transparent
+            ),
+            start = Offset(-bandW, 0f),
+            end = Offset(bandW, h)
+        )
+        onDrawWithContent {
+            drawContent()
+            val progress = progressState.value
+            if (progress in -0.35f..1.35f) {
+                val centerX = w * progress
+                withTransform({ translate(left = centerX) }) {
+                    drawRect(
+                        brush = cachedBrush,
+                        topLeft = Offset(-bandW, 0f),
+                        size = androidx.compose.ui.geometry.Size(bandW * 2f, h)
+                    )
+                }
+            }
         }
     }
 }
@@ -194,10 +252,11 @@ fun Modifier.luxuryShimmer(
  */
 fun Modifier.gentleShake(triggerKey: Int): Modifier = composed {
     val reducedMotion = LocalBaeumColors.current.reducedMotion
+    if (reducedMotion) return@composed this
     val offsetX = remember { Animatable(0f) }
 
     LaunchedEffect(triggerKey) {
-        if (triggerKey > 0 && !reducedMotion) {
+        if (triggerKey > 0) {
             val hops = listOf(-14f, 12f, -8f, 5f, 0f)
             hops.forEach { target ->
                 offsetX.animateTo(
@@ -215,29 +274,36 @@ fun Modifier.gentleShake(triggerKey: Int): Modifier = composed {
 
 /**
  * Smooth staggered choreography for cards and sections entering the viewport.
- * Automatically renders immediately without translation when reducedMotion is enabled.
+ * Defers progress reads into `graphicsLayer` so children never recompose during entrance,
+ * and bypasses animation allocation completely when [reducedMotion] is enabled.
  */
 @Composable
 fun StaggeredEntrance(
     index: Int,
     modifier: Modifier = Modifier,
-    delayStepMs: Long = 48L,
+    delayStepMs: Long = 40L,
     content: @Composable () -> Unit
 ) {
     val reducedMotion = LocalBaeumColors.current.reducedMotion
-    var visible by remember(index, reducedMotion) { mutableStateOf(reducedMotion) }
+    if (reducedMotion) {
+        Box(modifier = modifier) { content() }
+        return
+    }
 
-    LaunchedEffect(index, reducedMotion) {
-        if (!reducedMotion && !visible) {
-            delay((index.coerceIn(0, 10)) * delayStepMs)
+    var visible by remember(index) { mutableStateOf(false) }
+
+    LaunchedEffect(index) {
+        if (!visible) {
+            val delayMs = (index.coerceIn(0, 8)) * delayStepMs
+            if (delayMs > 0L) delay(delayMs)
             visible = true
         }
     }
 
-    val progress by animateFloatAsState(
+    val progressState = animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
-        animationSpec = if (reducedMotion) tween(0) else tween(
-            durationMillis = 460,
+        animationSpec = tween(
+            durationMillis = 380,
             easing = BaeumMotion.SilkEasing
         ),
         label = "stagger_entrance_$index"
@@ -245,10 +311,10 @@ fun StaggeredEntrance(
 
     Box(
         modifier = modifier.graphicsLayer {
+            val progress = progressState.value
             alpha = progress
-            val dy = (1f - progress) * 22.dp.toPx()
-            translationY = dy
-            val sc = 0.972f + (0.028f * progress)
+            translationY = (1f - progress) * 16.dp.toPx()
+            val sc = 0.982f + (0.018f * progress)
             scaleX = sc
             scaleY = sc
         }
@@ -257,9 +323,22 @@ fun StaggeredEntrance(
     }
 }
 
+private val SEOUL_CONSTELLATION_POINTS = listOf(
+    Triple(0.14f, 0.08f, 1.2f),
+    Triple(0.32f, 0.16f, 0.9f),
+    Triple(0.76f, 0.06f, 1.4f),
+    Triple(0.88f, 0.21f, 1.0f),
+    Triple(0.22f, 0.34f, 0.9f),
+    Triple(0.64f, 0.28f, 1.1f),
+    Triple(0.91f, 0.48f, 0.95f),
+    Triple(0.09f, 0.62f, 1.15f),
+    Triple(0.52f, 0.72f, 0.85f),
+    Triple(0.82f, 0.86f, 1.25f)
+)
+
 /**
- * Living, ultra-subtle radial silk-aurora canvas behind screens so the UI breathes with depth
- * and never feels like a flat solid slab. Includes whisper-quiet starlight dust in Seoul Night mode.
+ * Calm, zero-recomposition radial silk-aurora canvas behind screens using `drawWithCache`.
+ * Caches gradients once per viewport size & theme so the entire navigation tree renders at 0% idle CPU.
  */
 @Composable
 fun SeoulAmbientBackdrop(
@@ -268,104 +347,61 @@ fun SeoulAmbientBackdrop(
 ) {
     val extended = LocalBaeumColors.current
     val bgColor = MaterialTheme.colorScheme.background
-    val phase = if (extended.reducedMotion) {
-        0.25f
-    } else {
-        val infiniteTransition = rememberInfiniteTransition(label = "seoul_aurora")
-        val animPhase by infiniteTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 18000, easing = FastOutSlowInEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "aurora_phase"
-        )
-        animPhase
-    }
-
-    val starPoints = remember {
-        listOf(
-            Triple(0.14f, 0.08f, 1.3f),
-            Triple(0.32f, 0.16f, 1.0f),
-            Triple(0.76f, 0.06f, 1.6f),
-            Triple(0.88f, 0.21f, 1.1f),
-            Triple(0.22f, 0.34f, 0.9f),
-            Triple(0.64f, 0.28f, 1.2f),
-            Triple(0.91f, 0.48f, 1.0f),
-            Triple(0.09f, 0.62f, 1.3f),
-            Triple(0.52f, 0.72f, 0.9f),
-            Triple(0.82f, 0.86f, 1.4f)
-        )
-    }
+    val glowPrimary = extended.ambientGlowPrimary
+    val glowSecondary = extended.ambientGlowSecondary
+    val glowGold = extended.ambientGlowGold
+    val isDark = extended.isDark
 
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(bgColor)
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-            val angle = phase * PI.toFloat() * 2f
+            .drawWithCache {
+                val w = size.width.coerceAtLeast(1f)
+                val h = size.height.coerceAtLeast(1f)
 
-            // Primary amethyst-lavender moon orb drifting gently near top-right
-            val orb1Center = Offset(
-                x = w * (0.82f + 0.09f * cos(angle)),
-                y = h * (0.10f + 0.05f * sin(angle))
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(extended.ambientGlowPrimary, Color.Transparent),
+                val orb1Center = Offset(w * 0.86f, h * 0.10f)
+                val orb1Radius = w * 0.96f
+                val orb1Brush = Brush.radialGradient(
+                    colors = listOf(glowPrimary, Color.Transparent),
                     center = orb1Center,
-                    radius = w * 0.98f
-                ),
-                radius = w * 0.98f,
-                center = orb1Center
-            )
+                    radius = orb1Radius
+                )
 
-            // Secondary celadon-mint mist orb drifting gently near mid-left
-            val orb2Center = Offset(
-                x = w * (0.10f + 0.08f * sin(angle)),
-                y = h * (0.44f + 0.05f * cos(angle))
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(extended.ambientGlowSecondary, Color.Transparent),
+                val orb2Center = Offset(w * 0.10f, h * 0.46f)
+                val orb2Radius = w * 0.86f
+                val orb2Brush = Brush.radialGradient(
+                    colors = listOf(glowSecondary, Color.Transparent),
                     center = orb2Center,
-                    radius = w * 0.88f
-                ),
-                radius = w * 0.88f,
-                center = orb2Center
-            )
+                    radius = orb2Radius
+                )
 
-            // Warm champagne-gold shimmer whisper near bottom-right
-            val orb3Center = Offset(
-                x = w * (0.88f - 0.06f * sin(angle)),
-                y = h * (0.84f - 0.04f * cos(angle))
-            )
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(extended.ambientGlowGold, Color.Transparent),
+                val orb3Center = Offset(w * 0.88f, h * 0.86f)
+                val orb3Radius = w * 0.74f
+                val orb3Brush = Brush.radialGradient(
+                    colors = listOf(glowGold, Color.Transparent),
                     center = orb3Center,
-                    radius = w * 0.74f
-                ),
-                radius = w * 0.74f,
-                center = orb3Center
-            )
+                    radius = orb3Radius
+                )
 
-            // Whisper-quiet starlight constellation dust in Seoul Night dark theme
-            if (extended.isDark) {
-                starPoints.forEachIndexed { idx, (fx, fy, r) ->
-                    val twinkle = 0.14f + 0.18f * ((sin(angle * 1.4f + idx * 1.1f) + 1f) * 0.5f)
-                    drawCircle(
-                        color = Color(0xFFE7E2FF).copy(alpha = twinkle),
-                        radius = r.dp.toPx(),
-                        center = Offset(w * fx, h * fy)
-                    )
+                val starColor = Color(0xFFE7E2FF).copy(alpha = 0.22f)
+                val cachedStars = if (isDark) {
+                    SEOUL_CONSTELLATION_POINTS.map { (fx, fy, r) ->
+                        Offset(w * fx, h * fy) to r.dp.toPx()
+                    }
+                } else {
+                    emptyList()
                 }
-            }
-        }
-        content()
-    }
+
+                onDrawBehind {
+                    drawCircle(brush = orb1Brush, radius = orb1Radius, center = orb1Center)
+                    drawCircle(brush = orb2Brush, radius = orb2Radius, center = orb2Center)
+                    drawCircle(brush = orb3Brush, radius = orb3Radius, center = orb3Center)
+                    cachedStars.forEach { (center, radiusPx) ->
+                        drawCircle(color = starColor, radius = radiusPx, center = center)
+                    }
+                }
+            },
+        content = content
+    )
 }

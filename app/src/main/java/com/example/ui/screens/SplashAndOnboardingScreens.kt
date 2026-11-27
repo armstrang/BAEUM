@@ -21,17 +21,26 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -76,17 +85,22 @@ import com.example.ui.theme.bText
 import com.example.ui.theme.tactileClickable
 
 // SCREEN 01 / 24 — Luxury Atelier Splash Screen
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SplashScreen(
     initError: String?,
     onRetry: () -> Unit
 ) {
     val extended = LocalBaeumColors.current
-    val haloScale = if (extended.reducedMotion) {
-        1.0f
+    val topSafeInsets = WindowInsets.statusBars
+        .union(WindowInsets.statusBarsIgnoringVisibility)
+        .union(WindowInsets.displayCutout)
+        .only(WindowInsetsSides.Top)
+    val haloScaleState = if (extended.reducedMotion) {
+        androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(1.0f) }
     } else {
         val infinite = rememberInfiniteTransition(label = "splash_halo")
-        val anim by infinite.animateFloat(
+        infinite.animateFloat(
             initialValue = 0.96f,
             targetValue = 1.06f,
             animationSpec = infiniteRepeatable(
@@ -95,13 +109,12 @@ fun SplashScreen(
             ),
             label = "halo_pulse"
         )
-        anim
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
+            .windowInsetsPadding(topSafeInsets)
             .navigationBarsPadding(),
         contentAlignment = Alignment.Center
     ) {
@@ -114,8 +127,9 @@ fun SplashScreen(
                     modifier = Modifier
                         .size(164.dp)
                         .graphicsLayer {
-                            scaleX = haloScale
-                            scaleY = haloScale
+                            val s = haloScaleState.value
+                            scaleX = s
+                            scaleY = s
                         }
                         .clip(CircleShape)
                         .background(
@@ -206,6 +220,7 @@ fun SplashScreen(
 }
 
 // SCREEN 02 / 24 — Luxury 3-Step Personalized Onboarding
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun OnboardingScreen(
     currentLang: String = "EN",
@@ -213,9 +228,13 @@ fun OnboardingScreen(
     onFinish: (goal: String, level: String, dailyGoal: Int) -> Unit
 ) {
     val extended = LocalBaeumColors.current
+    val topSafeInsets = WindowInsets.statusBars
+        .union(WindowInsets.statusBarsIgnoringVisibility)
+        .union(WindowInsets.displayCutout)
+        .only(WindowInsetsSides.Top)
     var step by rememberSaveable { mutableIntStateOf(1) }
-    var selectedGoal by rememberSaveable { mutableStateOf(CurriculumPathway.TOPIK) }
-    var selectedLevel by rememberSaveable { mutableStateOf("Beginner") }
+    var selectedGoal by rememberSaveable { mutableStateOf(CurriculumPathway.HANGUL) }
+    var selectedLevel by rememberSaveable { mutableStateOf("Zero") }
     var selectedDailyGoal by rememberSaveable { mutableIntStateOf(20) }
 
     BackHandler(enabled = step > 1) {
@@ -225,13 +244,13 @@ fun OnboardingScreen(
     val goals = listOf(
         Triple(
             CurriculumPathway.HANGUL,
-            bText("Learn Korean from zero", "Belajar bahasa Korea dari nol"),
-            bText("Hangul alphabet, batchim & fundamentals", "Huruf Hangul, konsonan akhir (batchim) & dasar")
+            bText("Start from zero (Zero-to-Sentence)", "Mulai dari nol (Pemula → Susun Kalimat)"),
+            bText("Step-by-step Hangul, greetings & interactive sentence building", "Panduan bertahap Hangul, sapaan & merangkai kalimat interaktif")
         ),
         Triple(
             CurriculumPathway.TOPIK,
-            bText("Prepare for TOPIK", "Persiapan ujian TOPIK"),
-            bText("Academic Korean vocabulary & grammar (1–6급)", "Kosakata & tata bahasa akademis Korea (1–6급)")
+            bText("Prepare for TOPIK I & II", "Persiapan TOPIK I & II"),
+            bText("Dedicated guided syllabi for TOPIK I (1–2급) & TOPIK II (3–6급)", "Silabus terpandu khusus TOPIK I (1–2급) & TOPIK II (3–6급)")
         ),
         Triple(
             CurriculumPathway.EPS_TOPIK,
@@ -246,10 +265,10 @@ fun OnboardingScreen(
     )
 
     val levels = listOf(
-        Triple("Zero", bText("Complete beginner", "Pemula dari nol"), bText("I cannot read Hangul yet", "Saya belum bisa membaca Hangul")),
-        Triple("Beginner", bText("Basic Hangul & phrases", "Hangul dasar & frasa"), bText("TOPIK I (1–2급) foundation", "Dasar TOPIK I (1–2급)")),
-        Triple("Intermediate", bText("Everyday communication", "Komunikasi sehari-hari"), bText("TOPIK II (3–4급) fluency", "Kelancaran TOPIK II (3–4급)")),
-        Triple("Advanced", bText("Professional & academic", "Profesional & akademis"), bText("TOPIK II (5–6급) & formal discourse", "TOPIK II (5–6급) & ragam formal"))
+        Triple("Zero", bText("Complete beginner (Zero)", "Pemula total (dari nol)"), bText("Hangul → Sentence Building (12-lesson path)", "Hangul → Menyusun Kalimat (12 pelajaran)")),
+        Triple("Beginner", bText("Basic Hangul & phrases", "Hangul dasar & frasa"), bText("TOPIK I (1–2급) dedicated 8-lesson syllabus", "Silabus khusus TOPIK I (1–2급) · 8 pelajaran")),
+        Triple("Intermediate", bText("Everyday communication", "Komunikasi sehari-hari"), bText("TOPIK II (3–4급) dedicated 8-lesson syllabus", "Silabus khusus TOPIK II (3–4급) · 8 pelajaran")),
+        Triple("Advanced", bText("Professional & academic", "Profesional & akademis"), bText("TOPIK II (5–6급) & formal writing mastery", "TOPIK II (5–6급) & penulisan formal"))
     )
 
     val dailyTargets = listOf(
@@ -262,14 +281,14 @@ fun OnboardingScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
+            .windowInsetsPadding(topSafeInsets)
             .navigationBarsPadding(),
         contentAlignment = Alignment.TopCenter
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize()
                 .widthIn(max = 600.dp)
+                .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 18.dp)
         ) {
@@ -296,9 +315,9 @@ fun OnboardingScreen(
                 // Instant ID | EN language switcher pill right in Onboarding
                 Row(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
+                        .clip(RoundedCornerShape(24.dp))
                         .background(extended.glassFillTop)
-                        .border(1.dp, extended.cardBorder, RoundedCornerShape(20.dp))
+                        .border(1.dp, extended.cardBorder, RoundedCornerShape(24.dp))
                         .padding(3.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -307,16 +326,17 @@ fun OnboardingScreen(
                         val active = currentLang.equals(code, ignoreCase = true)
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
+                                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                                .clip(RoundedCornerShape(20.dp))
                                 .background(if (active) MaterialTheme.colorScheme.primary else Color.Transparent)
                                 .tactileClickable(pressedScale = 0.92f) { onSelectLang(code) }
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
                                 .testTag("onboarding_lang_$code"),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = label,
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                 color = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -327,17 +347,18 @@ fun OnboardingScreen(
             Spacer(modifier = Modifier.height(10.dp))
 
             // Animated expanding step pills
+            val pillMs = if (extended.reducedMotion) 0 else 250
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 (1..3).forEach { idx ->
                     val active = idx == step
                     val width by animateDpAsState(
                         targetValue = if (active) 28.dp else 8.dp,
-                        animationSpec = BaeumMotion.silkSpring(),
+                        animationSpec = if (extended.reducedMotion) tween(0) else BaeumMotion.silkSpring(),
                         label = "step_pill_$idx"
                     )
                     val color by animateColorAsState(
                         targetValue = if (idx <= step) MaterialTheme.colorScheme.primary else extended.cardBorder,
-                        animationSpec = tween(250),
+                        animationSpec = tween(pillMs),
                         label = "step_color_$idx"
                     )
                     Box(
@@ -369,7 +390,16 @@ fun OnboardingScreen(
             Spacer(modifier = Modifier.height(18.dp))
 
             // Bespoke Moon Jar Editorial Motto Hero Card
-            val mottoShape = RoundedCornerShape(30.dp)
+            val mottoShape = androidx.compose.runtime.remember { RoundedCornerShape(30.dp) }
+            val primaryColor = MaterialTheme.colorScheme.primary
+            val mottoBorderBrush = androidx.compose.runtime.remember(extended.glassHighlightBorder, primaryColor) {
+                Brush.linearGradient(
+                    listOf(extended.glassHighlightBorder, primaryColor.copy(alpha = 0.4f))
+                )
+            }
+            val mottoScrimBrush = androidx.compose.runtime.remember {
+                Brush.verticalGradient(listOf(Color(0x88080D1D), Color(0xCC0A0F22)))
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -378,9 +408,7 @@ fun OnboardingScreen(
                     .clip(mottoShape)
                     .border(
                         width = 1.dp,
-                        brush = Brush.linearGradient(
-                            listOf(extended.glassHighlightBorder, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
-                        ),
+                        brush = mottoBorderBrush,
                         shape = mottoShape
                     )
             ) {
@@ -393,11 +421,7 @@ fun OnboardingScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color(0x88080D1D), Color(0xCC0A0F22))
-                            )
-                        )
+                        .background(mottoScrimBrush)
                 )
                 Column(
                     modifier = Modifier
@@ -409,7 +433,7 @@ fun OnboardingScreen(
                     AnimatedContent(
                         targetState = step,
                         transitionSpec = {
-                            fadeIn(tween(300, easing = BaeumMotion.SilkEasing)) togetherWith fadeOut(tween(180))
+                            BaeumMotion.subtleCrossfadeTransform(extended.reducedMotion, durationMs = 280)
                         },
                         label = "motto_text"
                     ) { currentStep ->
@@ -448,15 +472,11 @@ fun OnboardingScreen(
             AnimatedContent(
                 targetState = step,
                 transitionSpec = {
-                    val forward = targetState > initialState
-                    val slideSpec = tween<androidx.compose.ui.unit.IntOffset>(320, easing = BaeumMotion.SilkEasing)
-                    if (forward) {
-                        (slideInHorizontally(slideSpec) { it / 5 } + fadeIn(tween(280)))
-                            .togetherWith(slideOutHorizontally(slideSpec) { -it / 6 } + fadeOut(tween(180)))
-                    } else {
-                        (slideInHorizontally(slideSpec) { -it / 5 } + fadeIn(tween(280)))
-                            .togetherWith(slideOutHorizontally(slideSpec) { it / 6 } + fadeOut(tween(180)))
-                    }
+                    BaeumMotion.directionalContentTransform(
+                        forward = targetState > initialState,
+                        reducedMotion = extended.reducedMotion,
+                        durationMs = 300
+                    )
                 },
                 label = "onboarding_step"
             ) { currentStep ->
@@ -530,7 +550,9 @@ fun OnboardingScreen(
                 )
                 TextButton(
                     onClick = { onFinish(selectedGoal, selectedLevel, selectedDailyGoal) },
-                    modifier = Modifier.testTag("onboarding_skip_button")
+                    modifier = Modifier
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("onboarding_skip_button")
                 ) {
                     Text(
                         text = bText("Skip", "Lewati"),
@@ -543,6 +565,8 @@ fun OnboardingScreen(
     }
 }
 
+private val OnboardingCardShape = RoundedCornerShape(24.dp)
+
 @Composable
 private fun OnboardingOptionCard(
     title: String,
@@ -552,29 +576,32 @@ private fun OnboardingOptionCard(
     testTag: String
 ) {
     val extended = LocalBaeumColors.current
-    val shape = RoundedCornerShape(24.dp)
+    val primary = MaterialTheme.colorScheme.primary
+    val primaryContainer = MaterialTheme.colorScheme.primaryContainer
     val borderColor by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.primary else extended.cardBorder.copy(alpha = 0.6f),
-        animationSpec = tween(220),
+        targetValue = if (selected) primary else extended.cardBorder.copy(alpha = 0.6f),
+        animationSpec = tween(if (extended.reducedMotion) 0 else 220),
         label = "opt_border"
     )
-    val bgBrush = if (selected) {
-        Brush.horizontalGradient(
-            listOf(
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f),
-                extended.glassFillTop
+    val bgBrush = androidx.compose.runtime.remember(selected, primaryContainer, extended.glassFillTop, extended.glassFillBottom) {
+        if (selected) {
+            Brush.horizontalGradient(
+                listOf(primaryContainer.copy(alpha = 0.75f), extended.glassFillTop)
             )
-        )
-    } else {
-        Brush.verticalGradient(listOf(extended.glassFillTop, extended.glassFillBottom))
+        } else {
+            Brush.verticalGradient(listOf(extended.glassFillTop, extended.glassFillBottom))
+        }
+    }
+    val checkBrush = androidx.compose.runtime.remember(primary, extended.mint) {
+        Brush.linearGradient(listOf(primary, extended.mint))
     }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(shape)
+            .clip(OnboardingCardShape)
             .background(bgBrush)
-            .border(width = if (selected) 1.5.dp else 1.dp, color = borderColor, shape = shape)
+            .border(width = if (selected) 1.5.dp else 1.dp, color = borderColor, shape = OnboardingCardShape)
             .tactileClickable(pressedScale = 0.975f, onClick = onClick)
             .testTag(testTag)
     ) {
@@ -604,9 +631,7 @@ private fun OnboardingOptionCard(
                     modifier = Modifier
                         .size(30.dp)
                         .clip(CircleShape)
-                        .background(
-                            Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, extended.mint))
-                        ),
+                        .background(checkBrush),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(

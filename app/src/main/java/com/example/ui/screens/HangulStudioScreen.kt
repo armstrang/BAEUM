@@ -1,7 +1,7 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -53,9 +54,16 @@ import com.example.ui.components.BaeumPrimaryButton
 import com.example.ui.components.BaeumSecondaryButton
 import com.example.ui.components.BaeumTopBar
 import com.example.ui.components.SeoulCard
+import com.example.ui.theme.BaeumMotion
 import com.example.ui.theme.LocalBaeumColors
 import com.example.ui.theme.bText
 import com.example.ui.theme.isIndonesian
+import com.example.ui.theme.tactileClickable
+
+private val BuilderInitials = listOf('ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅎ')
+private val BuilderVowels = listOf('ㅏ', 'ㅓ', 'ㅗ', 'ㅜ', 'ㅡ', 'ㅣ', 'ㅐ', 'ㅔ')
+private val BuilderBatchims: List<Char?> = listOf(null, 'ㄱ', 'ㄴ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅇ')
+private val JamoTileShape = RoundedCornerShape(16.dp)
 
 // SCREEN 05 / 24 — Hangul Studio (Alphabet, Syllable Builder, Sound Changes, Numbers)
 @Composable
@@ -68,18 +76,21 @@ fun HangulStudioScreen(
     onOpenWritingStudio: () -> Unit
 ) {
     val isId = isIndonesian()
-    val tabs = if (isId) {
-        listOf("Konsonan", "Tegang", "Vokal", "Gabungan", "Batchim", "Aturan Bunyi", "Angka")
-    } else {
-        listOf("Consonants", "Tense", "Vowels", "Compound", "Batchim", "Sound Rules", "Numbers")
+    val extended = LocalBaeumColors.current
+    val tabs = remember(isId) {
+        if (isId) {
+            listOf("Konsonan", "Tegang", "Vokal", "Gabungan", "Batchim", "Aturan Bunyi", "Angka")
+        } else {
+            listOf("Consonants", "Tense", "Vowels", "Compound", "Batchim", "Sound Rules", "Numbers")
+        }
     }
     var selectedTab by remember { mutableIntStateOf(0) }
     var selectedJamo by remember { mutableStateOf<HangulJamoInfo>(HangulUnicodeEngine.basicConsonants.first()) }
 
     // Real Unicode Syllable Builder state
-    val builderInitials = listOf('ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅎ')
-    val builderVowels = listOf('ㅏ', 'ㅓ', 'ㅗ', 'ㅜ', 'ㅡ', 'ㅣ', 'ㅐ', 'ㅔ')
-    val builderBatchims: List<Char?> = listOf(null, 'ㄱ', 'ㄴ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅇ')
+    val builderInitials = BuilderInitials
+    val builderVowels = BuilderVowels
+    val builderBatchims = BuilderBatchims
     var selInitIdx by remember { mutableIntStateOf(0) }
     var selVowelIdx by remember { mutableIntStateOf(0) }
     var selBatchimIdx by remember { mutableIntStateOf(0) }
@@ -94,7 +105,8 @@ fun HangulStudioScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("Hangul Studio", "Studio Hangul"),
@@ -104,8 +116,8 @@ fun HangulStudioScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 680.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp)
         ) {
             // Horizontal category tabs
@@ -124,7 +136,9 @@ fun HangulStudioScreen(
                             selectedContainerColor = MaterialTheme.colorScheme.primary,
                             selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                         ),
-                        modifier = Modifier.testTag("hangul_tab_$idx")
+                        modifier = Modifier
+                            .defaultMinSize(minHeight = 48.dp)
+                            .testTag("hangul_tab_$idx")
                     )
                 }
             }
@@ -132,142 +146,148 @@ fun HangulStudioScreen(
             if (ttsStatus is TtsStatus.Unavailable) {
                 Spacer(modifier = Modifier.height(8.dp))
                 SeoulCard(
-                    borderColor = LocalBaeumColors.current.gold.copy(alpha = 0.6f),
+                    borderColor = extended.gold.copy(alpha = 0.6f),
                     contentPadding = PaddingValues(12.dp)
                 ) {
                     Text(
                         text = ttsStatus.reason,
                         style = MaterialTheme.typography.bodySmall,
-                        color = LocalBaeumColors.current.gold
+                        color = extended.gold
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            when (selectedTab) {
-                0 -> JamoGridSection(
-                    items = HangulUnicodeEngine.basicConsonants,
-                    selected = selectedJamo,
-                    showRomanization = showRomanization,
-                    onSelect = {
-                        selectedJamo = it
-                        onSpeakKorean(it.nameKo)
-                    }
-                )
-                1 -> JamoGridSection(
-                    items = HangulUnicodeEngine.doubleConsonants,
-                    selected = selectedJamo,
-                    showRomanization = showRomanization,
-                    onSelect = {
-                        selectedJamo = it
-                        onSpeakKorean(it.nameKo)
-                    }
-                )
-                2 -> JamoGridSection(
-                    items = HangulUnicodeEngine.basicVowels,
-                    selected = selectedJamo,
-                    showRomanization = showRomanization,
-                    onSelect = {
-                        selectedJamo = it
-                        onSpeakKorean(it.nameKo)
-                    }
-                )
-                3 -> JamoGridSection(
-                    items = HangulUnicodeEngine.compoundVowels,
-                    selected = selectedJamo,
-                    showRomanization = showRomanization,
-                    onSelect = {
-                        selectedJamo = it
-                        onSpeakKorean(it.nameKo)
-                    }
-                )
-                4 -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        HangulUnicodeEngine.batchimGroups.forEach { b ->
-                            SeoulCard(
-                                modifier = Modifier.fillMaxWidth(),
-                                onClick = { onSpeakKorean(b.sampleWordKo) }
-                            ) {
-                                Row(
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = { BaeumMotion.subtleCrossfadeTransform(extended.reducedMotion) },
+                label = "hangul_studio_tab"
+            ) { tabIdx ->
+                when (tabIdx) {
+                    0 -> JamoGridSection(
+                        items = HangulUnicodeEngine.basicConsonants,
+                        selected = selectedJamo,
+                        showRomanization = showRomanization,
+                        onSelect = {
+                            selectedJamo = it
+                            onSpeakKorean(it.nameKo)
+                        }
+                    )
+                    1 -> JamoGridSection(
+                        items = HangulUnicodeEngine.doubleConsonants,
+                        selected = selectedJamo,
+                        showRomanization = showRomanization,
+                        onSelect = {
+                            selectedJamo = it
+                            onSpeakKorean(it.nameKo)
+                        }
+                    )
+                    2 -> JamoGridSection(
+                        items = HangulUnicodeEngine.basicVowels,
+                        selected = selectedJamo,
+                        showRomanization = showRomanization,
+                        onSelect = {
+                            selectedJamo = it
+                            onSpeakKorean(it.nameKo)
+                        }
+                    )
+                    3 -> JamoGridSection(
+                        items = HangulUnicodeEngine.compoundVowels,
+                        selected = selectedJamo,
+                        showRomanization = showRomanization,
+                        onSelect = {
+                            selectedJamo = it
+                            onSpeakKorean(it.nameKo)
+                        }
+                    )
+                    4 -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            HangulUnicodeEngine.batchimGroups.forEach { b ->
+                                SeoulCard(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                    onClick = { onSpeakKorean(b.sampleWordKo) }
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(b.glyph, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-                                        Text("${b.nameKo} (${b.romanization})", style = MaterialTheme.typography.labelMedium, color = LocalBaeumColors.current.mint)
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(b.localizedPronunciationNote(isId), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column(horizontalAlignment = Alignment.End) {
-                                        Text(b.sampleWordKo, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
-                                        Text(b.localizedSampleMeaning(isId), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(b.glyph, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                                            Text("${b.nameKo} (${b.romanization})", style = MaterialTheme.typography.labelMedium, color = extended.mint)
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(b.localizedPronunciationNote(isId), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text(b.sampleWordKo, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+                                            Text(b.localizedSampleMeaning(isId), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-                5 -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        HangulUnicodeEngine.soundChangeRules.forEach { rule ->
-                            SeoulCard(
-                                modifier = Modifier.fillMaxWidth(),
-                                onClick = { onSpeakKorean(rule.exampleWritten) }
-                            ) {
-                                Row(
+                    5 -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            HangulUnicodeEngine.soundChangeRules.forEach { rule ->
+                                SeoulCard(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    onClick = { onSpeakKorean(rule.exampleWritten) }
                                 ) {
-                                    Text(rule.localizedTitle(isId), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-                                    Text(rule.titleKo, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                                }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(rule.localizedExplanation(isId), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "${rule.exampleWritten}  →  ${rule.examplePronounced}",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = LocalBaeumColors.current.mint
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Text(
-                                        text = "(${rule.localizedExampleMeaning(isId)})",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(rule.localizedTitle(isId), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                                        Text(rule.titleKo, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(rule.localizedExplanation(isId), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "${rule.exampleWritten}  →  ${rule.examplePronounced}",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = extended.mint
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Text(
+                                            text = "(${rule.localizedExampleMeaning(isId)})",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                else -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        HangulUnicodeEngine.koreanNumbers.forEach { num ->
-                            SeoulCard(
-                                modifier = Modifier.fillMaxWidth(),
-                                onClick = { onSpeakKorean("${num.nativeKo}, ${num.sinoKo}") }
-                            ) {
-                                Row(
+                    else -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            HangulUnicodeEngine.koreanNumbers.forEach { num ->
+                                SeoulCard(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                    onClick = { onSpeakKorean("${num.nativeKo}, ${num.sinoKo}") }
                                 ) {
-                                    Text(
-                                        text = "${num.value}",
-                                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Column(horizontalAlignment = Alignment.End) {
-                                        Text(bText("Native: ${num.nativeKo}", "Asli: ${num.nativeKo}"), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
-                                        Text("Sino: ${num.sinoKo}", style = MaterialTheme.typography.titleSmall, color = LocalBaeumColors.current.mint)
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "${num.value}",
+                                            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text(bText("Native: ${num.nativeKo}", "Asli: ${num.nativeKo}"), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+                                            Text("Sino: ${num.sinoKo}", style = MaterialTheme.typography.titleSmall, color = extended.mint)
+                                        }
                                     }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(num.localizedUsageNote(isId), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(num.localizedUsageNote(isId), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -414,10 +434,10 @@ private fun JamoGridSection(
                         modifier = Modifier
                             .weight(1f)
                             .height(74.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .clickable { onSelect(item) }
+                            .clip(JamoTileShape)
+                            .tactileClickable(pressedScale = 0.94f) { onSelect(item) }
                             .testTag("jamo_${item.glyph}"),
-                        shape = RoundedCornerShape(16.dp),
+                        shape = JamoTileShape,
                         color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
                         border = BorderStroke(
                             width = if (isSelected) 1.5.dp else 1.dp,

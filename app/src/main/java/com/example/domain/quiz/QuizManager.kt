@@ -183,16 +183,20 @@ class QuizManager(
     ): List<VocabEntity> {
         if (allVocab.size <= 16 || weakOnly) return allVocab
 
-        val recentSet = recentVocabIds.toHashSet()
-        val freshPool = allVocab.filter { it.id !in recentSet }
-        val basePool = if (freshPool.size >= 24) freshPool else allVocab
+        val recentSet = if (recentVocabIds.isEmpty()) emptySet() else recentVocabIds.toHashSet()
+        val basePool = if (recentSet.isEmpty()) {
+            allVocab
+        } else {
+            val freshPool = allVocab.filter { it.id !in recentSet }
+            if (freshPool.size >= 24) freshPool else allVocab
+        }
 
         val modeStats = _modeProgress.value[mode]
         val highPerformer = modeStats != null && modeStats.sessionsCompleted >= 1 && modeStats.accuracyPercent >= 85
         if (!highPerformer) return basePool
 
         val challenging = basePool.filter {
-            it.subCategory in setOf("2급", "3급", "4급", "5급", "6급") || it.quizWrongCount > 0 || it.lapses > 0
+            it.subCategory in CHALLENGING_TOPIK_LEVELS || it.quizWrongCount > 0 || it.lapses > 0
         }
         return if (challenging.size >= 20) challenging else basePool
     }
@@ -428,5 +432,9 @@ class QuizManager(
                 merged
             }
         }
+    }
+
+    companion object {
+        private val CHALLENGING_TOPIK_LEVELS = setOf("2급", "3급", "4급", "5급", "6급")
     }
 }

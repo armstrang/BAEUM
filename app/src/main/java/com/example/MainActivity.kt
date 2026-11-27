@@ -9,6 +9,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.audio.KoreanAudioController
@@ -37,14 +39,13 @@ class MainActivity : ComponentActivity() {
         val db = BaeumDatabase.getInstance(applicationContext)
         val userPreferencesRepository = DataStoreUserPreferencesRepository.create(applicationContext)
         val repository = BaeumRepository(db, userPreferencesRepository, applicationContext.assets)
-        val audioController = KoreanAudioController(applicationContext)
         StudyReminderScheduler.ensureNotificationChannel(applicationContext)
 
         viewModel = ViewModelProvider(
             this,
             BaeumViewModel.Factory(
                 repository = repository,
-                audioController = audioController,
+                audioControllerFactory = { KoreanAudioController(applicationContext) },
                 userPreferencesRepository = userPreferencesRepository,
                 reminderScheduler = { enabled, hour, minute, isId ->
                     if (enabled) {
@@ -81,12 +82,9 @@ class MainActivity : ComponentActivity() {
             }
 
             LaunchedEffect(isDark) {
-                val style = if (isDark) {
-                    SystemBarStyle.dark(Color.TRANSPARENT)
-                } else {
-                    SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
-                }
-                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                val controller = WindowCompat.getInsetsController(window, window.decorView)
+                controller.isAppearanceLightStatusBars = !isDark
+                controller.isAppearanceLightNavigationBars = !isDark
             }
 
             BaeumTheme(
@@ -99,6 +97,14 @@ class MainActivity : ComponentActivity() {
                     flashcardViewModel = flashcardViewModel
                 )
             }
+        }
+        ViewCompat.requestApplyInsets(window.decorView)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations && ::viewModel.isInitialized) {
+            viewModel.onHostStop()
         }
     }
 }

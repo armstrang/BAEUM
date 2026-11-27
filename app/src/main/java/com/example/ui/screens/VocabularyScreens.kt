@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -81,16 +82,20 @@ fun VocabularyLibraryScreen(
     var activeSubCat by rememberSaveable { mutableStateOf(initialSubCategory) }
 
     val isId = isIndonesian()
-    val statusTabs = listOf(
-        "All" to if (isId) "Semua" else "All",
-        "New" to if (isId) "Baru" else "New",
-        "Learning" to if (isId) "Belajar" else "Learning",
-        "Mastered" to if (isId) "Dikuasai" else "Mastered",
-        "Saved" to if (isId) "Tersimpan" else "Saved"
-    )
+    val statusTabs = remember(isId) {
+        listOf(
+            "All" to if (isId) "Semua" else "All",
+            "New" to if (isId) "Baru" else "New",
+            "Learning" to if (isId) "Belajar" else "Learning",
+            "Mastered" to if (isId) "Dikuasai" else "Mastered",
+            "Saved" to if (isId) "Tersimpan" else "Saved"
+        )
+    }
     val showRom = romanizationMode == RomanizationMode.ALWAYS
 
-    val filtered = remember(allVocab, searchQuery, selectedStatus, activeCurriculum, activeSubCat, translationLang) {
+    val filtered = remember(allVocab, searchQuery, selectedStatus, activeCurriculum, activeSubCat) {
+        val q = searchQuery.trim()
+        val hasQuery = q.isNotEmpty()
         allVocab.filter { word ->
             val matchCur = activeCurriculum == null || word.curriculum == activeCurriculum
             val matchSub = activeSubCat == null || word.subCategory == activeSubCat
@@ -101,8 +106,7 @@ fun VocabularyLibraryScreen(
                 "Saved" -> word.isBookmarked
                 else -> true
             }
-            val q = searchQuery.trim()
-            val matchQuery = q.isEmpty() ||
+            val matchQuery = !hasQuery ||
                 word.hangul.contains(q, ignoreCase = true) ||
                 word.romanization.contains(q, ignoreCase = true) ||
                 word.meaningEn.contains(q, ignoreCase = true) ||
@@ -118,13 +122,16 @@ fun VocabularyLibraryScreen(
         append(" (${filtered.size})")
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         BaeumTopBar(title = bText("Vocabulary", "Kosakata"), subtitle = subtitleText, onBack = onBack)
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 680.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp)
         ) {
             OutlinedTextField(
@@ -169,7 +176,9 @@ fun VocabularyLibraryScreen(
                             selectedContainerColor = MaterialTheme.colorScheme.primary,
                             selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                         ),
-                        modifier = Modifier.testTag("vocab_filter_$key")
+                        modifier = Modifier
+                            .defaultMinSize(minHeight = 48.dp)
+                            .testTag("vocab_filter_$key")
                     )
                 }
                 if (activeCurriculum != null || activeSubCat != null) {
@@ -179,13 +188,14 @@ fun VocabularyLibraryScreen(
                             activeCurriculum = null
                             activeSubCat = null
                         },
-                        label = { Text(bText("Show all", "Tampilkan semua")) }
+                        label = { Text(bText("Show all", "Tampilkan semua")) },
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp)
                     )
                 }
             }
 
             if (activeCurriculum == null || activeCurriculum == CurriculumPathway.TOPIK) {
-                val topikLevels = listOf("1급", "2급", "3급", "4급", "5급", "6급")
+                val topikLevels = remember { listOf("1급", "2급", "3급", "4급", "5급", "6급") }
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(
                     modifier = Modifier
@@ -204,7 +214,9 @@ fun VocabularyLibraryScreen(
                             selectedContainerColor = LocalBaeumColors.current.mint,
                             selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                         ),
-                        modifier = Modifier.testTag("vocab_level_all_topik")
+                        modifier = Modifier
+                            .defaultMinSize(minHeight = 48.dp)
+                            .testTag("vocab_level_all_topik")
                     )
                     topikLevels.forEach { lvl ->
                         FilterChip(
@@ -218,7 +230,9 @@ fun VocabularyLibraryScreen(
                                 selectedContainerColor = LocalBaeumColors.current.mint,
                                 selectedLabelColor = MaterialTheme.colorScheme.onPrimary
                             ),
-                            modifier = Modifier.testTag("vocab_level_$lvl")
+                            modifier = Modifier
+                                .defaultMinSize(minHeight = 48.dp)
+                                .testTag("vocab_level_$lvl")
                         )
                     }
                 }
@@ -230,6 +244,7 @@ fun VocabularyLibraryScreen(
         if (filtered.isEmpty()) {
             Column(
                 modifier = Modifier
+                    .widthIn(max = 680.dp)
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp, vertical = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -263,18 +278,25 @@ fun VocabularyLibraryScreen(
             }
         } else {
             LazyColumn(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .widthIn(max = 680.dp)
+                    .fillMaxWidth(),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                item {
+                item(key = "vocab_study_cta", contentType = "cta") {
                     BaeumSecondaryButton(
                         text = bText("Study these ${filtered.size} words as Flashcards", "Pelajari ${filtered.size} kata ini di Flashcard"),
                         onClick = { onStudyFilteredCards(activeCurriculum, activeSubCat) },
                         testTag = "vocab_study_flashcards_button"
                     )
                 }
-                items(filtered, key = { it.id }) { word ->
+                items(
+                    items = filtered,
+                    key = { it.id },
+                    contentType = { "vocab_card" }
+                ) { word ->
                     SeoulCard(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -366,7 +388,8 @@ fun WordDetailScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 28.dp)
+            .padding(bottom = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("Word details", "Detail kata"),
@@ -385,8 +408,8 @@ fun WordDetailScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 660.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -465,6 +488,7 @@ fun WordDetailScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .defaultMinSize(minHeight = 48.dp)
                                 .clickable { onSpeakKorean(form) }
                                 .padding(vertical = 8.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,

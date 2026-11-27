@@ -9,6 +9,7 @@ import com.example.data.repository.DataStoreUserPreferencesRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -19,6 +20,11 @@ import kotlinx.coroutines.launch
 class StudyReminderReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent?) {
+        val action = intent?.action
+        if (action != null && action != StudyReminderScheduler.ACTION_DAILY_STUDY_REMINDER) {
+            return
+        }
+
         val pendingResult = goAsync()
         val appContext = context.applicationContext
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -38,6 +44,7 @@ class StudyReminderReceiver : BroadcastReceiver() {
                 val todayWords = db.dailyStudyDao().getByDay(todayKey)?.wordsReviewed ?: 0
                 val streak = settings.learningStreak.effectiveCurrentStreak(todayKey)
                 val isIndonesian = settings.translationLanguage.equals("ID", ignoreCase = true)
+                val sparkPending = settings.engagement.dailySparkCompletedDayKey != todayKey
 
                 StudyReminderScheduler.postStudyReminderNotification(
                     context = appContext,
@@ -45,10 +52,13 @@ class StudyReminderReceiver : BroadcastReceiver() {
                     todayWords = todayWords,
                     dailyGoal = settings.dailyGoalWords,
                     streakDays = streak,
-                    isIndonesian = isIndonesian
+                    isIndonesian = isIndonesian,
+                    streakShields = settings.engagement.streakShields,
+                    sparkPending = sparkPending
                 )
             } finally {
                 pendingResult.finish()
+                scope.cancel()
             }
         }
     }

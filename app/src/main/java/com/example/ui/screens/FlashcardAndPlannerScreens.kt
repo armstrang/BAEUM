@@ -85,6 +85,9 @@ import com.example.ui.components.BaeumPrimaryButton
 import com.example.ui.components.BaeumSecondaryButton
 import com.example.ui.components.BaeumTopBar
 import com.example.ui.components.CircularGoalRing
+import com.example.ui.components.ComboFlamePill
+import com.example.ui.components.FloatingXpBadge
+import com.example.ui.components.LuxuryConfettiOverlay
 import com.example.ui.components.ProgressBarSlim
 import com.example.ui.components.SeoulCard
 import com.example.ui.components.SevenDayForecastChart
@@ -151,11 +154,13 @@ fun SmartFlashcardScreen(
         RomanizationMode.HIDDEN -> false
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("Smart Flashcard", "Flashcard Cerdas"),
@@ -216,8 +221,8 @@ fun SmartFlashcardScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 640.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp)
         ) {
             if (session.isCompleted || currentCard == null) {
@@ -255,6 +260,30 @@ fun SmartFlashcardScreen(
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.fillMaxWidth()
                             )
+                            if (session.sessionXpEarned > 0) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(extended.gold.copy(alpha = 0.18f))
+                                            .border(1.dp, extended.gold.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = "+${session.sessionXpEarned} XP",
+                                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                            color = extended.gold
+                                        )
+                                    }
+                                    if (session.maxSessionCombo >= 2) {
+                                        ComboFlamePill(combo = session.maxSessionCombo)
+                                    }
+                                }
+                            }
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
                                 text = eval?.grade?.summary ?: if (session.reviewedCount > 0) {
@@ -290,7 +319,7 @@ fun SmartFlashcardScreen(
                                     Text(bText("Easy ${eval.easyCount}", "Mudah ${eval.easyCount}"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                                 }
                                 Spacer(modifier = Modifier.height(12.dp))
-                                val gainStr = String.format("%+.1fd", eval.avgStabilityGainDays)
+                                val gainStr = String.format(java.util.Locale.US, "%+.1fd", eval.avgStabilityGainDays)
                                 Text(
                                     text = bText(
                                         "Stability delta: $gainStr • ${eval.avgSecondsPerCard}s/card • Newly mastered: ${eval.newlyMasteredCount}",
@@ -311,7 +340,7 @@ fun SmartFlashcardScreen(
                                 )
                             }
                             Spacer(modifier = Modifier.height(22.dp))
-                            BaeumPrimaryButton(text = bText("Study another set", "Belajar set berikutnya"), onClick = onStartNewSession, testTag = "flashcard_study_more")
+                            BaeumPrimaryButton(text = bText("Keep Flow Going (Next Set)", "Lanjutkan Alur (Set Berikutnya)"), onClick = onStartNewSession, testTag = "flashcard_study_more")
                             Spacer(modifier = Modifier.height(10.dp))
                             BaeumSecondaryButton(text = bText("Back to Home", "Kembali ke Beranda"), onClick = onBack)
                         }
@@ -330,21 +359,38 @@ fun SmartFlashcardScreen(
                     dragOffsetX.snapTo(0f)
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "${(session.currentIndex + 1).coerceAtMost(totalCards)} / $totalCards",
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = bText("${session.reviewedCount} reviewed", "${session.reviewedCount} diulas"),
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${(session.currentIndex + 1).coerceAtMost(totalCards)} / $totalCards",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (session.sessionCombo >= 2) {
+                            ComboFlamePill(combo = session.sessionCombo)
+                        }
+                        Text(
+                            text = if (session.sessionXpEarned > 0) {
+                                "+${session.sessionXpEarned} XP"
+                            } else {
+                                bText("${session.reviewedCount} reviewed", "${session.reviewedCount} diulas")
+                            },
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                            color = if (session.sessionXpEarned > 0) extended.gold else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    if (session.lastXpAwarded > 0 && session.xpEventSeq > 0) {
+                        FloatingXpBadge(
+                            label = "+${session.lastXpAwarded} XP",
+                            eventSeq = session.xpEventSeq,
+                            accentColor = extended.gold,
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 ProgressBarSlim(progress = (session.currentIndex + 1).toFloat() / totalCards)
@@ -406,8 +452,8 @@ fun SmartFlashcardScreen(
                             }
                         }
                         val metricText = if (telemetry.reps > 0) {
-                            val sText = String.format("%.1fd", telemetry.stabilityDays)
-                            val dText = String.format("%.1f", telemetry.difficulty)
+                            val sText = String.format(java.util.Locale.US, "%.1fd", telemetry.stabilityDays)
+                            val dText = String.format(java.util.Locale.US, "%.1f", telemetry.difficulty)
                             val rText = telemetry.retrievabilityPercent?.let { " • R $it%" } ?: ""
                             "S $sText • D $dText$rText"
                         } else {
@@ -575,10 +621,10 @@ fun SmartFlashcardScreen(
                                     }
                                     Box(
                                         modifier = Modifier
-                                            .size(44.dp)
-                                            .clip(RoundedCornerShape(15.dp))
+                                            .size(48.dp)
+                                            .clip(RoundedCornerShape(16.dp))
                                             .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
-                                            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.34f), RoundedCornerShape(15.dp))
+                                            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.34f), RoundedCornerShape(16.dp))
                                             .tactileClickable(pressedScale = 0.88f) { onSpeakKorean(card.hangul) }
                                             .testTag("flashcard_audio_button"),
                                         contentAlignment = Alignment.Center
@@ -640,9 +686,13 @@ fun SmartFlashcardScreen(
 
                                 AnimatedVisibility(
                                     visible = session.isRevealed,
-                                    enter = fadeIn(tween(280, easing = BaeumMotion.SilkEasing)) +
-                                        expandVertically(animationSpec = BaeumMotion.silkSpring()),
-                                    exit = fadeOut(tween(140))
+                                    enter = if (extended.reducedMotion) {
+                                        fadeIn(tween(0))
+                                    } else {
+                                        fadeIn(tween(280, easing = BaeumMotion.SilkEasing)) +
+                                            expandVertically(animationSpec = BaeumMotion.silkSpring())
+                                    },
+                                    exit = fadeOut(tween(if (extended.reducedMotion) 0 else 140))
                                 ) {
                                     Column(
                                         modifier = Modifier.fillMaxWidth(),
@@ -847,7 +897,13 @@ fun SmartFlashcardScreen(
             }
         }
     }
+    if (session.isCompleted && session.reviewedCount > 0 && (session.evaluation?.recallRatePercent ?: 100) >= 75) {
+        LuxuryConfettiOverlay(triggerKey = session.reviewedCount * 13 + session.sessionXpEarned)
+    }
+    }
 }
+
+private val FsrsRatingShape = RoundedCornerShape(22.dp)
 
 @Composable
 private fun FsrsRatingButton(
@@ -859,20 +915,15 @@ private fun FsrsRatingButton(
     testTag: String,
     onClick: () -> Unit
 ) {
-    val shape = RoundedCornerShape(22.dp)
+    val bgBrush = remember(accent) {
+        Brush.verticalGradient(listOf(accent.copy(alpha = 0.16f), accent.copy(alpha = 0.06f)))
+    }
     Box(
         modifier = modifier
             .height(68.dp)
-            .clip(shape)
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        accent.copy(alpha = 0.16f),
-                        accent.copy(alpha = 0.06f)
-                    )
-                )
-            )
-            .border(1.2.dp, accent.copy(alpha = 0.55f), shape)
+            .clip(FsrsRatingShape)
+            .background(bgBrush)
+            .border(1.2.dp, accent.copy(alpha = 0.55f), FsrsRatingShape)
             .tactileClickable(enabled = enabled, pressedScale = 0.93f, onClick = onClick)
             .testTag(testTag),
         contentAlignment = Alignment.Center
@@ -906,22 +957,24 @@ fun ReviewPlannerScreen(
     onStartNewStudy: () -> Unit
 ) {
     val extended = LocalBaeumColors.current
-    val dueToday = remember(allVocab) { BaeumRepository.countDueTodayOnly(allVocab) }
-    val overdue = remember(allVocab) { BaeumRepository.countOverdue(allVocab) }
-    val forecast = remember(allVocab) { BaeumRepository.buildSevenDayForecast(allVocab) }
-    var selectedDay by remember { mutableStateOf<DayForecastPoint?>(forecast.firstOrNull()) }
+    val plannerSnapshot = remember(allVocab) { BaeumRepository.computeVocabAggregate(allVocab) }
+    val dueToday = plannerSnapshot.dueTodayCount
+    val overdue = plannerSnapshot.overdueCount
+    val forecast = plannerSnapshot.sevenDayForecast
+    var selectedDay by remember(forecast) { mutableStateOf<DayForecastPoint?>(forecast.firstOrNull()) }
 
-    val total = allVocab.size.coerceAtLeast(1)
-    val newCount = remember(allVocab) { BaeumRepository.countStage(allVocab, CardMemoryStage.NEW) }
-    val learningCount = remember(allVocab) { BaeumRepository.countStage(allVocab, CardMemoryStage.LEARNING) }
-    val reviewCount = remember(allVocab) { BaeumRepository.countStage(allVocab, CardMemoryStage.REVIEW) }
-    val masteredCount = remember(allVocab) { BaeumRepository.countStage(allVocab, CardMemoryStage.MASTERED) }
+    val total = plannerSnapshot.totalCount.coerceAtLeast(1)
+    val newCount = plannerSnapshot.newCount
+    val learningCount = plannerSnapshot.learningCount
+    val reviewCount = plannerSnapshot.reviewCount
+    val masteredCount = plannerSnapshot.masteredCount
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("Review Planner", "Perencana Ulasan"),
@@ -931,8 +984,8 @@ fun ReviewPlannerScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 660.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {

@@ -13,6 +13,7 @@ import com.example.data.local.UserSettings
 import com.example.data.local.VocabEntity
 import com.example.data.seed.KoreanVocabSeed
 import com.example.data.seed.VocabAssetLoader
+import com.example.domain.engagement.EngagementProfileState
 import com.example.domain.fsrs.CardMemoryStage
 import com.example.domain.fsrs.FsrsRating
 import com.example.domain.fsrs.FsrsScheduler
@@ -21,6 +22,7 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -36,13 +38,34 @@ data class DayForecastPoint(
 
 @JsonClass(generateAdapter = true)
 data class BaeumBackupPayload(
-    val schemaVersion: Int = 1,
+    val schemaVersion: Int = BaeumRepository.CURRENT_BACKUP_SCHEMA_VERSION,
     val exportedAtEpochMs: Long,
     val vocabStates: List<VocabProgressBackup>,
     val dailyStats: List<DailyStudyBackup>,
     val quizRecords: List<QuizRecordBackup>,
     val speakingSessions: List<SpeakingSessionBackup>,
-    val examAttempts: List<ExamAttemptBackup>
+    val examAttempts: List<ExamAttemptBackup>,
+    val grammarBookmarks: List<GrammarBookmarkBackup> = emptyList(),
+    val reviewLogs: List<ReviewLogBackup> = emptyList(),
+    val engagement: EngagementBackup? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class EngagementBackup(
+    val totalXp: Int = 0,
+    val streakShields: Int = 0,
+    val lastShieldUsedDayKey: String = "",
+    val blitzBestScore: Int = 0,
+    val blitzGamesPlayed: Int = 0,
+    val bestComboEver: Int = 0,
+    val dailySparkCompletedDayKey: String = "",
+    val dailySealClaimedDayKey: String = "",
+    val unlockedStampIds: List<String> = emptyList(),
+    val soundEffectsEnabled: Boolean = true,
+    val completedSyllabusLessonIds: List<String> = emptyList(),
+    val perfectSyllabusLessonIds: List<String> = emptyList(),
+    val defeatedStageBossNumbers: List<Int> = emptyList(),
+    val mistakeVaultKeys: List<String> = emptyList()
 )
 
 @JsonClass(generateAdapter = true)
@@ -120,14 +143,30 @@ data class ExamAttemptBackup(
     val dayKey: String
 )
 
+@JsonClass(generateAdapter = true)
+data class GrammarBookmarkBackup(
+    val grammarId: String,
+    val isMastered: Boolean = false,
+    val bookmarkedAtEpochMs: Long = 0L
+)
+
+@JsonClass(generateAdapter = true)
+data class ReviewLogBackup(
+    val vocabId: String,
+    val rating: Int,
+    val stageBefore: String,
+    val stageAfter: String,
+    val intervalDays: Double,
+    val timestampEpochMs: Long,
+    val dayKey: String
+)
+
 class BaeumRepository(
     private val db: BaeumDatabase,
     val userPreferences: UserPreferencesRepository,
     private val assets: AssetManager? = null
 ) {
-    private val moshi: Moshi = Moshi.Builder()
-        .addLast(KotlinJsonAdapterFactory())
-        .build()
+    private val moshi: Moshi = backupMoshi
 
     val settingsFlow: Flow<UserSettings> = userPreferences.userSettingsFlow
     val learningStreakFlow: Flow<LearningStreakState> = userPreferences.learningStreakFlow
@@ -169,6 +208,42 @@ class BaeumRepository(
     }
 
     /**
+     * Feeds newly learned Guided Syllabus words into the learner's active FSRS daily review queue
+     * without overwriting any vocabulary items that already have review history.
+     */
+    suspend fun seedSyllabusWordsIntoFsrs(
+        hangulKeywords: Set<String>,
+        nowEpochMs: Long = System.currentTimeMillis(),
+        maxItemsPerLesson: Int = 6
+    ): Int = withContext(Dispatchers.IO) {
+        if (hangulKeywords.isEmpty()) return@withContext 0
+        val cleanKeys = hangulKeywords.map { it.trim() }.filter { it.isNotBlank() }.toSet()
+        if (cleanKeys.isEmpty()) return@withContext 0
+
+        val allVocab = db.vocabDao().getAllVocabOnce()
+        val toSchedule = ArrayList<VocabEntity>(maxItemsPerLesson)
+        for (item in allVocab) {
+            if (toSchedule.size >= maxItemsPerLesson) break
+            if (item.reps > 0 || item.dueEpochMs > 0L) continue
+            val ko = item.hangul.trim()
+            val matched = ko in cleanKeys ||
+                cleanKeys.any { kw -> kw.length >= 2 && (ko == kw || (ko.length >= 2 && kw.startsWith(ko))) }
+            if (matched) {
+                toSchedule.add(
+                    item.copy(
+                        stage = "LEARNING",
+                        dueEpochMs = nowEpochMs
+                    )
+                )
+            }
+        }
+        if (toSchedule.isNotEmpty()) {
+            db.vocabDao().upsertAll(toSchedule)
+        }
+        toSchedule.size
+    }
+
+    /**
      * Atomically updates a card using genuine FSRS-4.5 scheduling, writes ReviewLog,
      * and increments today's local-timezone DailyStudyEntity.
      */
@@ -198,19 +273,26 @@ class BaeumRepository(
             lastReviewEpochMs = next.lastReviewEpochMs,
             dueEpochMs = next.dueEpochMs
         )
-        db.vocabDao().updateVocab(updated)
-        db.reviewLogDao().insertLog(
-            ReviewLogEntity(
-                vocabId = vocab.id,
-                rating = rating.value,
-                stageBefore = vocab.stage,
-                stageAfter = updated.stage,
-                intervalDays = result.intervalDays,
-                timestampEpochMs = now,
-                dayKey = dayKey
+        db.withTransaction {
+            db.vocabDao().updateVocab(updated)
+            db.reviewLogDao().insertLog(
+                ReviewLogEntity(
+                    vocabId = vocab.id,
+                    rating = rating.value,
+                    stageBefore = vocab.stage,
+                    stageAfter = updated.stage,
+                    intervalDays = result.intervalDays,
+                    timestampEpochMs = now,
+                    dayKey = dayKey
+                )
             )
-        )
-        incrementDailyStats(dayKey = dayKey, wordsDelta = 1, secondsDelta = studyDurationSec)
+            incrementDailyStatsInDb(
+                dayKey = dayKey,
+                wordsDelta = 1,
+                secondsDelta = studyDurationSec.coerceIn(1, 300)
+            )
+        }
+        userPreferences.recordStudyActivity(dayKey)
         updated
     }
 
@@ -240,20 +322,34 @@ class BaeumRepository(
                     dayKey = dayKey
                 )
             )
-            incrementDailyStats(
+            incrementDailyStatsInDb(
                 dayKey = dayKey,
                 wordsDelta = 1,
                 secondsDelta = studyDurationSec.coerceIn(2, 180)
             )
         }
+        userPreferences.recordStudyActivity(dayKey)
         updatedVocab
     }
 
     /**
-     * Restores a [VocabEntity] back to its pre-rating FSRS snapshot (used for Undo Last Rating).
+     * Atomically restores a [VocabEntity] back to its pre-rating FSRS snapshot (Undo Last Rating),
+     * removing the undone review log entry and decrementing today's reviewed-word count if applicable.
      */
     suspend fun restoreVocabState(previousVocab: VocabEntity) = withContext(Dispatchers.IO) {
-        db.vocabDao().updateVocab(previousVocab)
+        val todayKey = localDayKey()
+        db.withTransaction {
+            db.vocabDao().updateVocab(previousVocab)
+            val deletedLogs = db.reviewLogDao().deleteLatestForVocabOnDay(previousVocab.id, todayKey)
+            if (deletedLogs > 0) {
+                val existing = db.dailyStudyDao().getByDay(todayKey)
+                if (existing != null && existing.wordsReviewed > 0) {
+                    db.dailyStudyDao().upsert(
+                        existing.copy(wordsReviewed = (existing.wordsReviewed - 1).coerceAtLeast(0))
+                    )
+                }
+            }
+        }
     }
 
     suspend fun recordQuizAnswerTelemetry(vocabId: String?, isCorrect: Boolean) = withContext(Dispatchers.IO) {
@@ -275,40 +371,67 @@ class BaeumRepository(
     ) = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val dayKey = localDayKey(now)
-        db.quizRecordDao().insert(
-            QuizRecordEntity(
-                mode = mode,
-                curriculum = curriculum,
-                totalQuestions = totalQuestions,
-                correctAnswers = correctAnswers,
-                durationSec = durationSec,
-                weakTopicNote = weakTopicNote,
-                timestampEpochMs = now,
-                dayKey = dayKey
+        db.withTransaction {
+            db.quizRecordDao().insert(
+                QuizRecordEntity(
+                    mode = mode,
+                    curriculum = curriculum,
+                    totalQuestions = totalQuestions,
+                    correctAnswers = correctAnswers,
+                    durationSec = durationSec,
+                    weakTopicNote = weakTopicNote,
+                    timestampEpochMs = now,
+                    dayKey = dayKey
+                )
             )
-        )
-        incrementDailyStats(dayKey = dayKey, quizzesDelta = 1, secondsDelta = durationSec.coerceAtLeast(20))
+            incrementDailyStatsInDb(
+                dayKey = dayKey,
+                quizzesDelta = 1,
+                secondsDelta = durationSec.coerceAtLeast(20)
+            )
+        }
+        userPreferences.recordStudyActivity(dayKey)
     }
 
     suspend fun saveSpeakingSession(entity: SpeakingSessionEntity): Long = withContext(Dispatchers.IO) {
-        val id = db.speakingSessionDao().insert(entity)
-        incrementDailyStats(dayKey = entity.dayKey, speakingDelta = 1, secondsDelta = entity.completedTurns * 40)
+        val id = db.withTransaction {
+            val insertedId = db.speakingSessionDao().insert(entity)
+            incrementDailyStatsInDb(
+                dayKey = entity.dayKey,
+                speakingDelta = 1,
+                secondsDelta = (entity.completedTurns * 40).coerceAtLeast(20)
+            )
+            insertedId
+        }
+        userPreferences.recordStudyActivity(entity.dayKey)
         userPreferences.recordRecentScenario(entity.scenarioId)
         id
     }
 
     suspend fun saveExamAttempt(entity: ExamAttemptEntity): Long = withContext(Dispatchers.IO) {
-        val id = db.examAttemptDao().insert(entity)
-        incrementDailyStats(dayKey = entity.dayKey, examsDelta = 1, secondsDelta = entity.durationSec)
+        val id = db.withTransaction {
+            val insertedId = db.examAttemptDao().insert(entity)
+            incrementDailyStatsInDb(
+                dayKey = entity.dayKey,
+                examsDelta = 1,
+                secondsDelta = entity.durationSec.coerceAtLeast(10)
+            )
+            insertedId
+        }
+        userPreferences.recordStudyActivity(entity.dayKey)
         id
     }
 
     suspend fun recordStudySeconds(seconds: Int) = withContext(Dispatchers.IO) {
         if (seconds <= 0) return@withContext
-        incrementDailyStats(dayKey = localDayKey(), secondsDelta = seconds)
+        val dayKey = localDayKey()
+        db.withTransaction {
+            incrementDailyStatsInDb(dayKey = dayKey, secondsDelta = seconds)
+        }
+        userPreferences.recordStudyActivity(dayKey)
     }
 
-    private suspend fun incrementDailyStats(
+    private suspend fun incrementDailyStatsInDb(
         dayKey: String,
         wordsDelta: Int = 0,
         quizzesDelta: Int = 0,
@@ -326,14 +449,11 @@ class BaeumRepository(
                 studySeconds = existing.studySeconds + secondsDelta
             )
         )
-        if (wordsDelta > 0 || quizzesDelta > 0 || speakingDelta > 0 || examsDelta > 0 || secondsDelta > 0) {
-            userPreferences.recordStudyActivity(dayKey)
-        }
     }
 
     /**
-     * Exports a versioned JSON backup of all user FSRS learning states, bookmarks,
-     * quiz records, speaking evaluations, exam history, and daily study analytics.
+     * Exports a versioned JSON backup of all user FSRS learning states, vocabulary & grammar bookmarks,
+     * FSRS review logs, quiz records, speaking evaluations, exam history, and daily study analytics.
      */
     suspend fun exportBackupJson(): String = withContext(Dispatchers.IO) {
         val vocab = db.vocabDao().getAllVocabOnce()
@@ -347,8 +467,9 @@ class BaeumRepository(
                     quizCorrectCount = it.quizCorrectCount, quizWrongCount = it.quizWrongCount
                 )
             }
+        val eng = userPreferences.engagementProfileFlow.first()
         val payload = BaeumBackupPayload(
-            schemaVersion = 1,
+            schemaVersion = CURRENT_BACKUP_SCHEMA_VERSION,
             exportedAtEpochMs = System.currentTimeMillis(),
             vocabStates = vocab,
             dailyStats = db.dailyStudyDao().getAllOnce().map {
@@ -370,78 +491,212 @@ class BaeumRepository(
                     it.estimatedLevel, it.analysisSummary, it.wrongCount, it.totalQuestions, it.durationSec,
                     it.timestampEpochMs, it.dayKey
                 )
-            }
+            },
+            grammarBookmarks = db.grammarBookmarkDao().getAllOnce().map {
+                GrammarBookmarkBackup(
+                    grammarId = it.grammarId,
+                    isMastered = it.isMastered,
+                    bookmarkedAtEpochMs = it.bookmarkedAtEpochMs
+                )
+            },
+            reviewLogs = db.reviewLogDao().getAllLogsOnce().map {
+                ReviewLogBackup(
+                    vocabId = it.vocabId,
+                    rating = it.rating,
+                    stageBefore = it.stageBefore,
+                    stageAfter = it.stageAfter,
+                    intervalDays = it.intervalDays,
+                    timestampEpochMs = it.timestampEpochMs,
+                    dayKey = it.dayKey
+                )
+            },
+            engagement = EngagementBackup(
+                totalXp = eng.totalXp,
+                streakShields = eng.streakShields,
+                lastShieldUsedDayKey = eng.lastShieldUsedDayKey,
+                blitzBestScore = eng.blitzBestScore,
+                blitzGamesPlayed = eng.blitzGamesPlayed,
+                bestComboEver = eng.bestComboEver,
+                dailySparkCompletedDayKey = eng.dailySparkCompletedDayKey,
+                dailySealClaimedDayKey = eng.dailySealClaimedDayKey,
+                unlockedStampIds = eng.unlockedStampIds.sorted(),
+                soundEffectsEnabled = eng.soundEffectsEnabled,
+                completedSyllabusLessonIds = eng.completedBeginnerLessonIds.sorted(),
+                perfectSyllabusLessonIds = eng.perfectSyllabusLessonIds.sorted(),
+                defeatedStageBossNumbers = eng.defeatedStageBossNumbers.sorted(),
+                mistakeVaultKeys = eng.mistakeVaultKeys.sorted()
+            )
         )
         moshi.adapter(BaeumBackupPayload::class.java).indent("  ").toJson(payload)
     }
 
     /**
-     * Validates backup schema version and safely restores user learning progress without corrupting seed vocabulary.
+     * Validates backup schema version (v1 or v2) and atomically restores user learning progress
+     * without corrupting seed vocabulary.
      */
     suspend fun restoreBackupJson(json: String): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
-            val adapter = moshi.adapter(BaeumBackupPayload::class.java)
-            val payload = adapter.fromJson(json) ?: error("Backup file could not be parsed.")
-            require(payload.schemaVersion == 1) {
-                "Unsupported backup version (${payload.schemaVersion}). Expected version 1."
+            val payload = parseBackupJson(json) ?: error("Backup file could not be parsed.")
+            require(payload.schemaVersion in 1..CURRENT_BACKUP_SCHEMA_VERSION) {
+                "Unsupported backup version (${payload.schemaVersion}). Supported versions: 1..$CURRENT_BACKUP_SCHEMA_VERSION."
             }
             ensureSeeded()
-            val currentMap = db.vocabDao().getAllVocabOnce().associateBy { it.id }
-            val updatedVocab = payload.vocabStates.mapNotNull { saved ->
-                val base = currentMap[saved.id] ?: return@mapNotNull null
-                base.copy(
-                    isBookmarked = saved.isBookmarked,
-                    stability = saved.stability,
-                    difficulty = saved.difficulty,
-                    elapsedDays = saved.elapsedDays,
-                    scheduledDays = saved.scheduledDays,
-                    reps = saved.reps,
-                    lapses = saved.lapses,
-                    stage = saved.stage,
-                    lastReviewEpochMs = saved.lastReviewEpochMs,
-                    dueEpochMs = saved.dueEpochMs,
-                    quizCorrectCount = saved.quizCorrectCount,
-                    quizWrongCount = saved.quizWrongCount
-                )
+
+            var restoredVocabCount = 0
+            db.withTransaction {
+                val allVocab = db.vocabDao().getAllVocabOnce()
+                val savedById = payload.vocabStates.associateBy { it.id }
+                val toUpsert = mutableListOf<VocabEntity>()
+
+                allVocab.forEach { base ->
+                    val saved = savedById[base.id]
+                    if (saved != null) {
+                        val safeStage = runCatching { CardMemoryStage.valueOf(saved.stage).name }
+                            .getOrDefault(CardMemoryStage.NEW.name)
+                        toUpsert.add(
+                            base.copy(
+                                isBookmarked = saved.isBookmarked,
+                                stability = sanitizeNonNegativeDouble(saved.stability, 3650.0),
+                                difficulty = if (saved.difficulty.isFinite()) saved.difficulty.coerceIn(0.0, 10.0) else 0.0,
+                                elapsedDays = sanitizeNonNegativeDouble(saved.elapsedDays, 36500.0),
+                                scheduledDays = sanitizeNonNegativeDouble(saved.scheduledDays, 3650.0),
+                                reps = saved.reps.coerceAtLeast(0),
+                                lapses = saved.lapses.coerceAtLeast(0),
+                                stage = safeStage,
+                                lastReviewEpochMs = saved.lastReviewEpochMs.coerceAtLeast(0L),
+                                dueEpochMs = saved.dueEpochMs.coerceAtLeast(0L),
+                                quizCorrectCount = saved.quizCorrectCount.coerceAtLeast(0),
+                                quizWrongCount = saved.quizWrongCount.coerceAtLeast(0)
+                            )
+                        )
+                        restoredVocabCount++
+                    } else if (base.reps > 0 || base.isBookmarked || base.quizCorrectCount > 0 || base.quizWrongCount > 0 || base.stage != CardMemoryStage.NEW.name) {
+                        toUpsert.add(
+                            base.copy(
+                                isBookmarked = false,
+                                stability = 0.0,
+                                difficulty = 0.0,
+                                elapsedDays = 0.0,
+                                scheduledDays = 0.0,
+                                reps = 0,
+                                lapses = 0,
+                                stage = CardMemoryStage.NEW.name,
+                                lastReviewEpochMs = 0L,
+                                dueEpochMs = 0L,
+                                quizCorrectCount = 0,
+                                quizWrongCount = 0
+                            )
+                        )
+                    }
+                }
+                toUpsert.chunked(500).forEach { batch ->
+                    db.vocabDao().upsertAll(batch)
+                }
+
+                db.dailyStudyDao().clearAll()
+                if (payload.dailyStats.isNotEmpty()) {
+                    db.dailyStudyDao().upsertAll(payload.dailyStats.map {
+                        DailyStudyEntity(
+                            dayKey = it.dayKey,
+                            wordsReviewed = it.wordsReviewed.coerceAtLeast(0),
+                            quizzesCompleted = it.quizzesCompleted.coerceAtLeast(0),
+                            speakingSessions = it.speakingSessions.coerceAtLeast(0),
+                            examsCompleted = it.examsCompleted.coerceAtLeast(0),
+                            studySeconds = it.studySeconds.coerceAtLeast(0)
+                        )
+                    })
+                }
+
+                db.quizRecordDao().clearAll()
+                if (payload.quizRecords.isNotEmpty()) {
+                    db.quizRecordDao().insertAll(payload.quizRecords.map {
+                        QuizRecordEntity(
+                            mode = it.mode,
+                            curriculum = it.curriculum,
+                            totalQuestions = it.totalQuestions.coerceAtLeast(0),
+                            correctAnswers = it.correctAnswers.coerceAtLeast(0),
+                            durationSec = it.durationSec.coerceAtLeast(0),
+                            weakTopicNote = it.weakTopicNote,
+                            timestampEpochMs = it.timestampEpochMs.coerceAtLeast(0L),
+                            dayKey = it.dayKey
+                        )
+                    })
+                }
+
+                db.speakingSessionDao().clearAll()
+                if (payload.speakingSessions.isNotEmpty()) {
+                    db.speakingSessionDao().insertAll(payload.speakingSessions.map {
+                        SpeakingSessionEntity(
+                            scenarioId = it.scenarioId,
+                            scenarioTitle = it.scenarioTitle,
+                            difficulty = it.difficulty,
+                            totalTurns = it.totalTurns.coerceAtLeast(0),
+                            completedTurns = it.completedTurns.coerceAtLeast(0),
+                            overallScore = it.overallScore.coerceIn(0, 100),
+                            relevanceAvg = if (it.relevanceAvg.isFinite()) it.relevanceAvg else 0f,
+                            vocabAvg = if (it.vocabAvg.isFinite()) it.vocabAvg else 0f,
+                            grammarAvg = if (it.grammarAvg.isFinite()) it.grammarAvg else 0f,
+                            communicationAvg = if (it.communicationAvg.isFinite()) it.communicationAvg else 0f,
+                            strengths = it.strengths,
+                            weaknesses = it.weaknesses,
+                            correctionsSerialized = it.correctionsSerialized,
+                            recommendations = it.recommendations,
+                            timestampEpochMs = it.timestampEpochMs.coerceAtLeast(0L),
+                            dayKey = it.dayKey
+                        )
+                    })
+                }
+
+                db.examAttemptDao().clearAll()
+                if (payload.examAttempts.isNotEmpty()) {
+                    db.examAttemptDao().insertAll(payload.examAttempts.map {
+                        ExamAttemptEntity(
+                            examType = it.examType,
+                            mode = it.mode,
+                            totalScore = it.totalScore.coerceAtLeast(0),
+                            maxScore = it.maxScore.coerceAtLeast(1),
+                            sectionScoresSerialized = it.sectionScoresSerialized,
+                            estimatedLevel = it.estimatedLevel,
+                            analysisSummary = it.analysisSummary,
+                            wrongCount = it.wrongCount.coerceAtLeast(0),
+                            totalQuestions = it.totalQuestions.coerceAtLeast(0),
+                            durationSec = it.durationSec.coerceAtLeast(0),
+                            timestampEpochMs = it.timestampEpochMs.coerceAtLeast(0L),
+                            dayKey = it.dayKey
+                        )
+                    })
+                }
+
+                db.reviewLogDao().clearAll()
+                if (payload.reviewLogs.isNotEmpty()) {
+                    payload.reviewLogs.map {
+                        ReviewLogEntity(
+                            vocabId = it.vocabId,
+                            rating = it.rating.coerceIn(1, 4),
+                            stageBefore = it.stageBefore,
+                            stageAfter = it.stageAfter,
+                            intervalDays = sanitizeNonNegativeDouble(it.intervalDays, 3650.0),
+                            timestampEpochMs = it.timestampEpochMs.coerceAtLeast(0L),
+                            dayKey = it.dayKey
+                        )
+                    }.chunked(500).forEach { batch ->
+                        db.reviewLogDao().insertAll(batch)
+                    }
+                }
+
+                if (payload.schemaVersion >= 2 || payload.grammarBookmarks.isNotEmpty()) {
+                    db.grammarBookmarkDao().clearAll()
+                    if (payload.grammarBookmarks.isNotEmpty()) {
+                        db.grammarBookmarkDao().upsertAll(payload.grammarBookmarks.map {
+                            GrammarBookmarkEntity(
+                                grammarId = it.grammarId,
+                                isMastered = it.isMastered,
+                                bookmarkedAtEpochMs = it.bookmarkedAtEpochMs.coerceAtLeast(0L)
+                            )
+                        })
+                    }
+                }
             }
-            if (updatedVocab.isNotEmpty()) db.vocabDao().upsertAll(updatedVocab)
-
-            db.dailyStudyDao().clearAll()
-            db.dailyStudyDao().upsertAll(payload.dailyStats.map {
-                DailyStudyEntity(it.dayKey, it.wordsReviewed, it.quizzesCompleted, it.speakingSessions, it.examsCompleted, it.studySeconds)
-            })
-
-            db.quizRecordDao().clearAll()
-            db.quizRecordDao().insertAll(payload.quizRecords.map {
-                QuizRecordEntity(
-                    mode = it.mode, curriculum = it.curriculum, totalQuestions = it.totalQuestions,
-                    correctAnswers = it.correctAnswers, durationSec = it.durationSec,
-                    weakTopicNote = it.weakTopicNote, timestampEpochMs = it.timestampEpochMs, dayKey = it.dayKey
-                )
-            })
-
-            db.speakingSessionDao().clearAll()
-            db.speakingSessionDao().insertAll(payload.speakingSessions.map {
-                SpeakingSessionEntity(
-                    scenarioId = it.scenarioId, scenarioTitle = it.scenarioTitle, difficulty = it.difficulty,
-                    totalTurns = it.totalTurns, completedTurns = it.completedTurns, overallScore = it.overallScore,
-                    relevanceAvg = it.relevanceAvg, vocabAvg = it.vocabAvg, grammarAvg = it.grammarAvg,
-                    communicationAvg = it.communicationAvg, strengths = it.strengths, weaknesses = it.weaknesses,
-                    correctionsSerialized = it.correctionsSerialized, recommendations = it.recommendations,
-                    timestampEpochMs = it.timestampEpochMs, dayKey = it.dayKey
-                )
-            })
-
-            db.examAttemptDao().clearAll()
-            db.examAttemptDao().insertAll(payload.examAttempts.map {
-                ExamAttemptEntity(
-                    examType = it.examType, mode = it.mode, totalScore = it.totalScore, maxScore = it.maxScore,
-                    sectionScoresSerialized = it.sectionScoresSerialized, estimatedLevel = it.estimatedLevel,
-                    analysisSummary = it.analysisSummary, wrongCount = it.wrongCount,
-                    totalQuestions = it.totalQuestions, durationSec = it.durationSec,
-                    timestampEpochMs = it.timestampEpochMs, dayKey = it.dayKey
-                )
-            })
 
             val activeDays = payload.dailyStats
                 .filter { it.wordsReviewed > 0 || it.quizzesCompleted > 0 || it.speakingSessions > 0 || it.examsCompleted > 0 || it.studySeconds > 0 }
@@ -449,52 +704,258 @@ class BaeumRepository(
                 .toSet()
             userPreferences.syncStreakFromDailyHistory(activeDays)
 
-            "Restored ${updatedVocab.size} vocabulary states, ${payload.dailyStats.size} study days, and ${payload.examAttempts.size} exam records."
+            val engBackup = payload.engagement
+            if (engBackup != null) {
+                userPreferences.restoreEngagementProfile(
+                    EngagementProfileState(
+                        totalXp = engBackup.totalXp.coerceAtLeast(0),
+                        streakShields = engBackup.streakShields,
+                        lastShieldUsedDayKey = engBackup.lastShieldUsedDayKey,
+                        blitzBestScore = engBackup.blitzBestScore.coerceAtLeast(0),
+                        blitzGamesPlayed = engBackup.blitzGamesPlayed.coerceAtLeast(0),
+                        bestComboEver = engBackup.bestComboEver.coerceAtLeast(0),
+                        dailySparkCompletedDayKey = engBackup.dailySparkCompletedDayKey,
+                        dailySealClaimedDayKey = engBackup.dailySealClaimedDayKey,
+                        unlockedStampIds = engBackup.unlockedStampIds.toSet(),
+                        soundEffectsEnabled = engBackup.soundEffectsEnabled,
+                        completedBeginnerLessonIds = engBackup.completedSyllabusLessonIds.toSet(),
+                        perfectSyllabusLessonIds = engBackup.perfectSyllabusLessonIds.toSet(),
+                        defeatedStageBossNumbers = engBackup.defeatedStageBossNumbers.toSet(),
+                        mistakeVaultKeys = engBackup.mistakeVaultKeys.toSet()
+                    )
+                )
+            }
+
+            val syllabusSuffix = if (engBackup != null) {
+                ", ${engBackup.completedSyllabusLessonIds.size} syllabus lessons, and ${engBackup.totalXp} XP"
+            } else {
+                ""
+            }
+            "Restored $restoredVocabCount vocabulary states, ${payload.grammarBookmarks.size} grammar bookmarks, ${payload.reviewLogs.size} review logs, ${payload.dailyStats.size} study days, ${payload.examAttempts.size} exam records$syllabusSuffix."
         }
     }
 
+    private fun sanitizeNonNegativeDouble(value: Double, maxVal: Double): Double =
+        if (value.isFinite()) value.coerceIn(0.0, maxVal) else 0.0
+
     companion object {
-        fun localDayKey(epochMs: Long = System.currentTimeMillis()): String {
-            val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-            return fmt.format(Date(epochMs))
+        const val CURRENT_BACKUP_SCHEMA_VERSION: Int = 2
+
+        private val backupMoshi: Moshi = Moshi.Builder()
+            .addLast(KotlinJsonAdapterFactory())
+            .build()
+
+        fun serializeBackupPayload(payload: BaeumBackupPayload): String =
+            backupMoshi.adapter(BaeumBackupPayload::class.java).indent("  ").toJson(payload)
+
+        fun parseBackupJson(json: String): BaeumBackupPayload? =
+            backupMoshi.adapter(BaeumBackupPayload::class.java).fromJson(json)
+
+        private val DAY_KEY_FORMAT: ThreadLocal<SimpleDateFormat> = object : ThreadLocal<SimpleDateFormat>() {
+            override fun initialValue(): SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         }
 
-        fun buildSevenDayForecast(vocab: List<VocabEntity>, nowEpochMs: Long = System.currentTimeMillis()): List<DayForecastPoint> {
-            val cal = Calendar.getInstance().apply { timeInMillis = nowEpochMs }
-            // Reset to start of today in local timezone
-            cal.set(Calendar.HOUR_OF_DAY, 0)
-            cal.set(Calendar.MINUTE, 0)
-            cal.set(Calendar.SECOND, 0)
-            cal.set(Calendar.MILLISECOND, 0)
-            val startOfTodayMs = cal.timeInMillis
-            val dayMs = 86_400_000L
-            val dayFmt = SimpleDateFormat("EEE", Locale.US)
+        private val SHORT_DAY_FORMAT: ThreadLocal<SimpleDateFormat> = object : ThreadLocal<SimpleDateFormat>() {
+            override fun initialValue(): SimpleDateFormat = SimpleDateFormat("EEE", Locale.US)
+        }
 
-            val scheduledCards = vocab.filter { it.reps > 0 && it.dueEpochMs > 0L }
-            return (0 until 7).map { offset ->
-                val dayStart = startOfTodayMs + offset * dayMs
-                val dayEnd = dayStart + dayMs
-                val count = if (offset == 0) {
+        fun localDayKey(epochMs: Long = System.currentTimeMillis()): String {
+            return DAY_KEY_FORMAT.get()!!.format(Date(epochMs))
+        }
+
+        /**
+         * Single-pass O(N) 7-day FSRS forecast builder (replaces 7 repeated full scans over 6,600+ cards).
+         */
+        fun buildSevenDayForecast(vocab: List<VocabEntity>, nowEpochMs: Long = System.currentTimeMillis()): List<DayForecastPoint> {
+            val boundaries = LongArray(8)
+            val labels = arrayOfNulls<String>(7)
+            val dateKeys = arrayOfNulls<String>(7)
+            val cal = Calendar.getInstance().apply {
+                timeInMillis = nowEpochMs
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val dayFmt = SHORT_DAY_FORMAT.get()!!
+            val keyFmt = DAY_KEY_FORMAT.get()!!
+
+            boundaries[0] = cal.timeInMillis
+            for (offset in 0 until 7) {
+                val dayStart = boundaries[offset]
+                val d = Date(dayStart)
+                labels[offset] = if (offset == 0) "Today" else dayFmt.format(d)
+                dateKeys[offset] = keyFmt.format(d)
+                cal.add(Calendar.DAY_OF_YEAR, 1)
+                boundaries[offset + 1] = cal.timeInMillis
+            }
+
+            val counts = IntArray(7)
+            val day1End = boundaries[1]
+            val weekEnd = boundaries[7]
+            for (card in vocab) {
+                if (card.reps <= 0) continue
+                val due = card.dueEpochMs
+                if (due <= 0L || due >= weekEnd) continue
+                if (due < day1End) {
                     // Today includes due today + overdue (counted once, never double-counted)
-                    scheduledCards.count { it.dueEpochMs < dayEnd }
+                    counts[0]++
                 } else {
-                    scheduledCards.count { it.dueEpochMs in dayStart until dayEnd }
+                    for (offset in 1 until 7) {
+                        if (due < boundaries[offset + 1]) {
+                            counts[offset]++
+                            break
+                        }
+                    }
                 }
-                val label = if (offset == 0) "Today" else dayFmt.format(Date(dayStart))
+            }
+
+            return List(7) { offset ->
                 DayForecastPoint(
                     dayOffset = offset,
-                    shortLabel = label,
-                    dateKey = localDayKey(dayStart),
-                    dueCount = count
+                    shortLabel = labels[offset]!!,
+                    dateKey = dateKeys[offset]!!,
+                    dueCount = counts[offset]
                 )
             }
         }
 
+        /**
+         * Single-pass O(N) aggregator computing all dashboard, planner, and FSRS deck overview metrics
+         * in one linear traversal with zero intermediate collections and zero FsrsCardSnapshot allocations.
+         */
+        fun computeVocabAggregate(
+            vocab: List<VocabEntity>,
+            activePathway: String? = null,
+            nowEpochMs: Long = System.currentTimeMillis(),
+            includeRetrievability: Boolean = false
+        ): VocabAggregateSnapshot {
+            val boundaries = LongArray(8)
+            val labels = arrayOfNulls<String>(7)
+            val dateKeys = arrayOfNulls<String>(7)
+            val cal = Calendar.getInstance().apply {
+                timeInMillis = nowEpochMs
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val dayFmt = SHORT_DAY_FORMAT.get()!!
+            val keyFmt = DAY_KEY_FORMAT.get()!!
+
+            boundaries[0] = cal.timeInMillis
+            for (offset in 0 until 7) {
+                val dayStart = boundaries[offset]
+                val d = Date(dayStart)
+                labels[offset] = if (offset == 0) "Today" else dayFmt.format(d)
+                dateKeys[offset] = keyFmt.format(d)
+                cal.add(Calendar.DAY_OF_YEAR, 1)
+                boundaries[offset + 1] = cal.timeInMillis
+            }
+
+            val startOfToday = boundaries[0]
+            val endOfToday = boundaries[1]
+            val weekEnd = boundaries[7]
+            val forecastCounts = IntArray(7)
+
+            var dueToday = 0
+            var overdue = 0
+            var newCount = 0
+            var learningCount = 0
+            var reviewCount = 0
+            var masteredCount = 0
+            var reviewedCount = 0
+            var leechCount = 0
+            var weakQuizCount = 0
+            var activeTotal = 0
+            var activeLearned = 0
+            var retrievabilitySum = 0.0
+            var retrievabilitySamples = 0
+
+            val newName = CardMemoryStage.NEW.name
+            val learningName = CardMemoryStage.LEARNING.name
+            val reviewName = CardMemoryStage.REVIEW.name
+            val masteredName = CardMemoryStage.MASTERED.name
+
+            for (card in vocab) {
+                when (card.stage) {
+                    newName -> newCount++
+                    learningName -> learningCount++
+                    reviewName -> reviewCount++
+                    masteredName -> masteredCount++
+                }
+                if (card.reps > 0) {
+                    reviewedCount++
+                    val due = card.dueEpochMs
+                    if (due in 1L until endOfToday) {
+                        dueToday++
+                        forecastCounts[0]++
+                        if (due < startOfToday) overdue++
+                    } else if (due in endOfToday until weekEnd) {
+                        for (offset in 1 until 7) {
+                            if (due < boundaries[offset + 1]) {
+                                forecastCounts[offset]++
+                                break
+                            }
+                        }
+                    }
+                    if (includeRetrievability && card.stability > 0.0) {
+                        retrievabilitySum += FsrsScheduler.currentRetrievability(
+                            reps = card.reps,
+                            stability = card.stability,
+                            lastReviewEpochMs = card.lastReviewEpochMs,
+                            nowEpochMs = nowEpochMs
+                        )
+                        retrievabilitySamples++
+                    }
+                }
+                if (FsrsScheduler.isLeech(card.lapses)) leechCount++
+                if (card.quizWrongCount > card.quizCorrectCount) weakQuizCount++
+                if (activePathway != null && card.curriculum == activePathway) {
+                    activeTotal++
+                    if (card.reps > 0) activeLearned++
+                }
+            }
+
+            val forecast = List(7) { offset ->
+                DayForecastPoint(
+                    dayOffset = offset,
+                    shortLabel = labels[offset]!!,
+                    dateKey = dateKeys[offset]!!,
+                    dueCount = forecastCounts[offset]
+                )
+            }
+            val avgR = if (includeRetrievability && retrievabilitySamples > 0) {
+                kotlin.math.round((retrievabilitySum / retrievabilitySamples) * 100.0).toInt().coerceIn(0, 100)
+            } else {
+                null
+            }
+
+            return VocabAggregateSnapshot(
+                totalCount = vocab.size,
+                dueTodayCount = dueToday,
+                overdueCount = overdue,
+                sevenDayForecast = forecast,
+                newCount = newCount,
+                learningCount = learningCount,
+                reviewCount = reviewCount,
+                masteredCount = masteredCount,
+                reviewedCount = reviewedCount,
+                leechCount = leechCount,
+                weakQuizCount = weakQuizCount,
+                activePathwayTotal = activeTotal,
+                activePathwayLearned = activeLearned,
+                averageRetrievabilityPercent = avgR
+            )
+        }
+
         fun computeStudyStreak(stats: List<DailyStudyEntity>, nowEpochMs: Long = System.currentTimeMillis()): Int {
-            val activeDays = stats
-                .filter { it.wordsReviewed > 0 || it.quizzesCompleted > 0 || it.speakingSessions > 0 || it.examsCompleted > 0 }
-                .map { it.dayKey }
-                .toSet()
+            val activeDays = HashSet<String>(stats.size)
+            for (s in stats) {
+                if (s.wordsReviewed > 0 || s.quizzesCompleted > 0 || s.speakingSessions > 0 || s.examsCompleted > 0) {
+                    activeDays.add(s.dayKey)
+                }
+            }
             if (activeDays.isEmpty()) return 0
 
             val cal = Calendar.getInstance().apply { timeInMillis = nowEpochMs }
@@ -531,8 +992,9 @@ class BaeumRepository(
                 set(Calendar.MINUTE, 0)
                 set(Calendar.SECOND, 0)
                 set(Calendar.MILLISECOND, 0)
+                add(Calendar.DAY_OF_YEAR, 1)
             }
-            val endOfToday = cal.timeInMillis + 86_400_000L
+            val endOfToday = cal.timeInMillis
             return vocab.count { it.reps > 0 && it.dueEpochMs in 1 until endOfToday }
         }
 
@@ -540,3 +1002,20 @@ class BaeumRepository(
             vocab.count { it.stage == stage.name }
     }
 }
+
+data class VocabAggregateSnapshot(
+    val totalCount: Int = 0,
+    val dueTodayCount: Int = 0,
+    val overdueCount: Int = 0,
+    val sevenDayForecast: List<DayForecastPoint> = emptyList(),
+    val newCount: Int = 0,
+    val learningCount: Int = 0,
+    val reviewCount: Int = 0,
+    val masteredCount: Int = 0,
+    val reviewedCount: Int = 0,
+    val leechCount: Int = 0,
+    val weakQuizCount: Int = 0,
+    val activePathwayTotal: Int = 0,
+    val activePathwayLearned: Int = 0,
+    val averageRetrievabilityPercent: Int? = null
+)

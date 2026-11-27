@@ -8,6 +8,7 @@ import com.example.data.local.UserSettings
 import com.example.data.local.VocabEntity
 import com.example.data.repository.BaeumRepository
 import com.example.data.repository.UserPreferencesRepository
+import com.example.domain.engagement.BaeumHabitEngine
 import com.example.domain.fsrs.CardMemoryStage
 import com.example.domain.fsrs.FlashcardSessionAlgorithm
 import com.example.domain.fsrs.FsrsRating
@@ -16,11 +17,15 @@ import com.example.domain.fsrs.FsrsScheduler
 import com.example.domain.scoring.FlashcardRatingOutcome
 import com.example.domain.scoring.FlashcardSessionEvaluation
 import com.example.domain.scoring.LearningScoringEngine
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -75,7 +80,12 @@ data class FlashcardFsrsUiState(
     val canUndo: Boolean = false,
     val lastScheduledLabel: String? = null,
     val outcomes: List<FlashcardRatingOutcome> = emptyList(),
-    val evaluation: FlashcardSessionEvaluation? = null
+    val evaluation: FlashcardSessionEvaluation? = null,
+    val sessionCombo: Int = 0,
+    val maxSessionCombo: Int = 0,
+    val sessionXpEarned: Int = 0,
+    val lastXpAwarded: Int = 0,
+    val xpEventSeq: Int = 0
 ) {
     val currentCard: VocabEntity? get() = cards.getOrNull(currentIndex)
 }
@@ -98,6 +108,8 @@ interface FlashcardFsrsStore {
     ): VocabEntity
 
     suspend fun restoreVocabState(previousVocab: VocabEntity)
+
+    suspend fun recordFlashcardEngagement(xpDelta: Int, combo: Int) {}
 }
 
 class BaeumFlashcardFsrsStore(
@@ -126,6 +138,11 @@ class BaeumFlashcardFsrsStore(
     override suspend fun restoreVocabState(previousVocab: VocabEntity) {
         repository.restoreVocabState(previousVocab)
     }
+
+    override suspend fun recordFlashcardEngagement(xpDelta: Int, combo: Int) {
+        if (xpDelta > 0) userPreferencesRepository.awardXp(xpDelta)
+        if (combo > 0) userPreferencesRepository.recordBestCombo(combo)
+    }
 }
 
 private data class FsrsUndoSnapshot(
@@ -133,7 +150,10 @@ private data class FsrsUndoSnapshot(
     val previousQueue: List<VocabEntity>,
     val previousIndex: Int,
     val previousReviewedCount: Int,
-    val previousOutcomes: List<FlashcardRatingOutcome>
+    val previousOutcomes: List<FlashcardRatingOutcome>,
+    val previousCombo: Int,
+    val previousMaxCombo: Int,
+    val previousSessionXp: Int
 )
 
 /**
@@ -151,7 +171,8 @@ private data class FsrsUndoSnapshot(
 class FlashcardFsrsViewModel(
     private val store: FlashcardFsrsStore,
     private val clock: () -> Long = System::currentTimeMillis,
-    private val rng: Random = Random.Default
+    private val rng: Random = Random.Default,
+    computeDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) : ViewModel() {
 
     val allVocab: StateFlow<List<VocabEntity>> = store.allVocabFlow
@@ -162,6 +183,8 @@ class FlashcardFsrsViewModel(
 
     val deckOverview: StateFlow<FsrsDeckOverview> = allVocab
         .map { vocab -> computeDeckOverview(vocab, clock()) }
+        .conflate()
+        .flowOn(computeDispatcher)
         .stateIn(viewModelScope, SharingStarted.Eagerly, FsrsDeckOverview())
 
     private val _sessionState = MutableStateFlow(FlashcardFsrsUiState())
@@ -309,7 +332,10 @@ class FlashcardFsrsViewModel(
             previousQueue = session.cards,
             previousIndex = session.currentIndex,
             previousReviewedCount = session.reviewedCount,
-            previousOutcomes = session.outcomes
+            previousOutcomes = session.outcomes,
+            previousCombo = session.sessionCombo,
+            previousMaxCombo = session.maxSessionCombo,
+            previousSessionXp = session.sessionXpEarned
         )
 
         _sessionState.update { it.copy(isSubmitting = true) }
@@ -323,6 +349,21 @@ class FlashcardFsrsViewModel(
                 studyDurationSec = cardDurationSec,
                 nowEpochMs = now
             )
+
+            val nextCombo = when (rating) {
+                FsrsRating.GOOD, FsrsRating.EASY -> session.sessionCombo + 1
+                FsrsRating.HARD -> session.sessionCombo
+                FsrsRating.AGAIN -> 0
+            }
+            val nextMaxCombo = maxOf(session.maxSessionCombo, nextCombo)
+            val newlyMastered = card.stage != CardMemoryStage.MASTERED.name &&
+                persisted.stage == CardMemoryStage.MASTERED.name
+            val xpAwarded = BaeumHabitEngine.computeFlashcardRatingXp(
+                rating = rating,
+                nextCombo = nextCombo,
+                newlyMastered = newlyMastered
+            )
+            store.recordFlashcardEngagement(xpDelta = xpAwarded, combo = nextCombo)
 
             val wasFirstExposure = card.reps == 0
             val outcome = FlashcardRatingOutcome(
@@ -369,7 +410,12 @@ class FlashcardFsrsViewModel(
                 canUndo = true,
                 lastScheduledLabel = "${card.hangul} • ${scheduleResult.formattedInterval}",
                 outcomes = updatedOutcomes,
-                evaluation = evaluation
+                evaluation = evaluation,
+                sessionCombo = nextCombo,
+                maxSessionCombo = nextMaxCombo,
+                sessionXpEarned = session.sessionXpEarned + xpAwarded,
+                lastXpAwarded = xpAwarded,
+                xpEventSeq = session.xpEventSeq + 1
             )
         }
     }
@@ -410,7 +456,11 @@ class FlashcardFsrsViewModel(
                 canUndo = false,
                 lastScheduledLabel = null,
                 outcomes = snapshot.previousOutcomes,
-                evaluation = null
+                evaluation = null,
+                sessionCombo = snapshot.previousCombo,
+                maxSessionCombo = snapshot.previousMaxCombo,
+                sessionXpEarned = snapshot.previousSessionXp,
+                lastXpAwarded = 0
             )
         }
     }
@@ -458,24 +508,21 @@ class FlashcardFsrsViewModel(
 
     private fun computeDeckOverview(vocab: List<VocabEntity>, nowEpochMs: Long): FsrsDeckOverview {
         if (vocab.isEmpty()) return FsrsDeckOverview()
-        val reviewed = vocab.filter { it.reps > 0 && it.stability > 0.0 }
-        val avgR = if (reviewed.isNotEmpty()) {
-            (reviewed.map { FsrsScheduler.currentRetrievability(it.toFsrsSnapshot(), nowEpochMs) }.average() * 100.0)
-                .roundToInt()
-                .coerceIn(0, 100)
-        } else {
-            null
-        }
+        val agg = BaeumRepository.computeVocabAggregate(
+            vocab = vocab,
+            nowEpochMs = nowEpochMs,
+            includeRetrievability = true
+        )
         return FsrsDeckOverview(
-            totalCards = vocab.size,
-            dueNowCount = BaeumRepository.countDueTodayOnly(vocab, nowEpochMs),
-            overdueCount = BaeumRepository.countOverdue(vocab, nowEpochMs),
-            newCount = vocab.count { it.stage == CardMemoryStage.NEW.name },
-            learningCount = vocab.count { it.stage == CardMemoryStage.LEARNING.name },
-            reviewCount = vocab.count { it.stage == CardMemoryStage.REVIEW.name },
-            masteredCount = vocab.count { it.stage == CardMemoryStage.MASTERED.name },
-            leechCount = vocab.count { FsrsScheduler.isLeech(it.toFsrsSnapshot()) },
-            averageRetrievabilityPercent = avgR
+            totalCards = agg.totalCount,
+            dueNowCount = agg.dueTodayCount,
+            overdueCount = agg.overdueCount,
+            newCount = agg.newCount,
+            learningCount = agg.learningCount,
+            reviewCount = agg.reviewCount,
+            masteredCount = agg.masteredCount,
+            leechCount = agg.leechCount,
+            averageRetrievabilityPercent = agg.averageRetrievabilityPercent
         )
     }
 

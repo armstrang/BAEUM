@@ -8,27 +8,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import com.example.R
 
-val HangulFontFamily = FontFamily(
-    Font(R.font.noto_sans_kr, FontWeight.Normal),
-    Font(R.font.noto_sans_kr, FontWeight.Medium),
-    Font(R.font.noto_sans_kr, FontWeight.SemiBold),
-    Font(R.font.noto_sans_kr, FontWeight.Bold)
+val PretendardFontFamily = FontFamily(
+    Font(R.font.pretendard_regular, FontWeight.Normal),
+    Font(R.font.pretendard_medium, FontWeight.Medium),
+    Font(R.font.pretendard_semibold, FontWeight.SemiBold),
+    Font(R.font.pretendard_bold, FontWeight.Bold)
 )
 
-val DisplayFontFamily = FontFamily(
-    Font(R.font.outfit, FontWeight.Normal),
-    Font(R.font.outfit, FontWeight.Medium),
-    Font(R.font.outfit, FontWeight.SemiBold),
-    Font(R.font.outfit, FontWeight.Bold)
-)
+val HangulFontFamily = PretendardFontFamily
+val DisplayFontFamily = PretendardFontFamily
+val BodyFontFamily = PretendardFontFamily
 
-val BodyFontFamily = FontFamily(
-    Font(R.font.plus_jakarta_sans, FontWeight.Normal),
-    Font(R.font.plus_jakarta_sans, FontWeight.Medium),
-    Font(R.font.plus_jakarta_sans, FontWeight.SemiBold),
-    Font(R.font.plus_jakarta_sans, FontWeight.Bold)
-)
-
+// Reserved strictly for Latin editorial mottos (contains Latin glyphs only)
 val EditorialSerifFamily = FontFamily(
     Font(R.font.cormorant_garamond, FontWeight.Normal),
     Font(R.font.cormorant_garamond, FontWeight.Medium),
@@ -40,16 +31,16 @@ fun buildBaeumTypography(scale: Float = 1.0f): Typography = Typography(
     displayLarge = TextStyle(
         fontFamily = HangulFontFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = (54 * scale).sp,
-        lineHeight = (64 * scale).sp,
-        letterSpacing = (-0.8).sp
+        fontSize = (56 * scale).sp,
+        lineHeight = (66 * scale).sp,
+        letterSpacing = (-1.0).sp
     ),
     displayMedium = TextStyle(
         fontFamily = HangulFontFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = (42 * scale).sp,
-        lineHeight = (50 * scale).sp,
-        letterSpacing = (-0.5).sp
+        fontSize = (44 * scale).sp,
+        lineHeight = (54 * scale).sp,
+        letterSpacing = (-0.6).sp
     ),
     displaySmall = TextStyle(
         fontFamily = DisplayFontFamily,
@@ -61,15 +52,15 @@ fun buildBaeumTypography(scale: Float = 1.0f): Typography = Typography(
     headlineLarge = TextStyle(
         fontFamily = DisplayFontFamily,
         fontWeight = FontWeight.Bold,
-        fontSize = (29 * scale).sp,
-        lineHeight = (36 * scale).sp,
-        letterSpacing = (-0.5).sp
+        fontSize = (28 * scale).sp,
+        lineHeight = (35 * scale).sp,
+        letterSpacing = (-0.45).sp
     ),
     headlineMedium = TextStyle(
         fontFamily = DisplayFontFamily,
         fontWeight = FontWeight.SemiBold,
-        fontSize = (24 * scale).sp,
-        lineHeight = (31 * scale).sp,
+        fontSize = (22 * scale).sp,
+        lineHeight = (29 * scale).sp,
         letterSpacing = (-0.25).sp
     ),
     headlineSmall = TextStyle(
@@ -90,7 +81,7 @@ fun buildBaeumTypography(scale: Float = 1.0f): Typography = Typography(
         fontFamily = HangulFontFamily,
         fontWeight = FontWeight.SemiBold,
         fontSize = (16 * scale).sp,
-        lineHeight = (22 * scale).sp
+        lineHeight = (23 * scale).sp
     ),
     titleSmall = TextStyle(
         fontFamily = BodyFontFamily,
@@ -107,8 +98,8 @@ fun buildBaeumTypography(scale: Float = 1.0f): Typography = Typography(
     bodyMedium = TextStyle(
         fontFamily = HangulFontFamily,
         fontWeight = FontWeight.Normal,
-        fontSize = (14 * scale).sp,
-        lineHeight = (21 * scale).sp
+        fontSize = (14.5 * scale).sp,
+        lineHeight = (21.5 * scale).sp
     ),
     bodySmall = TextStyle(
         fontFamily = HangulFontFamily,
@@ -121,20 +112,20 @@ fun buildBaeumTypography(scale: Float = 1.0f): Typography = Typography(
         fontWeight = FontWeight.SemiBold,
         fontSize = (14 * scale).sp,
         lineHeight = (18 * scale).sp,
-        letterSpacing = 0.2.sp
+        letterSpacing = 0.15.sp
     ),
     labelMedium = TextStyle(
         fontFamily = BodyFontFamily,
         fontWeight = FontWeight.Medium,
-        fontSize = (12 * scale).sp,
-        lineHeight = (16 * scale).sp,
-        letterSpacing = 0.35.sp
+        fontSize = (12.5 * scale).sp,
+        lineHeight = (16.5 * scale).sp,
+        letterSpacing = 0.25.sp
     ),
     labelSmall = TextStyle(
         fontFamily = DisplayFontFamily,
         fontWeight = FontWeight.SemiBold,
-        fontSize = (11 * scale).sp,
-        lineHeight = (14 * scale).sp,
-        letterSpacing = 0.8.sp
+        fontSize = (11.5 * scale).sp,
+        lineHeight = (15 * scale).sp,
+        letterSpacing = 0.6.sp
     )
 )

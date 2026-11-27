@@ -70,6 +70,9 @@ import com.example.ui.components.BaeumPrimaryButton
 import com.example.ui.components.BaeumSecondaryButton
 import com.example.ui.components.BaeumTopBar
 import com.example.ui.components.CircularGoalRing
+import com.example.ui.components.ComboFlamePill
+import com.example.ui.components.FloatingXpBadge
+import com.example.ui.components.LuxuryConfettiOverlay
 import com.example.ui.components.ProgressBarSlim
 import com.example.ui.components.SeoulCard
 import com.example.ui.theme.BaeumMotion
@@ -83,6 +86,8 @@ import com.example.ui.theme.localizedTitle
 import com.example.ui.theme.rememberAnimatedInt
 import com.example.ui.theme.tactileClickable
 
+private val QuizModePairs = QuizMode.entries.chunked(2)
+
 // SCREEN 13 / 24 — Quiz Center (Adaptive learning modes including Vocabulary Recall & Sentence Arrangement)
 @Composable
 fun QuizCenterScreen(
@@ -91,15 +96,18 @@ fun QuizCenterScreen(
     onBack: () -> Unit,
     onSelectQuizMode: (QuizMode, Boolean) -> Unit
 ) {
-    val weakCount = allVocab.count { it.quizWrongCount > it.quizCorrectCount || it.lapses > 0 }
-    val modePairs = QuizMode.entries.chunked(2)
+    val weakCount = remember(allVocab) {
+        allVocab.count { it.quizWrongCount > it.quizCorrectCount || it.lapses > 0 }
+    }
+    val modePairs = QuizModePairs
     val extended = LocalBaeumColors.current
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("Smart Quiz", "Kuis Cerdas"),
@@ -109,8 +117,8 @@ fun QuizCenterScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 660.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -259,12 +267,20 @@ fun ActiveQuizScreen(
     }
 
     val extended = LocalBaeumColors.current
+    var correctPopSeq by remember { mutableIntStateOf(0) }
+    LaunchedEffect(state.currentIndex, state.isChecked, state.isCorrect) {
+        if (state.isChecked && state.isCorrect) {
+            correctPopSeq += 1
+        }
+    }
 
+    androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = state.mode.localizedTitle(),
@@ -278,8 +294,8 @@ fun ActiveQuizScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 640.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -389,31 +405,41 @@ fun ActiveQuizScreen(
 
                 ProgressBarSlim(progress = (state.currentIndex + 1).toFloat() / state.questions.size)
 
-                // Live progress, streak & points strip
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = bText("Score: ${state.earnedPoints} pts", "Skor: ${state.earnedPoints} poin"),
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = if (state.currentStreak > 0) {
-                            bText("Streak: ${state.currentStreak}x", "Runtun: ${state.currentStreak}x")
+                // Live progress, animated Combo Flame & floating +XP strip
+                androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = bText("Score: ${state.earnedPoints} pts", "Skor: ${state.earnedPoints} poin"),
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        if (state.currentStreak >= 2) {
+                            ComboFlamePill(combo = state.currentStreak)
                         } else {
-                            bText("Accuracy: ${if (answeredCount > 0) "$runningAcc%" else "—"}", "Akurasi: ${if (answeredCount > 0) "$runningAcc%" else "—"}")
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (state.currentStreak >= 2) extended.mint else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = q.skillTag,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                            Text(
+                                text = bText("Accuracy: ${if (answeredCount > 0) "$runningAcc%" else "—"}", "Akurasi: ${if (answeredCount > 0) "$runningAcc%" else "—"}"),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            text = q.skillTag,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (correctPopSeq > 0) {
+                        FloatingXpBadge(
+                            label = if (state.currentStreak >= 3) "+12 XP · ${state.currentStreak}x!" else "+12 XP",
+                            eventSeq = correctPopSeq,
+                            accentColor = if (state.currentStreak >= 3) extended.gold else extended.mint,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
                 }
 
                 // Trigger crisp gentle shake on incorrect answer check
@@ -547,9 +573,10 @@ fun ActiveQuizScreen(
                                 if (!state.isChecked && state.arrangedTokenIndices.isNotEmpty()) {
                                     Row(
                                         modifier = Modifier
-                                            .clip(RoundedCornerShape(10.dp))
+                                            .defaultMinSize(minHeight = 48.dp)
+                                            .clip(RoundedCornerShape(12.dp))
                                             .clickable { onClearTokens() }
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            .padding(horizontal = 12.dp, vertical = 8.dp)
                                             .testTag("quiz_arrangement_clear"),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -675,14 +702,15 @@ fun ActiveQuizScreen(
                                 isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f)
                                 else -> extended.glassFillTop
                             }
+                            val optAnimMs = if (extended.reducedMotion) 0 else 220
                             val borderColor by animateColorAsState(
                                 targetValue = targetBorder,
-                                animationSpec = tween(220),
+                                animationSpec = tween(optAnimMs),
                                 label = "quiz_opt_border_$idx"
                             )
                             val bgColor by animateColorAsState(
                                 targetValue = targetBg,
-                                animationSpec = tween(220),
+                                animationSpec = tween(optAnimMs),
                                 label = "quiz_opt_bg_$idx"
                             )
 
@@ -734,10 +762,14 @@ fun ActiveQuizScreen(
                 // Animated Instant Feedback Card
                 AnimatedVisibility(
                     visible = state.isChecked,
-                    enter = fadeIn(tween(240, easing = BaeumMotion.SilkEasing)) +
-                        expandVertically(animationSpec = BaeumMotion.silkSpring()) +
-                        scaleIn(initialScale = 0.96f, animationSpec = BaeumMotion.silkSpring()),
-                    exit = fadeOut(tween(150))
+                    enter = if (extended.reducedMotion) {
+                        fadeIn(tween(0))
+                    } else {
+                        fadeIn(tween(240, easing = BaeumMotion.SilkEasing)) +
+                            expandVertically(animationSpec = BaeumMotion.silkSpring()) +
+                            scaleIn(initialScale = 0.96f, animationSpec = BaeumMotion.silkSpring())
+                    },
+                    exit = fadeOut(tween(if (extended.reducedMotion) 0 else 150))
                 ) {
                     val accent = if (state.isCorrect) extended.mint else extended.cherryPink
                     SeoulCard(
@@ -790,5 +822,11 @@ fun ActiveQuizScreen(
                 )
             }
         }
+    }
+    val finalScore = state.evaluation?.weightedMasteryScore
+        ?: ((state.correctCount.toFloat() / state.questions.size.coerceAtLeast(1)) * 100f).toInt()
+    if (state.isCompleted && finalScore >= 70) {
+        LuxuryConfettiOverlay(triggerKey = finalScore * 17 + state.correctCount)
+    }
     }
 }

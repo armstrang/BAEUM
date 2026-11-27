@@ -3,6 +3,7 @@ package com.example.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.data.audio.BaeumSoundEffects
 import com.example.data.audio.KoreanAudioController
 import com.example.data.audio.SpeechCaptureState
 import com.example.data.audio.SpeechRecognitionState
@@ -18,65 +19,57 @@ import com.example.data.local.UserSettings
 import com.example.data.local.VocabEntity
 import com.example.data.repository.BaeumRepository
 import com.example.data.repository.CurriculumPreferences
+import com.example.data.repository.DataStoreUserPreferencesRepository
 import com.example.data.repository.DayForecastPoint
 import com.example.data.repository.LearningStreakState
 import com.example.data.repository.ThemePreferences
 import com.example.data.repository.UserPreferencesRepository
+import com.example.data.seed.ExamPaperLength
 import com.example.data.seed.ExamType
 import com.example.data.seed.SpeakingDifficulty
 import com.example.data.seed.SpeakingScenario
+import com.example.domain.engagement.BaeumHabitEngine
+import com.example.domain.engagement.CelebrationBannerEvent
+import com.example.domain.engagement.CelebrationKind
+import com.example.domain.engagement.HabitDashboardSnapshot
+import com.example.domain.engagement.SeoulBlitzEngine
+import com.example.domain.engagement.SeoulBlitzState
 import com.example.domain.exam.ActiveExamSession
 import com.example.domain.exam.ExamEngine
 import com.example.domain.exam.ExamReport
 import com.example.domain.exam.ExamSessionMode
 import com.example.domain.fsrs.CardMemoryStage
-import com.example.domain.fsrs.FlashcardSessionAlgorithm
 import com.example.domain.fsrs.FsrsRating
 import com.example.domain.quiz.ModeProgressStats
 import com.example.domain.quiz.QuizManager
 import com.example.domain.quiz.QuizMode
 import com.example.domain.quiz.QuizSessionState
-import com.example.domain.scoring.FlashcardRatingOutcome
-import com.example.domain.scoring.FlashcardSessionEvaluation
 import com.example.domain.scoring.LearnerReadinessProfile
 import com.example.domain.scoring.LearningScoringEngine
 import com.example.data.seed.localizedTitle
 import com.example.domain.speaking.ConversationEngine
 import com.example.domain.speaking.ConversationPhase
 import com.example.domain.speaking.FinalSpeakingAssessment
-import com.example.domain.speaking.KoreanAiCoachFeedback
-import com.example.domain.speaking.KoreanAiCoachRepository
 import com.example.domain.speaking.KoreanPronunciationEvaluator
 import com.example.domain.speaking.LiveConversationState
-import com.example.domain.speaking.LocalSampleKoreanAiCoachRepository
 import com.example.domain.speaking.PronunciationAttemptResult
 import com.example.domain.speaking.PronunciationDrillCategory
 import com.example.domain.speaking.PronunciationDrillItem
 import com.example.ui.theme.ThemeMode
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-
-data class FlashcardSessionState(
-    val title: String = "Review session",
-    val cards: List<VocabEntity> = emptyList(),
-    val currentIndex: Int = 0,
-    val isRevealed: Boolean = false,
-    val reviewedCount: Int = 0,
-    val isSubmitting: Boolean = false,
-    val isCompleted: Boolean = false,
-    val sessionStartedMs: Long = System.currentTimeMillis(),
-    val outcomes: List<FlashcardRatingOutcome> = emptyList(),
-    val evaluation: FlashcardSessionEvaluation? = null
-) {
-    val currentCard: VocabEntity? get() = cards.getOrNull(currentIndex)
-}
-
 
 data class DashboardSummary(
     val todayWords: Int = 0,
@@ -102,7 +95,6 @@ data class PronunciationPracticeState(
     val activeDrill: PronunciationDrillItem = KoreanPronunciationEvaluator.defaultDrills.first(),
     val recognitionState: SpeechRecognitionState = SpeechRecognitionState.Idle,
     val lastAttempt: PronunciationAttemptResult? = null,
-    val aiCoachFeedback: KoreanAiCoachFeedback? = null,
     val passedDrillIds: Set<String> = emptySet(),
     val totalAttempts: Int = 0,
     val isSpeechServiceAvailable: Boolean = true,
@@ -113,10 +105,11 @@ class BaeumViewModel(
     val repository: BaeumRepository,
     val audioController: KoreanAudioController,
     val userPreferencesRepository: UserPreferencesRepository = repository.userPreferences,
-    val aiCoachRepository: KoreanAiCoachRepository = LocalSampleKoreanAiCoachRepository(),
     private val reminderScheduler: (Boolean, Int, Int, Boolean) -> Unit = { _, _, _, _ -> },
     private val testReminderPoster: (Int, Int, Int, Int, Boolean) -> Boolean = { _, _, _, _, _ -> false }
 ) : ViewModel() {
+
+    val soundEffects: BaeumSoundEffects = BaeumSoundEffects()
 
     private val _isInitialized = MutableStateFlow(false)
     val isInitialized: StateFlow<Boolean> = _isInitialized.asStateFlow()
@@ -161,16 +154,20 @@ class BaeumViewModel(
     val dashboardSummary: StateFlow<DashboardSummary> = combine(
         settings, allVocab, dailyStats, quizRecords
     ) { userSettings, vocab, stats, quizzes ->
-        val todayKey = BaeumRepository.localDayKey()
+        val nowMs = System.currentTimeMillis()
+        val todayKey = BaeumRepository.localDayKey(nowMs)
         val todayStat = stats.firstOrNull { it.dayKey == todayKey }
-        val roomStreak = BaeumRepository.computeStudyStreak(stats)
+        val roomStreak = BaeumRepository.computeStudyStreak(stats, nowMs)
         val persistedStreak = userSettings.learningStreak.effectiveCurrentStreak(todayKey)
         val streak = maxOf(persistedStreak, roomStreak)
         val longestStreak = maxOf(userSettings.learningStreak.longestStreakDays, streak)
-        val forecast = BaeumRepository.buildSevenDayForecast(vocab)
-        val dueToday = BaeumRepository.countDueTodayOnly(vocab)
-        val overdue = BaeumRepository.countOverdue(vocab)
-        val mastered = BaeumRepository.countStage(vocab, CardMemoryStage.MASTERED)
+
+        // Single O(N) pass across 6,600+ vocabulary records instead of 8 separate scans
+        val agg = BaeumRepository.computeVocabAggregate(
+            vocab = vocab,
+            activePathway = userSettings.activePathway,
+            nowEpochMs = nowMs
+        )
         val totalSecs = stats.sumOf { it.studySeconds }
         val totalQ = quizzes.sumOf { it.totalQuestions }
         val totalCorrect = quizzes.sumOf { it.correctAnswers }
@@ -178,8 +175,6 @@ class BaeumViewModel(
 
         val lang = userSettings.translationLanguage
         val isId = lang.equals("ID", ignoreCase = true)
-        val activeVocab = vocab.filter { it.curriculum == userSettings.activePathway }
-        val activeLearned = activeVocab.count { it.reps > 0 }
         val pathwayLabel = when (userSettings.activePathway) {
             CurriculumPathway.HANGUL -> "Hangul"
             CurriculumPathway.TOPIK -> "TOPIK I"
@@ -188,11 +183,10 @@ class BaeumViewModel(
             else -> "TOPIK I"
         }
 
-        val weakQuizVocab = vocab.count { it.quizWrongCount > it.quizCorrectCount }
         val recommendation = when {
-            dueToday > 0 -> if (isId) "Ulas $dueToday kartu FSRS yang terjadwal hari ini" else "Review $dueToday scheduled FSRS card(s)"
-            weakQuizVocab >= 2 -> if (isId) "Latih $weakQuizVocab kosakata lemah di Kuis Pintar" else "Practice $weakQuizVocab weak vocabulary item(s) in Smart Quiz"
-            vocab.count { it.reps > 0 } == 0 -> if (isId) "Mulai sesi Kartu Pintar pertamamu" else "Start your first Smart Flashcard session"
+            agg.dueTodayCount > 0 -> if (isId) "Ulas ${agg.dueTodayCount} kartu FSRS yang terjadwal hari ini" else "Review ${agg.dueTodayCount} scheduled FSRS card(s)"
+            agg.weakQuizCount >= 2 -> if (isId) "Latih ${agg.weakQuizCount} kosakata lemah di Kuis Pintar" else "Practice ${agg.weakQuizCount} weak vocabulary item(s) in Smart Quiz"
+            agg.reviewedCount == 0 -> if (isId) "Mulai sesi Kartu Pintar pertamamu" else "Start your first Smart Flashcard session"
             quizzes.isEmpty() -> if (isId) "Uji daya ingatmu di Pusat Kuis (Batchim & Kosakata)" else "Test your recall in Quiz Center (Batchim & Recall)"
             else -> if (isId) "Latih percakapan bahasa Korea langsung di tab Bicara" else "Practice a live Korean conversation in Speak"
         }
@@ -202,19 +196,22 @@ class BaeumViewModel(
             dailyGoal = userSettings.dailyGoalWords,
             streakDays = streak,
             longestStreakDays = longestStreak,
-            dueTodayCount = dueToday,
-            overdueCount = overdue,
-            sevenDayForecast = forecast,
-            masteredCount = mastered,
-            totalVocabCount = vocab.size,
+            dueTodayCount = agg.dueTodayCount,
+            overdueCount = agg.overdueCount,
+            sevenDayForecast = agg.sevenDayForecast,
+            masteredCount = agg.masteredCount,
+            totalVocabCount = agg.totalCount,
             totalStudySeconds = totalSecs,
             quizAccuracyPercent = quizAcc,
             activePathwayLabel = pathwayLabel,
-            activePathwayLearned = activeLearned,
-            activePathwayTotal = activeVocab.size,
+            activePathwayLearned = agg.activePathwayLearned,
+            activePathwayTotal = agg.activePathwayTotal,
             recommendedFocus = recommendation
         )
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, DashboardSummary())
+    }
+        .conflate()
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, DashboardSummary())
 
     val readinessProfile: StateFlow<LearnerReadinessProfile> = combine(
         allVocab, quizRecords, examAttempts, speakingSessions
@@ -225,19 +222,87 @@ class BaeumViewModel(
             examAttempts = exams,
             speakingSessions = speaking
         )
-    }.stateIn(
-        viewModelScope,
-        SharingStarted.Eagerly,
-        LearningScoringEngine.computeReadinessProfile(emptyList(), emptyList(), emptyList(), emptyList())
-    )
+    }
+        .conflate()
+        .flowOn(Dispatchers.Default)
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            LearningScoringEngine.computeReadinessProfile(emptyList(), emptyList(), emptyList(), emptyList())
+        )
+
+    val habitSnapshot: StateFlow<HabitDashboardSnapshot> = combine(
+        settings,
+        allVocab,
+        dailyStats,
+        quizRecords
+    ) { userSettings, vocab, stats, quizzes ->
+        val nowMs = System.currentTimeMillis()
+        val todayKey = BaeumRepository.localDayKey(nowMs)
+        val yesterdayKey = DataStoreUserPreferencesRepository.previousDayKey(todayKey)
+        val eng = userSettings.engagement
+        val todayStat = stats.firstOrNull { it.dayKey == todayKey }
+        val isSparkDone = eng.dailySparkCompletedDayKey == todayKey
+        val blitzToday = quizzes.any { it.dayKey == todayKey && it.mode == "Seoul Blitz" }
+        val quests = BaeumHabitEngine.buildDailyQuests(
+            todayStat = todayStat,
+            dailyGoalWords = userSettings.dailyGoalWords,
+            isSparkDoneToday = isSparkDone,
+            todayKey = todayKey,
+            blitzGamesPlayedToday = blitzToday
+        )
+        val completedQuests = quests.count { it.isCompleted }
+        val sealClaimed = eng.dailySealClaimedDayKey == todayKey
+
+        HabitDashboardSnapshot(
+            rankProgress = BaeumHabitEngine.computeRankProgress(eng.totalXp),
+            streakShields = eng.streakShields,
+            shieldSavedStreakRecently = eng.lastShieldUsedDayKey.isNotBlank() && eng.lastShieldUsedDayKey == yesterdayKey,
+            weeklyRhythm = BaeumHabitEngine.buildWeeklyRhythm(
+                dailyStats = stats,
+                todayEpochMs = nowMs,
+                shieldedDayKey = eng.lastShieldUsedDayKey
+            ),
+            dailySpark = BaeumHabitEngine.buildDailySeoulSpark(
+                allVocab = vocab,
+                activePathway = userSettings.activePathway,
+                translationLang = userSettings.translationLanguage,
+                dayKey = todayKey
+            ),
+            isDailySparkCompleted = isSparkDone,
+            dailyQuests = quests,
+            completedQuestsCount = completedQuests,
+            isDailySealClaimed = sealClaimed,
+            canClaimDailySeal = completedQuests >= quests.size && !sealClaimed,
+            blitzBestScore = eng.blitzBestScore,
+            blitzGamesPlayed = eng.blitzGamesPlayed,
+            bestComboEver = eng.bestComboEver,
+            unlockedStampIds = eng.unlockedStampIds,
+            soundEffectsEnabled = eng.soundEffectsEnabled,
+            completedBeginnerLessonIds = eng.completedBeginnerLessonIds,
+            perfectSyllabusLessonIds = eng.perfectSyllabusLessonIds,
+            defeatedStageBossNumbers = eng.defeatedStageBossNumbers,
+            mistakeVaultKeys = eng.mistakeVaultKeys
+        )
+    }
+        .conflate()
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, HabitDashboardSnapshot())
 
     // Active Session States
-    private val _flashcardSession = MutableStateFlow(FlashcardSessionState())
-    val flashcardSession: StateFlow<FlashcardSessionState> = _flashcardSession.asStateFlow()
-
     val quizManager: QuizManager = QuizManager()
     val activeQuiz: StateFlow<QuizSessionState?> = quizManager.sessionState
     val quizModeProgress: StateFlow<Map<QuizMode, ModeProgressStats>> = quizManager.modeProgress
+
+    private val _blitzSession = MutableStateFlow<SeoulBlitzState?>(null)
+    val blitzSession: StateFlow<SeoulBlitzState?> = _blitzSession.asStateFlow()
+    private var blitzTimerJob: Job? = null
+
+    private val _celebrationEvent = MutableStateFlow<CelebrationBannerEvent?>(null)
+    val celebrationEvent: StateFlow<CelebrationBannerEvent?> = _celebrationEvent.asStateFlow()
+    private var celebrationDismissJob: Job? = null
+    private var observedRankLevel: Int? = null
+    private var stampObserverHydrated: Boolean = false
 
     private val _liveConversation = MutableStateFlow<LiveConversationState?>(null)
     val liveConversation: StateFlow<LiveConversationState?> = _liveConversation.asStateFlow()
@@ -283,7 +348,69 @@ class BaeumViewModel(
         viewModelScope.launch {
             settings.collect { s ->
                 audioController.updateSpeechRate(s.speechRate)
+                soundEffects.enabled = s.engagement.soundEffectsEnabled
+                val currentRank = BaeumHabitEngine.computeRankProgress(s.engagement.totalXp).currentRank
+                val prevLevel = observedRankLevel
+                if (prevLevel != null && currentRank.level > prevLevel) {
+                    soundEffects.playLevelUp()
+                    emitCelebration(
+                        CelebrationBannerEvent(
+                            kind = CelebrationKind.LEVEL_UP,
+                            titleEn = "Rank Up · Lv.${currentRank.level} ${currentRank.titleEn}!",
+                            titleId = "Naik Peringkat · Lv.${currentRank.level} ${currentRank.titleId}!",
+                            subtitleEn = "${currentRank.titleKo} — Your Seoul Atelier mastery grows.",
+                            subtitleId = "${currentRank.titleKo} — Penguasaan Seoul Atelier-mu meningkat!",
+                            badgeKo = currentRank.badgeGlyph,
+                            showConfetti = true
+                        )
+                    )
+                }
+                observedRankLevel = currentRank.level
             }
+        }
+        // Automatically detect and unlock earned Dojang Seal Stamps from real learner records
+        viewModelScope.launch {
+            combine(
+                settings,
+                dashboardSummary,
+                allVocab,
+                quizRecords,
+                combine(speakingSessions, examAttempts) { s, e -> s to e }
+            ) { s, dash, vocab, quizzes, (speaking, exams) ->
+                val reviewedCount = vocab.count { it.reps > 0 }
+                BaeumHabitEngine.evaluateEligibleStampIds(
+                    profile = s.engagement,
+                    currentStreak = dash.streakDays,
+                    longestStreak = dash.longestStreakDays,
+                    reviewedVocabCount = reviewedCount,
+                    quizRecords = quizzes,
+                    speakingSessions = speaking,
+                    examAttempts = exams
+                )
+            }
+                .conflate()
+                .flowOn(Dispatchers.Default)
+                .collect { eligible ->
+                    val newlyUnlocked = userPreferencesRepository.unlockStamps(eligible)
+                    if (stampObserverHydrated && newlyUnlocked.isNotEmpty()) {
+                        val stamp = BaeumHabitEngine.allStamps.firstOrNull { it.id in newlyUnlocked }
+                        if (stamp != null) {
+                            soundEffects.playStampUnlock()
+                            emitCelebration(
+                                CelebrationBannerEvent(
+                                    kind = CelebrationKind.STAMP_UNLOCK,
+                                    titleEn = "Seal Unlocked · ${stamp.titleEn}",
+                                    titleId = "Stempel Terbuka · ${stamp.titleId}",
+                                    subtitleEn = stamp.conditionEn,
+                                    subtitleId = stamp.conditionId,
+                                    badgeKo = stamp.sealKo,
+                                    showConfetti = true
+                                )
+                            )
+                        }
+                    }
+                    stampObserverHydrated = true
+                }
         }
         viewModelScope.launch {
             quizRecords.collect { records ->
@@ -294,7 +421,20 @@ class BaeumViewModel(
         }
         viewModelScope.launch {
             audioController.captureState.collect { cap ->
-                val conv = _liveConversation.value ?: return@collect
+                if (_liveConversation.value == null) {
+                    val activeExamSession = _activeExam.value
+                    val activeExamQ = activeExamSession?.currentQuestion
+                    if (activeExamSession != null && !activeExamSession.isSubmitted &&
+                        activeExamQ != null && activeExamQ.section == "Speaking" &&
+                        cap is SpeechCaptureState.Captured && cap.transcript.isNotBlank()
+                    ) {
+                        val existing = activeExamSession.openResponses[activeExamQ.id].orEmpty().trim()
+                        val merged = if (existing.isBlank()) cap.transcript.trim() else "$existing ${cap.transcript.trim()}"
+                        updateExamOpenResponse(activeExamQ.id, merged)
+                        audioController.resetCapture()
+                    }
+                    return@collect
+                }
                 val isId = settings.value.translationLanguage.equals("ID", ignoreCase = true)
                 when (cap) {
                     is SpeechCaptureState.Listening -> {
@@ -353,22 +493,18 @@ class BaeumViewModel(
                         } else {
                             _pronunciationPractice.value.passedDrillIds
                         }
-                        val coachFeedback = aiCoachRepository.coachPronunciationAttempt(
-                            drill = currentDrill,
-                            attempt = evaluation,
-                            amplitudes = recState.amplitudes
-                        )
                         _pronunciationPractice.update {
                             it.copy(
                                 recognitionState = recState,
                                 lastAttempt = evaluation,
-                                aiCoachFeedback = coachFeedback,
                                 passedDrillIds = updatedPassed,
                                 totalAttempts = it.totalAttempts + 1
                             )
                         }
                         if (evaluation.passed) {
+                            soundEffects.playCorrect(3)
                             repository.recordStudySeconds(15)
+                            userPreferencesRepository.awardXp(BaeumHabitEngine.PRONUNCIATION_PASS_XP)
                         }
                     }
                     else -> {
@@ -398,8 +534,33 @@ class BaeumViewModel(
         }
     }
 
+    fun onHostStop() {
+        audioController.onHostStop()
+        blitzTimerJob?.cancel()
+    }
+
+    fun reportStatusMessage(message: String) {
+        _statusMessage.value = message
+    }
+
     fun clearStatusMessage() {
         _statusMessage.value = null
+    }
+
+    fun dismissCelebration() {
+        celebrationDismissJob?.cancel()
+        _celebrationEvent.value = null
+    }
+
+    private fun emitCelebration(event: CelebrationBannerEvent) {
+        celebrationDismissJob?.cancel()
+        _celebrationEvent.value = event
+        celebrationDismissJob = viewModelScope.launch {
+            delay(4200L)
+            if (_celebrationEvent.value?.id == event.id) {
+                _celebrationEvent.value = null
+            }
+        }
     }
 
     // ==================== ONBOARDING & USER PREFERENCES (DataStore Repository) ====================
@@ -447,6 +608,340 @@ class BaeumViewModel(
 
     fun setReducedMotion(enabled: Boolean) {
         viewModelScope.launch { userPreferencesRepository.setReducedMotion(enabled) }
+    }
+
+    fun setSoundEffectsEnabled(enabled: Boolean) {
+        soundEffects.enabled = enabled
+        viewModelScope.launch { userPreferencesRepository.setSoundEffectsEnabled(enabled) }
+        if (enabled) soundEffects.playCardFlip()
+    }
+
+    fun playCardFlipSound() {
+        soundEffects.playCardFlip()
+    }
+
+    fun playFlashcardRatingSound(rating: FsrsRating, nextCombo: Int) {
+        when (rating) {
+            FsrsRating.AGAIN -> soundEffects.playGentleMiss()
+            FsrsRating.HARD -> soundEffects.playCorrect(1)
+            FsrsRating.GOOD -> soundEffects.playCorrect(nextCombo.coerceAtLeast(1))
+            FsrsRating.EASY -> soundEffects.playCorrect((nextCombo + 1).coerceAtLeast(2))
+        }
+    }
+
+    // ==================== DAILY SEOUL SPARK, DAILY SEAL & 60s SEOUL BLITZ ====================
+    fun completeDailySpark(isCorrect: Boolean) {
+        if (!isCorrect) {
+            soundEffects.playGentleMiss()
+            return
+        }
+        val spark = habitSnapshot.value.dailySpark ?: return
+        val todayKey = BaeumRepository.localDayKey()
+        soundEffects.playStampUnlock()
+        viewModelScope.launch {
+            val newlyCompleted = userPreferencesRepository.recordDailySparkCompleted(
+                dayKey = todayKey,
+                xpReward = spark.xpReward
+            )
+            if (newlyCompleted) {
+                repository.recordStudySeconds(20)
+                userPreferencesRepository.recordStudyActivity(todayKey)
+                emitCelebration(
+                    CelebrationBannerEvent(
+                        kind = CelebrationKind.DAILY_SPARK,
+                        titleEn = "Daily Spark Lit · +${spark.xpReward} XP!",
+                        titleId = "Percikan Harian Menyala · +${spark.xpReward} XP!",
+                        subtitleEn = "${spark.hangul} (${spark.correctMeaning}) added to your momentum.",
+                        subtitleId = "${spark.hangul} (${spark.correctMeaning}) memicu momentum belajarmu.",
+                        badgeKo = "불꽃",
+                        xpDelta = spark.xpReward,
+                        showConfetti = true
+                    )
+                )
+            }
+        }
+    }
+
+    fun claimDailySeal() {
+        val snap = habitSnapshot.value
+        if (!snap.canClaimDailySeal) return
+        val todayKey = BaeumRepository.localDayKey()
+        soundEffects.playLevelUp()
+        viewModelScope.launch {
+            val claimed = userPreferencesRepository.claimDailySealBonus(
+                dayKey = todayKey,
+                bonusXp = BaeumHabitEngine.DAILY_SEAL_BONUS_XP
+            )
+            if (claimed) {
+                emitCelebration(
+                    CelebrationBannerEvent(
+                        kind = CelebrationKind.DAILY_SEAL,
+                        titleEn = "Daily Atelier Seal Stamped!",
+                        titleId = "Stempel Harian Atelier Tercapai!",
+                        subtitleEn = "+${BaeumHabitEngine.DAILY_SEAL_BONUS_XP} Bonus XP & +1 Streak Shield earned.",
+                        subtitleId = "+${BaeumHabitEngine.DAILY_SEAL_BONUS_XP} Bonus XP & +1 Perisai Runtutan diperoleh!",
+                        badgeKo = "도장",
+                        xpDelta = BaeumHabitEngine.DAILY_SEAL_BONUS_XP,
+                        showConfetti = true
+                    )
+                )
+            }
+        }
+    }
+
+    fun playBeginnerCheckSound(isCorrect: Boolean, step: Int = 1) {
+        if (isCorrect) {
+            soundEffects.playCorrect(step.coerceAtLeast(1))
+        } else {
+            soundEffects.playGentleMiss()
+        }
+    }
+
+    fun completeBeginnerLesson(lessonId: String, isPerfect: Boolean = false) {
+        val catalog = com.example.domain.curriculum.BeginnerSyllabusCatalog
+        val lesson = catalog.lessonById(lessonId) ?: return
+        val prevDone = settings.value.engagement.completedBeginnerLessonIds
+        val prevPerfect = settings.value.engagement.perfectSyllabusLessonIds
+        val track = lesson.track
+        val wasTrackGraduated = catalog.isTrackGraduated(prevDone, track)
+        val todayKey = BaeumRepository.localDayKey()
+        soundEffects.playStampUnlock()
+
+        viewModelScope.launch {
+            val newlyCompleted = userPreferencesRepository.recordBeginnerLessonCompleted(
+                lessonId = lesson.id,
+                xpReward = lesson.xpReward,
+                isPerfect = isPerfect
+            )
+            val newlyPerfected = isPerfect && lesson.id !in prevPerfect
+            repository.recordStudySeconds(lesson.estimatedMinutes * 45)
+            // Feed newly learned syllabus keywords straight into FSRS daily review queue!
+            repository.seedSyllabusWordsIntoFsrs(catalog.coreKeywordsFor(lesson))
+            userPreferencesRepository.recordStudyActivity(todayKey)
+
+            val nowDone = prevDone + lesson.id
+            val justGraduatedTrack = !wasTrackGraduated && catalog.isTrackGraduated(nowDone, track)
+            val perfectBonus = if (newlyPerfected) catalog.PERFECT_STAR_BONUS_XP else 0
+            val baseEarned = if (newlyCompleted) lesson.xpReward else 0
+            val totalEarned = baseEarned + perfectBonus + if (justGraduatedTrack) track.graduationBonusXp else 0
+
+            if (justGraduatedTrack) {
+                soundEffects.playLevelUp()
+                val nextTrack = catalog.nextTrackAfter(track)
+                val nextPromptEn = if (nextTrack != null) "Ready for ${nextTrack.shortLabelEn}!" else "All 3 BAEUM syllabi mastered!"
+                val nextPromptId = if (nextTrack != null) "Siap lanjut ke ${nextTrack.shortLabelId}!" else "Seluruh 3 Silabus BAEUM tuntas!"
+                emitCelebration(
+                    CelebrationBannerEvent(
+                        kind = CelebrationKind.DAILY_SEAL,
+                        titleEn = "${track.shortLabelEn} Syllabus Graduated!",
+                        titleId = "Lulus Silabus ${track.shortLabelId}!",
+                        subtitleEn = "+$totalEarned XP earned! $nextPromptEn",
+                        subtitleId = "Meraih +$totalEarned XP! $nextPromptId",
+                        badgeKo = "수료",
+                        xpDelta = totalEarned,
+                        showConfetti = true
+                    )
+                )
+            } else if (newlyCompleted || newlyPerfected) {
+                if (newlyPerfected) soundEffects.playCorrect(10)
+                val starBadge = if (isPerfect) "★★★ " else ""
+                emitCelebration(
+                    CelebrationBannerEvent(
+                        kind = CelebrationKind.DAILY_SPARK,
+                        titleEn = "${starBadge}${track.shortLabelEn} #${lesson.number} · +$totalEarned XP!",
+                        titleId = "${starBadge}${track.shortLabelId} #${lesson.number} · +$totalEarned XP!",
+                        subtitleEn = if (newlyPerfected && !newlyCompleted) {
+                            "3-Star Perfect Mastery unlocked!"
+                        } else {
+                            lesson.titleEn
+                        },
+                        subtitleId = if (newlyPerfected && !newlyCompleted) {
+                            "Stempel Sempurna ★★★ terbuka!"
+                        } else {
+                            lesson.titleId
+                        },
+                        badgeKo = lesson.emblemKo,
+                        xpDelta = totalEarned,
+                        showConfetti = true
+                    )
+                )
+            }
+        }
+    }
+
+    fun recordSyllabusMistake(mistakeKey: String) {
+        if (mistakeKey.isBlank()) return
+        viewModelScope.launch {
+            userPreferencesRepository.recordSyllabusMistake(mistakeKey)
+        }
+    }
+
+    fun redeemSyllabusMistake(mistakeKey: String) {
+        if (mistakeKey.isBlank()) return
+        val bonus = com.example.domain.curriculum.BeginnerSyllabusCatalog.REDEMPTION_BONUS_XP
+        val todayKey = BaeumRepository.localDayKey()
+        soundEffects.playCorrect(6)
+        viewModelScope.launch {
+            val resolved = userPreferencesRepository.resolveSyllabusMistake(mistakeKey, bonus)
+            repository.recordStudySeconds(25)
+            userPreferencesRepository.recordStudyActivity(todayKey)
+            if (resolved) {
+                emitCelebration(
+                    CelebrationBannerEvent(
+                        kind = CelebrationKind.DAILY_SPARK,
+                        titleEn = "Mistake Redeemed · +$bonus XP!",
+                        titleId = "Kesalahan Ditaklukkan · +$bonus XP!",
+                        subtitleEn = "Your Korean memory just got stronger!",
+                        subtitleId = "Memori bahasa Koreamu makin tajam!",
+                        badgeKo = "극복",
+                        xpDelta = bonus,
+                        showConfetti = false
+                    )
+                )
+            }
+        }
+    }
+
+    fun completeStageBoss(stageNumber: Int, passed: Boolean, correctCount: Int, totalCount: Int) {
+        val stage = com.example.domain.curriculum.BeginnerSyllabusCatalog.stageByNumber(stageNumber) ?: return
+        val todayKey = BaeumRepository.localDayKey()
+        val reward = com.example.domain.curriculum.BeginnerSyllabusCatalog.STAGE_BOSS_XP
+        if (passed) {
+            soundEffects.playLevelUp()
+        } else {
+            soundEffects.playStampUnlock()
+        }
+        viewModelScope.launch {
+            repository.recordStudySeconds(65)
+            userPreferencesRepository.recordStudyActivity(todayKey)
+            if (passed) {
+                val newlyDefeated = userPreferencesRepository.recordStageBossDefeated(stageNumber, reward)
+                if (newlyDefeated) {
+                    emitCelebration(
+                        CelebrationBannerEvent(
+                            kind = CelebrationKind.DAILY_SEAL,
+                            titleEn = "Stage Boss Defeated · +$reward XP!",
+                            titleId = "Bos Tahap Tumbang · +$reward XP!",
+                            subtitleEn = "Unlocked Dojang Seal '${stage.bossSealKo}' ($correctCount/$totalCount)!",
+                            subtitleId = "Stempel Dojang '${stage.bossSealKo}' terbuka ($correctCount/$totalCount)!",
+                            badgeKo = stage.bossSealKo,
+                            xpDelta = reward,
+                            showConfetti = true
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun startSeoulBlitz() {
+        blitzTimerJob?.cancel()
+        val curSettings = settings.value
+        val initial = SeoulBlitzEngine.startSession(
+            allVocab = allVocab.value,
+            activePathway = curSettings.activePathway,
+            translationLang = curSettings.translationLanguage,
+            previousBestScore = curSettings.engagement.blitzBestScore
+        )
+        _blitzSession.value = initial
+        if (!initial.isFinished) {
+            soundEffects.playCardFlip()
+            blitzTimerJob = viewModelScope.launch {
+                while (isActive) {
+                    delay(1000L)
+                    val cur = _blitzSession.value ?: break
+                    if (cur.isFinished) break
+                    val ticked = SeoulBlitzEngine.tickSecond(cur)
+                    _blitzSession.value = ticked
+                    if (ticked.isFinished) {
+                        persistCompletedBlitz(ticked)
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    fun answerBlitzOption(selectedOption: String) {
+        val cur = _blitzSession.value ?: return
+        if (cur.isFinished) return
+        val activePrompt = cur.currentPrompt ?: return
+        val next = SeoulBlitzEngine.submitAnswer(
+            state = cur,
+            selectedOption = selectedOption,
+            allVocab = allVocab.value
+        )
+        _blitzSession.value = next
+
+        val wasCorrect = next.lastAnswerWasCorrect == true
+        if (wasCorrect) {
+            soundEffects.playCorrect(next.combo)
+        } else {
+            soundEffects.playGentleMiss()
+        }
+
+        viewModelScope.launch {
+            repository.recordQuizAnswerTelemetry(
+                vocabId = activePrompt.vocabId,
+                isCorrect = wasCorrect
+            )
+            if (next.combo >= 3) {
+                userPreferencesRepository.recordBestCombo(next.combo)
+            }
+        }
+    }
+
+    fun abandonSeoulBlitz() {
+        blitzTimerJob?.cancel()
+        blitzTimerJob = null
+        _blitzSession.value = null
+    }
+
+    private fun persistCompletedBlitz(finished: SeoulBlitzState) {
+        blitzTimerJob?.cancel()
+        blitzTimerJob = null
+        if (finished.answeredCount <= 0) return
+
+        if (finished.isNewRecord) {
+            soundEffects.playLevelUp()
+        } else {
+            soundEffects.playStampUnlock()
+        }
+
+        viewModelScope.launch {
+            val (isNewRecord, _) = userPreferencesRepository.recordBlitzResult(
+                score = finished.score,
+                maxCombo = finished.maxCombo
+            )
+            val xp = BaeumHabitEngine.computeBlitzXp(finished.score, isNewRecord)
+            userPreferencesRepository.awardXp(xp)
+            repository.saveQuizRecord(
+                mode = "Seoul Blitz",
+                curriculum = finished.activePathway.ifBlank { settings.value.activePathway },
+                totalQuestions = finished.answeredCount,
+                correctAnswers = finished.correctCount,
+                durationSec = finished.totalDurationSec + finished.timeBonusEarnedSec,
+                weakTopicNote = if (finished.missedWords.isNotEmpty()) {
+                    finished.missedWords.take(3).joinToString(", ") { it.hangul }
+                } else {
+                    "Clean 60s Blitz"
+                }
+            )
+            if (isNewRecord) {
+                emitCelebration(
+                    CelebrationBannerEvent(
+                        kind = CelebrationKind.NEW_BLITZ_RECORD,
+                        titleEn = "New Seoul Blitz Record · ${finished.score} pts!",
+                        titleId = "Rekor Baru Seoul Blitz · ${finished.score} poin!",
+                        subtitleEn = "Peak combo ${finished.maxCombo}x • +$xp XP earned.",
+                        subtitleId = "Kombo puncak ${finished.maxCombo}x • +$xp XP diperoleh.",
+                        badgeKo = "신기록",
+                        xpDelta = xp,
+                        showConfetti = true
+                    )
+                )
+            }
+        }
     }
 
     fun updateDailyReminder(enabled: Boolean, hour: Int, minute: Int) {
@@ -498,101 +993,6 @@ class BaeumViewModel(
         audioController.speakKorean(text)
     }
 
-    // ==================== SMART FLASHCARDS (FSRS-5 & ADAPTIVE INTERLEAVING) ====================
-    fun startFlashcardSession(
-        curriculumFilter: String? = null,
-        subCategoryFilter: String? = null,
-        dueOnly: Boolean = false
-    ) {
-        val pool = allVocab.value.filter { item ->
-            (curriculumFilter == null || item.curriculum == curriculumFilter) &&
-                (subCategoryFilter == null || item.subCategory == subCategoryFilter)
-        }
-
-        val selected = FlashcardSessionAlgorithm.buildAdaptiveDeck(
-            pool = pool,
-            dailyGoal = settings.value.dailyGoalWords,
-            dueOnly = dueOnly,
-            maxSessionSize = if (dueOnly) 25 else 15
-        )
-
-        val isId = settings.value.translationLanguage.equals("ID", ignoreCase = true)
-        val label = when {
-            dueOnly -> if (isId) "Ulasan Terjadwal FSRS" else "Due FSRS Review"
-            subCategoryFilter != null -> if (isId) "$subCategoryFilter • Ulasan" else "$subCategoryFilter • Review"
-            curriculumFilter != null -> if (isId) "$curriculumFilter • Belajar" else "$curriculumFilter • Study"
-            else -> if (isId) "${dashboardSummary.value.activePathwayLabel} • Sesi ulasan" else "${dashboardSummary.value.activePathwayLabel} • Review session"
-        }
-
-        _flashcardSession.value = FlashcardSessionState(
-            title = label,
-            cards = selected,
-            currentIndex = 0,
-            isRevealed = false,
-            reviewedCount = 0,
-            isSubmitting = false,
-            isCompleted = selected.isEmpty(),
-            sessionStartedMs = System.currentTimeMillis(),
-            outcomes = emptyList(),
-            evaluation = null
-        )
-    }
-
-    fun revealFlashcard() {
-        _flashcardSession.update { it.copy(isRevealed = true) }
-    }
-
-    fun rateFlashcard(rating: FsrsRating) {
-        val session = _flashcardSession.value
-        val card = session.currentCard ?: return
-        if (!session.isRevealed || session.isSubmitting) return // Prevent double tap & unrevealed rating
-
-        _flashcardSession.update { it.copy(isSubmitting = true) }
-        viewModelScope.launch {
-            val wasFirstExposure = card.reps == 0
-            val updated = repository.submitFlashcardRating(
-                vocab = card,
-                rating = rating,
-                desiredRetention = settings.value.fsrsDesiredRetention
-            )
-            val outcome = FlashcardRatingOutcome(
-                vocabId = updated.id,
-                hangul = updated.hangul,
-                rating = rating,
-                stabilityBefore = card.stability,
-                stabilityAfter = updated.stability,
-                lapsesAfter = updated.lapses,
-                stageBefore = card.stage,
-                stageAfter = updated.stage
-            )
-            val updatedOutcomes = session.outcomes + outcome
-            val remaining = FlashcardSessionAlgorithm.applyIntraSessionRequeue(
-                currentQueue = session.cards,
-                currentIndex = session.currentIndex,
-                updatedCard = updated,
-                rating = rating,
-                wasFirstExposure = wasFirstExposure
-            )
-            val nextIdx = session.currentIndex + 1
-            val done = nextIdx >= remaining.size
-            val elapsedSec = ((System.currentTimeMillis() - session.sessionStartedMs) / 1000L).toInt().coerceAtLeast(1)
-            val evaluation = if (done) {
-                LearningScoringEngine.evaluateFlashcardSession(updatedOutcomes, elapsedSec)
-            } else null
-
-            _flashcardSession.value = session.copy(
-                cards = remaining,
-                currentIndex = nextIdx,
-                isRevealed = false,
-                reviewedCount = session.reviewedCount + 1,
-                isSubmitting = false,
-                isCompleted = done,
-                outcomes = updatedOutcomes,
-                evaluation = evaluation
-            )
-        }
-    }
-
     // ==================== ADAPTIVE QUIZ ENGINE (QuizManager) ====================
     fun startQuiz(mode: QuizMode, weakOnly: Boolean = false, focusGrammarId: String? = null) {
         quizManager.startSession(
@@ -628,16 +1028,34 @@ class BaeumViewModel(
 
     fun checkQuizAnswer() {
         val outcome = quizManager.submitCurrentAnswer() ?: return
+        val currentStreak = quizManager.sessionState.value?.currentStreak ?: 0
+        if (outcome.evaluation.isCorrect) {
+            soundEffects.playCorrect(currentStreak.coerceAtLeast(1))
+        } else {
+            soundEffects.playGentleMiss()
+        }
         viewModelScope.launch {
             repository.recordQuizAnswerTelemetry(
                 vocabId = outcome.question.vocabId,
                 isCorrect = outcome.evaluation.isCorrect
             )
+            if (currentStreak >= 3) {
+                userPreferencesRepository.recordBestCombo(currentStreak)
+            }
         }
     }
 
     fun nextQuizQuestion() {
+        val maxStreakBeforeComplete = quizManager.sessionState.value?.maxStreak ?: 0
         val completion = quizManager.advanceToNext() ?: return
+        val earnedXp = BaeumHabitEngine.computeQuizCompletionXp(
+            correctAnswers = completion.correctAnswers,
+            totalQuestions = completion.totalQuestions,
+            maxStreak = maxStreakBeforeComplete
+        )
+        if (completion.correctAnswers * 10 >= completion.totalQuestions * 7) {
+            soundEffects.playStampUnlock()
+        }
         viewModelScope.launch {
             repository.saveQuizRecord(
                 mode = completion.mode.title,
@@ -647,6 +1065,10 @@ class BaeumViewModel(
                 durationSec = completion.durationSec.coerceAtLeast(10),
                 weakTopicNote = completion.weakTopicNote
             )
+            userPreferencesRepository.awardXp(earnedXp)
+            if (maxStreakBeforeComplete >= 3) {
+                userPreferencesRepository.recordBestCombo(maxStreakBeforeComplete)
+            }
         }
     }
 
@@ -700,7 +1122,6 @@ class BaeumViewModel(
                 selectedCategory = category,
                 activeDrill = nextActive,
                 lastAttempt = null,
-                aiCoachFeedback = null,
                 recognitionState = SpeechRecognitionState.Idle
             )
         }
@@ -714,7 +1135,6 @@ class BaeumViewModel(
                 drills = updatedDrills,
                 activeDrill = drill,
                 lastAttempt = null,
-                aiCoachFeedback = null,
                 recognitionState = SpeechRecognitionState.Idle
             )
         }
@@ -738,7 +1158,7 @@ class BaeumViewModel(
     fun startPronunciationListening() {
         val activeDrill = _pronunciationPractice.value.activeDrill
         val isShortWord = activeDrill.targetWrittenKo.length <= 5
-        _pronunciationPractice.update { it.copy(lastAttempt = null, aiCoachFeedback = null) }
+        _pronunciationPractice.update { it.copy(lastAttempt = null) }
         audioController.startPronunciationRecognition(shortWordDrill = isShortWord)
     }
 
@@ -755,7 +1175,6 @@ class BaeumViewModel(
         _pronunciationPractice.update {
             it.copy(
                 lastAttempt = null,
-                aiCoachFeedback = null,
                 recognitionState = SpeechRecognitionState.Idle
             )
         }
@@ -792,8 +1211,6 @@ class BaeumViewModel(
         if (state.phase == ConversationPhase.EVALUATING || state.phase == ConversationPhase.COMPLETED) return false
 
         val isId = settings.value.translationLanguage.equals("ID", ignoreCase = true)
-        val capturedWaveform = state.lastWaveform
-        val capturedSeconds = state.lastRecordingSeconds
 
         val evaluated = ConversationEngine.evaluateResponse(
             prompt = prompt,
@@ -804,23 +1221,6 @@ class BaeumViewModel(
         audioController.resetCapture()
         val nextState = ConversationEngine.commitTurnAndAdvance(state, evaluated)
         _liveConversation.value = nextState
-
-        viewModelScope.launch {
-            val coach = aiCoachRepository.coachConversationTurn(
-                prompt = prompt,
-                evaluatedTurn = evaluated,
-                amplitudes = capturedWaveform,
-                durationSeconds = capturedSeconds
-            )
-            _liveConversation.update { current ->
-                current?.copy(
-                    evaluatedTurns = current.evaluatedTurns.map { t ->
-                        if (t.turnId == evaluated.turnId) t.copy(aiCoachFeedback = coach) else t
-                    },
-                    latestAiCoachFeedback = coach
-                )
-            }
-        }
 
         if (nextState.phase == ConversationPhase.COMPLETED) {
             val assessment = ConversationEngine.buildFinalAssessment(nextState, isIndonesian = isId)
@@ -847,7 +1247,10 @@ class BaeumViewModel(
                         dayKey = BaeumRepository.localDayKey(now)
                     )
                 )
+                val speakingXp = BaeumHabitEngine.SPEAKING_SESSION_BASE_XP + (assessment.totalScoreOutOf100 / 4)
+                userPreferencesRepository.awardXp(speakingXp)
             }
+            soundEffects.playStampUnlock()
             return true
         } else {
             nextState.currentPrompt?.let { audioController.speakKorean(it.promptKo) }
@@ -886,20 +1289,95 @@ class BaeumViewModel(
     }
 
     // ==================== EXAMINATION ENGINE ====================
-    fun startExam(examType: ExamType, mode: ExamSessionMode) {
+    fun startExam(
+        examType: ExamType,
+        mode: ExamSessionMode,
+        paperLength: ExamPaperLength = ExamPaperLength.STANDARD
+    ) {
+        audioController.stopSpeaking()
+        audioController.resetCapture()
+        _liveConversation.value = null
         _activeExam.value = ExamEngine.startExam(
             examType = examType,
             mode = mode,
             allVocab = allVocab.value,
-            translationLang = settings.value.translationLanguage
+            translationLang = settings.value.translationLanguage,
+            paperLength = paperLength
         )
         _lastExamReport.value = null
+    }
+
+    fun playExamAudio(questionId: String) {
+        val session = _activeExam.value ?: return
+        if (session.isSubmitted) return
+        val q = session.questions.firstOrNull { it.id == questionId } ?: return
+        val script = q.audioTranscriptKo ?: return
+        if (!session.canPlayAudio(q)) return
+
+        val key = session.audioQuotaKey(q)
+        val nextCount = (session.audioPlayCounts[key] ?: 0) + 1
+        _activeExam.update { cur ->
+            if (cur == null || cur.isSubmitted) cur
+            else cur.copy(audioPlayCounts = cur.audioPlayCounts + (key to nextCount))
+        }
+        audioController.speakKorean(script)
+    }
+
+    fun stopExamAudio() {
+        audioController.stopSpeaking()
+    }
+
+    fun startExamVoiceAnswer() {
+        val session = _activeExam.value ?: return
+        if (session.isSubmitted || session.currentQuestion?.section != "Speaking") return
+        audioController.stopSpeaking()
+        audioController.startKoreanListening()
+    }
+
+    fun stopExamVoiceAnswer() {
+        audioController.stopListening()
     }
 
     fun selectExamOption(questionId: String, optionIndex: Int) {
         _activeExam.update { session ->
             if (session == null || session.isSubmitted) session
-            else session.copy(selectedOptions = session.selectedOptions + (questionId to optionIndex))
+            else {
+                val updatedElims = session.eliminatedOptions[questionId]?.minus(optionIndex)
+                val nextElimMap = if (updatedElims.isNullOrEmpty()) {
+                    session.eliminatedOptions - questionId
+                } else {
+                    session.eliminatedOptions + (questionId to updatedElims)
+                }
+                session.copy(
+                    selectedOptions = session.selectedOptions + (questionId to optionIndex),
+                    eliminatedOptions = nextElimMap
+                )
+            }
+        }
+    }
+
+    fun toggleEliminateExamOption(questionId: String, optionIndex: Int) {
+        _activeExam.update { session ->
+            if (session == null || session.isSubmitted) session
+            else {
+                val curSet = session.eliminatedOptions[questionId].orEmpty().toMutableSet()
+                val added = curSet.add(optionIndex)
+                if (!added) curSet.remove(optionIndex)
+                val nextElimMap = if (curSet.isEmpty()) {
+                    session.eliminatedOptions - questionId
+                } else {
+                    session.eliminatedOptions + (questionId to curSet)
+                }
+                val nextSelected = if (added && session.selectedOptions[questionId] == optionIndex) {
+                    session.selectedOptions - questionId
+                } else {
+                    session.selectedOptions
+                }
+                session.copy(
+                    selectedOptions = nextSelected,
+                    eliminatedOptions = nextElimMap
+                )
+            }
         }
     }
 
@@ -908,6 +1386,11 @@ class BaeumViewModel(
             if (session == null || session.isSubmitted) session
             else session.copy(openResponses = session.openResponses + (questionId to text))
         }
+    }
+
+    fun updateExamDualBlankResponse(questionId: String, blankG: String, blankN: String) {
+        val formatted = ExamEngine.formatDualBlankResponse(blankG, blankN)
+        updateExamOpenResponse(questionId, formatted)
     }
 
     fun toggleExamFlag(questionId: String) {
@@ -922,21 +1405,49 @@ class BaeumViewModel(
     }
 
     fun jumpToExamQuestion(index: Int) {
+        audioController.stopSpeaking()
+        audioController.resetCapture()
         _activeExam.update { session ->
             if (session == null) null
+            else if (!session.isQuestionAccessible(index)) session
             else session.copy(currentIndex = index.coerceIn(0, session.questions.lastIndex.coerceAtLeast(0)))
         }
+    }
+
+    fun enterExamPeriodTransition() {
+        audioController.stopSpeaking()
+        audioController.resetCapture()
+        _activeExam.update { session ->
+            if (session == null) null else ExamEngine.enterPeriodTransition(session)
+        }
+    }
+
+    fun startNextExamPeriod() {
+        audioController.stopSpeaking()
+        audioController.resetCapture()
+        _activeExam.update { session ->
+            if (session == null) null else ExamEngine.startNextPeriod(session)
+        }
+    }
+
+    fun abandonActiveExam() {
+        audioController.stopSpeaking()
+        audioController.resetCapture()
+        _activeExam.value = null
     }
 
     fun submitActiveExam(): ExamReport? {
         val session = _activeExam.value ?: return null
         if (session.isSubmitted) return _lastExamReport.value
 
+        audioController.stopSpeaking()
+        audioController.resetCapture()
+
         val report = ExamEngine.gradeSession(
             session = session,
             translationLang = settings.value.translationLanguage
         )
-        _activeExam.value = session.copy(isSubmitted = true)
+        _activeExam.value = session.copy(isSubmitted = true, awaitingPeriodTransition = false)
         _lastExamReport.value = report
 
         viewModelScope.launch {
@@ -958,6 +1469,12 @@ class BaeumViewModel(
                     dayKey = BaeumRepository.localDayKey(now)
                 )
             )
+            val examXp = if (report.mode == ExamSessionMode.MOCK) {
+                BaeumHabitEngine.EXAM_MOCK_XP
+            } else {
+                BaeumHabitEngine.EXAM_PRACTICE_XP
+            }
+            userPreferencesRepository.awardXp(examXp)
         }
         return report
     }
@@ -967,28 +1484,39 @@ class BaeumViewModel(
 
     fun restoreFromBackupJson(json: String) {
         viewModelScope.launch {
+            val isId = settings.value.translationLanguage.equals("ID", ignoreCase = true)
             repository.restoreBackupJson(json)
                 .onSuccess { msg -> _statusMessage.value = msg }
-                .onFailure { err -> _statusMessage.value = "Restore failed: ${err.localizedMessage}" }
+                .onFailure { err ->
+                    _statusMessage.value = if (isId) {
+                        "Gagal memulihkan cadangan: ${err.localizedMessage ?: "Format JSON tidak valid."}"
+                    } else {
+                        "Restore failed: ${err.localizedMessage ?: "Invalid JSON format."}"
+                    }
+                }
         }
     }
 
     fun recordWritingPracticeCompleted() {
+        soundEffects.playStampUnlock()
         viewModelScope.launch {
             repository.recordStudySeconds(45)
+            userPreferencesRepository.awardXp(BaeumHabitEngine.WRITING_PRACTICE_XP)
         }
     }
 
     override fun onCleared() {
+        blitzTimerJob?.cancel()
+        celebrationDismissJob?.cancel()
+        soundEffects.release()
         audioController.release()
         super.onCleared()
     }
 
     class Factory(
         private val repository: BaeumRepository,
-        private val audioController: KoreanAudioController,
+        private val audioControllerFactory: () -> KoreanAudioController,
         private val userPreferencesRepository: UserPreferencesRepository = repository.userPreferences,
-        private val aiCoachRepository: KoreanAiCoachRepository = LocalSampleKoreanAiCoachRepository(),
         private val reminderScheduler: (Boolean, Int, Int, Boolean) -> Unit = { _, _, _, _ -> },
         private val testReminderPoster: (Int, Int, Int, Int, Boolean) -> Boolean = { _, _, _, _, _ -> false }
     ) : ViewModelProvider.Factory {
@@ -996,9 +1524,8 @@ class BaeumViewModel(
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             return BaeumViewModel(
                 repository = repository,
-                audioController = audioController,
+                audioController = audioControllerFactory(),
                 userPreferencesRepository = userPreferencesRepository,
-                aiCoachRepository = aiCoachRepository,
                 reminderScheduler = reminderScheduler,
                 testReminderPoster = testReminderPoster
             ) as T

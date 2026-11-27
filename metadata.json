@@ -2,5 +2,5 @@
   "name": "Baeum",
   "description": "Premium Korean language learning app with Hangul Studio, FSRS smart flashcards, TOPIK & EPS-TOPIK curricula, adaptive quizzes, speaking practice, and timed exam simulations.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

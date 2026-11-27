@@ -73,16 +73,19 @@ fun SettingsScreen(
     onFsrsRetentionChange: (Double) -> Unit,
     onSpeechRateChange: (Float) -> Unit,
     onReducedMotionChange: (Boolean) -> Unit,
+    onSoundEffectsChange: (Boolean) -> Unit = {},
     onDailyReminderChange: (Boolean, Int, Int) -> Unit,
     onSendTestReminder: () -> Unit,
     onExportBackupJson: suspend () -> String,
     onRestoreBackupJson: (String) -> Unit,
+    onReportStatus: (String) -> Unit = {},
     onReplayOnboarding: () -> Unit,
     onClearStatus: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val extended = LocalBaeumColors.current
+    val isId = settings.translationLanguage.equals("ID", ignoreCase = true)
     var notifPermissionDenied by remember { mutableStateOf(false) }
     var pendingTestAfterGrant by remember { mutableStateOf(false) }
 
@@ -128,11 +131,26 @@ fun SettingsScreen(
     ) { uri ->
         if (uri != null) {
             scope.launch {
-                val json = onExportBackupJson()
-                withContext(Dispatchers.IO) {
-                    context.contentResolver.openOutputStream(uri)?.use { out ->
-                        out.write(json.toByteArray(Charsets.UTF_8))
+                runCatching {
+                    val json = onExportBackupJson()
+                    withContext(Dispatchers.IO) {
+                        val stream = context.contentResolver.openOutputStream(uri)
+                            ?: error("Unable to open selected destination file.")
+                        stream.use { out ->
+                            out.write(json.toByteArray(Charsets.UTF_8))
+                            out.flush()
+                        }
                     }
+                }.onSuccess {
+                    onReportStatus(
+                        if (isId) "Cadangan JSON lengkap berhasil diekspor."
+                        else "Complete JSON backup exported successfully."
+                    )
+                }.onFailure { err ->
+                    onReportStatus(
+                        if (isId) "Gagal mengekspor cadangan: ${err.localizedMessage ?: "Kesalahan I/O"}"
+                        else "Backup export failed: ${err.localizedMessage ?: "I/O error"}"
+                    )
                 }
             }
         }
@@ -143,11 +161,28 @@ fun SettingsScreen(
     ) { uri ->
         if (uri != null) {
             scope.launch {
-                val content = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.readText()
-                }
-                if (!content.isNullOrBlank()) {
-                    onRestoreBackupJson(content)
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        val stream = context.contentResolver.openInputStream(uri)
+                            ?: error("Unable to open selected backup file.")
+                        stream.use { input ->
+                            input.bufferedReader(Charsets.UTF_8).readText()
+                        }
+                    }
+                }.onSuccess { content ->
+                    if (content.isBlank()) {
+                        onReportStatus(
+                            if (isId) "File cadangan kosong."
+                            else "Selected backup file is empty."
+                        )
+                    } else {
+                        onRestoreBackupJson(content)
+                    }
+                }.onFailure { err ->
+                    onReportStatus(
+                        if (isId) "Gagal membaca file cadangan: ${err.localizedMessage ?: "Kesalahan I/O"}"
+                        else "Could not read backup file: ${err.localizedMessage ?: "I/O error"}"
+                    )
                 }
             }
         }
@@ -157,7 +192,8 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 32.dp)
+            .padding(bottom = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("Settings", "Pengaturan"),
@@ -167,8 +203,8 @@ fun SettingsScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 660.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -224,11 +260,17 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
                         .padding(top = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(bText("Reduced motion", "Kurangi animasi"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                    Text(
+                        text = bText("Reduced motion", "Kurangi animasi"),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f)
+                    )
                     Switch(checked = settings.reducedMotion, onCheckedChange = onReducedMotionChange)
                 }
             }
@@ -280,6 +322,7 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
                         .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -404,7 +447,7 @@ fun SettingsScreen(
             SeoulCard(modifier = Modifier.fillMaxWidth()) {
                 SettingsCycleRow(
                     title = bText("Speech speed", "Kecepatan suara"),
-                    value = String.format("%.1f×", settings.speechRate),
+                    value = String.format(java.util.Locale.US, "%.1f×", settings.speechRate),
                     testTag = "settings_speech_speed",
                     onClick = {
                         val rates = listOf(0.8f, 1.0f, 1.2f)
@@ -412,6 +455,36 @@ fun SettingsScreen(
                         onSpeechRateChange(rates[(idx + 1) % rates.size])
                     }
                 )
+                HorizontalDivider(color = extended.cardBorder.copy(alpha = 0.5f))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 52.dp)
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = bText("Tactile chime effects", "Efek suara pentatonis"),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = bText(
+                                "Subtle Korean chimes on combos, sparks & stamps (muted during exams)",
+                                "Dentingan Korea lembut saat kombo, percikan & stempel (senyap saat ujian)"
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = settings.engagement.soundEffectsEnabled,
+                        onCheckedChange = onSoundEffectsChange,
+                        modifier = Modifier.testTag("settings_sound_effects_switch")
+                    )
+                }
                 HorizontalDivider(color = extended.cardBorder.copy(alpha = 0.5f))
                 SettingsCycleRow(
                     title = bText("Korean recognition locale", "Bahasa pengenalan suara Korea"),
@@ -435,7 +508,7 @@ fun SettingsScreen(
                     title = bText("Export JSON backup", "Ekspor cadangan JSON"),
                     value = bText("Save file ›", "Simpan file ›"),
                     testTag = "settings_export_backup",
-                    onClick = { exportLauncher.launch("baeum_korean_backup_v1.json") }
+                    onClick = { exportLauncher.launch("baeum_korean_backup_v2.json") }
                 )
                 HorizontalDivider(color = extended.cardBorder.copy(alpha = 0.5f))
                 SettingsCycleRow(
@@ -452,13 +525,29 @@ fun SettingsScreen(
                     onClick = onReplayOnboarding
                 )
                 HorizontalDivider(color = extended.cardBorder.copy(alpha = 0.5f))
+                val versionName = com.example.BuildConfig.VERSION_NAME
+                val versionCode = com.example.BuildConfig.VERSION_CODE
+                val isPreRelease = versionName.contains("beta", ignoreCase = true) ||
+                    versionName.contains("alpha", ignoreCase = true) ||
+                    versionName.contains("rc", ignoreCase = true)
+                SettingsCycleRow(
+                    title = bText("App version", "Versi aplikasi"),
+                    value = if (isPreRelease) {
+                        "v$versionName (#$versionCode · Beta)"
+                    } else {
+                        "v$versionName (#$versionCode)"
+                    },
+                    testTag = "settings_version_row",
+                    onClick = {}
+                )
+                HorizontalDivider(color = extended.cardBorder.copy(alpha = 0.5f))
                 Column(modifier = Modifier.padding(top = 10.dp)) {
                     Text(bText("Privacy & Independence", "Privasi & Kemandirian"), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = bText(
-                            "Baeum stores all study history, FSRS intervals, and exam logs locally on your device. No mandatory account, no cloud tracking, and temporary voice recordings are cleared automatically after each turn.",
-                            "Baeum menyimpan seluruh riwayat belajar, jadwal FSRS, dan catatan ujian secara lokal di perangkatmu. Tanpa akun wajib, tanpa pelacakan cloud, dan rekaman suara sementara dihapus otomatis setelah setiap giliran."
+                            "Baeum stores all study history, FSRS intervals, 3-track syllabus progress, and exam logs locally on your device. No mandatory account, no cloud tracking, and temporary voice recordings are cleared automatically after each turn.",
+                            "Baeum menyimpan seluruh riwayat belajar, jadwal FSRS, progres 3 jalur silabus, dan catatan ujian secara lokal di perangkatmu. Tanpa akun wajib, tanpa pelacakan cloud, dan rekaman suara sementara dihapus otomatis setelah setiap giliran."
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -488,13 +577,21 @@ private fun SettingsCycleRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .defaultMinSize(minHeight = 48.dp)
             .clickable(onClick = onClick)
-            .padding(vertical = 14.dp)
+            .padding(vertical = 12.dp)
             .testTag(testTag),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 12.dp)
+        )
         Text(value, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
     }
 }

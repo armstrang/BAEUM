@@ -116,41 +116,60 @@ object StudyReminderScheduler {
         todayWords: Int,
         dailyGoal: Int,
         streakDays: Int,
-        isIndonesian: Boolean
+        isIndonesian: Boolean,
+        streakShields: Int = 0,
+        sparkPending: Boolean = true
     ): Boolean {
         val appContext = context.applicationContext
         if (!canPostNotifications(appContext)) return false
         ensureNotificationChannel(appContext, isIndonesian)
 
+        val remaining = (dailyGoal - todayWords).coerceAtLeast(0)
         val title = when {
-            dueCount > 0 && isIndonesian -> "Waktunya ulas $dueCount kartu FSRS!"
-            dueCount > 0 -> "Time to review $dueCount due FSRS cards!"
+            streakDays >= 3 && todayWords == 0 && isIndonesian ->
+                "🔥 Jangan biarkan runtutan $streakDays harimu padam!"
+            streakDays >= 3 && todayWords == 0 ->
+                "🔥 Protect your $streakDays-day Korean streak!"
+            dueCount > 0 && isIndonesian ->
+                "오늘도 한 걸음 · $dueCount kartu FSRS siap diulas"
+            dueCount > 0 ->
+                "오늘도 한 걸음 · $dueCount FSRS cards ready"
+            sparkPending && isIndonesian ->
+                "✨ Percikan Seoul hari ini menantimu (+30 XP)"
+            sparkPending ->
+                "✨ Today's Seoul Spark is waiting (+30 XP)"
             isIndonesian -> "Waktunya latihan bahasa Korea hari ini"
             else -> "Time for your daily Korean practice"
         }
 
-        val remaining = (dailyGoal - todayWords).coerceAtLeast(0)
+        val shieldNoteId = if (streakShields > 0) " ($streakShields perisai aktif)" else ""
+        val shieldNoteEn = if (streakShields > 0) " ($streakShields shield${if (streakShields == 1) "" else "s"} ready)" else ""
+
         val body = if (isIndonesian) {
             when {
+                streakDays > 0 && todayWords == 0 ->
+                    "Hanya 60 detik Seoul Blitz atau 1 Percikan Harian cukup untuk menjaga runtutan $streakDays harimu$shieldNoteId."
                 dueCount > 0 && streakDays > 0 ->
-                    "Jaga streak $streakDays harimu! Masih ada $dueCount kartu terjadwal dan $remaining kata lagi untuk target harian."
+                    "Jaga runtutan $streakDays harimu$shieldNoteId! $dueCount kartu FSRS siap diulas dan $remaining kata lagi menuju stempel harian."
                 dueCount > 0 ->
-                    "Ada $dueCount kartu kosakata siap diulas agar daya ingat FSRS tetap optimal."
+                    "Ada $dueCount kartu kosakata siap diulas agar daya ingat FSRS tetap tajam."
                 remaining > 0 ->
-                    "Selesaikan $remaining kata lagi untuk mencapai target harianmu ($todayWords/$dailyGoal)."
+                    "Tinggal $remaining kata lagi menuju target harianmu ($todayWords/$dailyGoal) dan stempel misi harian!"
                 else ->
-                    "Target harian tercapai! Coba 1 sesi percakapan atau pelafalan singkat hari ini."
+                    "Target harian tercapai! Coba 60 detik Seoul Blitz untuk memecahkan rekor pribadimu."
             }
         } else {
             when {
+                streakDays > 0 && todayWords == 0 ->
+                    "Just one 60-second Seoul Blitz or Daily Spark keeps your $streakDays-day flame alive$shieldNoteEn."
                 dueCount > 0 && streakDays > 0 ->
-                    "Keep your $streakDays-day streak alive! $dueCount FSRS cards are due and $remaining words left for today's goal."
+                    "Keep your $streakDays-day streak glowing$shieldNoteEn! $dueCount FSRS cards due and $remaining words left for today's seal."
                 dueCount > 0 ->
-                    "$dueCount Korean flashcards are ready for optimal FSRS memory review."
+                    "$dueCount Korean flashcards are ready at peak FSRS memory timing."
                 remaining > 0 ->
-                    "$remaining more words to reach today's goal ($todayWords/$dailyGoal)."
+                    "$remaining more words to complete today's goal ($todayWords/$dailyGoal) and earn your Daily Seal!"
                 else ->
-                    "Daily goal hit! Try a quick speaking or pronunciation drill to lock in fluency."
+                    "Daily goal crushed! Jump into a 60s Seoul Blitz to beat your personal best."
             }
         }
 
@@ -165,7 +184,8 @@ object StudyReminderScheduler {
         )
 
         val notification = NotificationCompat.Builder(appContext, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_baeum_reminder)
+            .setColor(0xFF5B46C8.toInt())
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -180,8 +200,12 @@ object StudyReminderScheduler {
         }.getOrDefault(false)
     }
 
+    const val ACTION_DAILY_STUDY_REMINDER = "com.example.action.DAILY_STUDY_REMINDER"
+
     private fun buildAlarmPendingIntent(context: Context): PendingIntent {
-        val intent = Intent(context, StudyReminderReceiver::class.java)
+        val intent = Intent(context, StudyReminderReceiver::class.java).apply {
+            action = ACTION_DAILY_STUDY_REMINDER
+        }
         return PendingIntent.getBroadcast(
             context,
             REQUEST_CODE_ALARM,

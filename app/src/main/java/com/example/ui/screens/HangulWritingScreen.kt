@@ -4,7 +4,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -37,7 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
@@ -46,8 +47,12 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.domain.hangul.HangulUnicodeEngine
 import com.example.domain.hangul.StrokeEvaluationResult
 import com.example.ui.components.BaeumPrimaryButton
@@ -69,19 +74,38 @@ fun HangulWritingScreen(
     val characters = remember { HangulUnicodeEngine.writableCharacters }
     var currentIndex by remember { mutableIntStateOf(0) }
     var isFreeWriting by remember { mutableStateOf(false) }
+    var isDrawing by remember { mutableStateOf(false) }
     var canvasWidthPx by remember { mutableFloatStateOf(0f) }
     val strokes = remember { mutableStateListOf<List<Offset>>() }
     var currentStroke by remember { mutableStateOf<List<Offset>>(emptyList()) }
     var evaluation by remember { mutableStateOf<StrokeEvaluationResult?>(null) }
 
+    val scrollState = rememberScrollState()
     val demoProgress = remember { Animatable(1f) }
     val scope = rememberCoroutineScope()
+    val textMeasurer = rememberTextMeasurer()
 
     val currentChar = characters[currentIndex]
     val extended = LocalBaeumColors.current
     val primaryColor = MaterialTheme.colorScheme.primary
+    val onSecondaryColor = MaterialTheme.colorScheme.onSecondary
     val userInkColor = MaterialTheme.colorScheme.onSurface
     val gridColor = extended.cardBorder.copy(alpha = 0.45f)
+    val badgeTextStyle = remember(onSecondaryColor) {
+        TextStyle(
+            color = onSecondaryColor,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+    val measuredBadges = remember(currentChar.glyph, badgeTextStyle) {
+        List(currentChar.guideStrokes.size) { idx ->
+            textMeasurer.measure(text = "${idx + 1}", style = badgeTextStyle)
+        }
+    }
+    val dashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f) }
+    val guideStrokeStyle = remember { Stroke(width = 18f, cap = StrokeCap.Round, join = StrokeJoin.Round) }
+    val userInkStrokeStyle = remember { Stroke(width = 16f, cap = StrokeCap.Round, join = StrokeJoin.Round) }
 
     fun clearCanvas() {
         strokes.clear()
@@ -91,16 +115,21 @@ fun HangulWritingScreen(
 
     fun triggerDemonstration() {
         scope.launch {
-            demoProgress.snapTo(0f)
-            demoProgress.animateTo(1f, animationSpec = tween(durationMillis = 1200))
+            if (extended.reducedMotion) {
+                demoProgress.snapTo(1f)
+            } else {
+                demoProgress.snapTo(0f)
+                demoProgress.animateTo(1f, animationSpec = tween(durationMillis = 1200))
+            }
         }
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp)
+            .verticalScroll(scrollState, enabled = !isDrawing)
+            .padding(bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         BaeumTopBar(
             title = bText("Writing practice", "Latihan menulis"),
@@ -110,8 +139,8 @@ fun HangulWritingScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxWidth()
                 .widthIn(max = 620.dp)
+                .fillMaxWidth()
                 .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -127,7 +156,10 @@ fun HangulWritingScreen(
                     style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onBackground
                 )
-                TextButton(onClick = { onSpeakKorean(currentChar.nameKo) }) {
+                TextButton(
+                    onClick = { onSpeakKorean(currentChar.nameKo) },
+                    modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+                ) {
                     Text(bText("Listen", "Dengar"), color = primaryColor)
                 }
             }
@@ -136,8 +168,8 @@ fun HangulWritingScreen(
                     bText("Free writing mode (guides hidden)", "Mode menulis bebas (panduan disembunyikan)")
                 } else {
                     bText(
-                        "${currentChar.guideStrokes.size} stroke(s) • Trace following top-to-bottom, left-to-right",
-                        "${currentChar.guideStrokes.size} goresan • Ikuti urutan atas ke bawah, kiri ke kanan"
+                        "${currentChar.guideStrokes.size} stroke(s) • Trace following numbered order (1 → ${currentChar.guideStrokes.size})",
+                        "${currentChar.guideStrokes.size} goresan • Ikuti urutan nomor (1 → ${currentChar.guideStrokes.size})"
                     )
                 },
                 style = MaterialTheme.typography.bodySmall,
@@ -146,14 +178,15 @@ fun HangulWritingScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Interactive Drawing Grid Canvas
+            // Interactive Drawing Grid Canvas (scroll-locked while actively drawing)
+            val canvasShape = remember { RoundedCornerShape(24.dp) }
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .clip(RoundedCornerShape(24.dp))
+                    .clip(canvasShape)
                     .onSizeChanged { canvasWidthPx = it.width.toFloat() },
-                shape = RoundedCornerShape(24.dp),
+                shape = canvasShape,
                 color = MaterialTheme.colorScheme.surface,
                 border = BorderStroke(1.dp, extended.cardBorder)
             ) {
@@ -162,36 +195,51 @@ fun HangulWritingScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .pointerInput(currentIndex) {
-                                detectDragGestures(
-                                    onDragStart = { start ->
-                                        evaluation = null
-                                        currentStroke = listOf(start)
-                                    },
-                                    onDrag = { change, _ ->
-                                        change.consume()
-                                        val clamped = Offset(
-                                            change.position.x.coerceIn(0f, size.width.toFloat()),
-                                            change.position.y.coerceIn(0f, size.height.toFloat())
-                                        )
-                                        currentStroke = currentStroke + clamped
-                                    },
-                                    onDragEnd = {
-                                        if (currentStroke.size >= 2) {
-                                            strokes.add(currentStroke)
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    down.consume()
+                                    isDrawing = true
+                                    evaluation = null
+                                    val startPos = Offset(
+                                        down.position.x.coerceIn(0f, size.width.toFloat()),
+                                        down.position.y.coerceIn(0f, size.height.toFloat())
+                                    )
+                                    val activePoints = mutableListOf(startPos)
+                                    currentStroke = activePoints.toList()
+                                    try {
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            val change = event.changes.firstOrNull { it.id == down.id }
+                                                ?: event.changes.firstOrNull()
+                                                ?: break
+                                            if (!change.pressed) {
+                                                change.consume()
+                                                break
+                                            }
+                                            change.consume()
+                                            val clamped = Offset(
+                                                change.position.x.coerceIn(0f, size.width.toFloat()),
+                                                change.position.y.coerceIn(0f, size.height.toFloat())
+                                            )
+                                            if ((clamped - activePoints.last()).getDistance() >= 2.5f) {
+                                                activePoints.add(clamped)
+                                                currentStroke = activePoints.toList()
+                                            }
                                         }
+                                        if (activePoints.size >= 2) {
+                                            strokes.add(activePoints.toList())
+                                        }
+                                    } finally {
                                         currentStroke = emptyList()
-                                    },
-                                    onDragCancel = {
-                                        currentStroke = emptyList()
+                                        isDrawing = false
                                     }
-                                )
+                                }
                             }
                     ) {
                         val w = size.width
                         val h = size.height
 
                         // 4x4 subtle guide grid
-                        val dash = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
                         for (i in 1..3) {
                             val x = w * (i / 4f)
                             val y = h * (i / 4f)
@@ -200,55 +248,70 @@ fun HangulWritingScreen(
                                 start = Offset(x, 0f),
                                 end = Offset(x, h),
                                 strokeWidth = if (i == 2) 2f else 1f,
-                                pathEffect = if (i == 2) dash else null
+                                pathEffect = if (i == 2) dashEffect else null
                             )
                             drawLine(
                                 color = gridColor,
                                 start = Offset(0f, y),
                                 end = Offset(w, y),
                                 strokeWidth = if (i == 2) 2f else 1f,
-                                pathEffect = if (i == 2) dash else null
+                                pathEffect = if (i == 2) dashEffect else null
                             )
                         }
 
-                        // Canonical Hangul Guide Strokes (animated during Demonstrate)
+                        // Canonical Hangul Guide Strokes + Numbered Start Badges (Blueprint Screen 06)
                         if (!isFreeWriting) {
                             val totalStrokes = currentChar.guideStrokes.size.coerceAtLeast(1)
                             val activeFloat = demoProgress.value * totalStrokes
+                            val guideColor = primaryColor.copy(alpha = 0.42f)
+                            val badgeRadius = 14.dp.toPx().coerceAtMost(24f)
                             currentChar.guideStrokes.forEachIndexed { idx, guide ->
                                 val strokeFraction = (activeFloat - idx).coerceIn(0f, 1f)
                                 if (strokeFraction > 0f && guide.size >= 2) {
                                     val path = buildPartialPath(guide, w, h, strokeFraction)
                                     drawPath(
                                         path = path,
-                                        color = primaryColor.copy(alpha = 0.45f),
-                                        style = Stroke(width = 18f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                                        color = guideColor,
+                                        style = guideStrokeStyle
                                     )
-                                    // Start dot marker
                                     val startPt = Offset(guide.first().x * w, guide.first().y * h)
                                     drawCircle(
                                         color = extended.mint,
-                                        radius = 10f,
+                                        radius = badgeRadius,
                                         center = startPt
+                                    )
+                                    val measured = measuredBadges[idx]
+                                    drawText(
+                                        textLayoutResult = measured,
+                                        topLeft = Offset(
+                                            x = startPt.x - measured.size.width / 2f,
+                                            y = startPt.y - measured.size.height / 2f
+                                        )
                                     )
                                 }
                             }
                         }
 
-                        // User Drawn Strokes
-                        (strokes + listOf(currentStroke)).forEach { pts ->
-                            if (pts.size >= 2) {
-                                val p = Path().apply {
-                                    moveTo(pts.first().x, pts.first().y)
-                                    pts.drop(1).forEach { lineTo(it.x, it.y) }
+                        // User Drawn Strokes (smooth quadratic Bezier midpoint curve for natural brush ink)
+                        fun drawInkStroke(pts: List<Offset>) {
+                            if (pts.size < 2) return
+                            val p = Path().apply {
+                                moveTo(pts[0].x, pts[0].y)
+                                for (i in 1 until pts.lastIndex) {
+                                    val midX = (pts[i].x + pts[i + 1].x) * 0.5f
+                                    val midY = (pts[i].y + pts[i + 1].y) * 0.5f
+                                    quadraticTo(pts[i].x, pts[i].y, midX, midY)
                                 }
-                                drawPath(
-                                    path = p,
-                                    color = userInkColor,
-                                    style = Stroke(width = 16f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-                                )
+                                lineTo(pts.last().x, pts.last().y)
                             }
+                            drawPath(
+                                path = p,
+                                color = userInkColor,
+                                style = userInkStrokeStyle
+                            )
                         }
+                        for (s in strokes) drawInkStroke(s)
+                        if (currentStroke.size >= 2) drawInkStroke(currentStroke)
                     }
                 }
             }
@@ -267,7 +330,9 @@ fun HangulWritingScreen(
                             evaluation = null
                         }
                     },
-                    modifier = Modifier.testTag("writing_undo_button")
+                    modifier = Modifier
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("writing_undo_button")
                 ) {
                     Text(bText("Undo", "Urungkan"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -276,13 +341,17 @@ fun HangulWritingScreen(
                         isFreeWriting = false
                         triggerDemonstration()
                     },
-                    modifier = Modifier.testTag("writing_demo_button")
+                    modifier = Modifier
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("writing_demo_button")
                 ) {
                     Text(bText("Demonstrate", "Peragakan"), color = primaryColor)
                 }
                 TextButton(
                     onClick = { clearCanvas() },
-                    modifier = Modifier.testTag("writing_reset_button")
+                    modifier = Modifier
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("writing_reset_button")
                 ) {
                     Text(bText("Reset", "Ulang"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
