@@ -21,7 +21,7 @@ on:
           - release
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-apk:
@@ -83,6 +83,49 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Publish Downloadable Debug APK to GitHub Releases
+        if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) && (github.event_name != 'workflow_dispatch' || inputs.build_type == 'debug') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_REF: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+          APK_SRC=$(ls app/build/outputs/apk/debug/*.apk | head -n 1)
+          APK_OUT="BAEUM-v1.0-debug.apk"
+          cp "$APK_SRC" "$APK_OUT"
+          SHA256=$(sha256sum "$APK_OUT" | awk '{print $1}')
+          SIZE_MB=$(du -h "$APK_OUT" | awk '{print $1}')
+
+          cat > release-notes.md <<EOF
+          ## Unduh BAEUM Android APK Langsung
+          Klik **\`${APK_OUT}\`** (${SIZE_MB}) pada bagian **Assets** di bawah untuk langsung mengunduh dan memasang aplikasi di perangkat Android (Android 7.0+ / minSdk 24).
+
+          - **Branch**: \`${SOURCE_REF}\`
+          - **Commit**: \`${TARGET_SHA}\`
+          - **Unit Tests**: \`:app:testDebugUnitTest\` ✓
+          - **SHA-256**: \`${SHA256}\`
+
+          ### Fitur Utama Versi Ini
+          - **Seoul Atelier Luxury UI/UX**: tipografi Hangul penuh, kontras WCAG AA Dark/Light, kanvas tulis Hangul Bezier halus, motion/chart zero-alloc 120fps.
+          - **Simulasi Ujian Autentik TOPIK I/II, EPS-TOPIK & TOPIK Speaking**: penilaian khusus di akhir ujian + skor, koreksi kunci jawaban, dan penjelasan lengkap.
+          - **Seoul Atelier Habit & Flow Engine**: 10 Peringkat Korea + XP, Streak Shield otomatis, 7-Day Rhythm, **Daily Seoul Spark**, **Daily Atelier Quests**, **60s Seoul Blitz** (SEOUL FEVER & +2s bonus), **12 Stempel Dojang**, konfeti 120fps, dan efek suara pentatonis Korea.
+          EOF
+
+          if gh release view latest-apk >/dev/null 2>&1; then
+            gh release upload latest-apk "${APK_OUT}#BAEUM v1.0 Android APK (${SIZE_MB})" --clobber
+            gh release edit latest-apk \
+              --title "BAEUM v1.0 — Latest Android APK" \
+              --notes-file release-notes.md \
+              --latest
+          else
+            gh release create latest-apk "${APK_OUT}#BAEUM v1.0 Android APK (${SIZE_MB})" \
+              --target "$TARGET_SHA" \
+              --title "BAEUM v1.0 — Latest Android APK" \
+              --notes-file release-notes.md \
+              --latest
+          fi
+
       - name: Prepare release keystore
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release' }}
         env:
@@ -110,3 +153,23 @@ jobs:
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish Downloadable Release APK to GitHub Releases
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          APK_SRC=$(ls app/build/outputs/apk/release/*.apk | head -n 1)
+          APK_OUT="BAEUM-v1.0-release.apk"
+          cp "$APK_SRC" "$APK_OUT"
+          SIZE_MB=$(du -h "$APK_OUT" | awk '{print $1}')
+          if gh release view latest-apk >/dev/null 2>&1; then
+            gh release upload latest-apk "${APK_OUT}#BAEUM v1.0 Release APK (${SIZE_MB})" --clobber
+          else
+            gh release create latest-apk "${APK_OUT}#BAEUM v1.0 Release APK (${SIZE_MB})" \
+              --target "$TARGET_SHA" \
+              --title "BAEUM v1.0 — Latest Android APK" \
+              --latest
+          fi
