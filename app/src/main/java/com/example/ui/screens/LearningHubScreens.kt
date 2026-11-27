@@ -39,9 +39,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.local.CurriculumPathway
 import com.example.data.local.VocabEntity
 import com.example.domain.curriculum.BeginnerSyllabusCatalog
+import com.example.domain.curriculum.SyllabusTrack
 import com.example.ui.components.BaeumBrandHeader
 import com.example.ui.components.BaeumGlassCard
 import com.example.ui.components.BaeumGlassStyle
@@ -54,17 +56,20 @@ import com.example.ui.theme.LocalBaeumColors
 import com.example.ui.theme.StaggeredEntrance
 import com.example.ui.theme.bText
 import com.example.ui.theme.isIndonesian
+import com.example.ui.theme.tactileClickable
 
 private val PathwayEmblemShape = RoundedCornerShape(18.dp)
+private val TrackChipShape = RoundedCornerShape(12.dp)
 private val TopikLevelOrder = listOf("1급", "2급", "3급", "4급", "5급", "6급")
 
-// SCREEN 04 / 24 — Learning Hub (Complete Beginner Syllabus + Four Core Pathways)
+// SCREEN 04 / 24 — Learning Hub (3-Track Guided Syllabi + Core Curricula)
 @Composable
 fun LearningHubScreen(
     allVocab: List<VocabEntity>,
     completedBeginnerLessons: Set<String> = emptySet(),
     onOpenSettings: () -> Unit,
     onOpenBeginnerSyllabus: () -> Unit = {},
+    onOpenSyllabusTrack: (SyllabusTrack) -> Unit = { onOpenBeginnerSyllabus() },
     onSelectHangul: () -> Unit,
     onSelectTopik: () -> Unit,
     onSelectEpsTopik: () -> Unit,
@@ -73,6 +78,7 @@ fun LearningHubScreen(
     onOpenQuizCenter: () -> Unit
 ) {
     val extended = LocalBaeumColors.current
+    val primary = MaterialTheme.colorScheme.primary
     // Single-pass O(N) progress calculation without intermediate 6,600-element lists
     val progressByPathway = remember(allVocab) {
         val counts = HashMap<String, IntArray>(6)
@@ -83,14 +89,12 @@ fun LearningHubScreen(
         }
         counts.mapValues { (_, arr) -> if (arr[1] == 0) 0f else arr[0].toFloat() / arr[1] }
     }
-    val beginnerDoneCount = remember(completedBeginnerLessons) {
-        BeginnerSyllabusCatalog.completionCount(completedBeginnerLessons)
+    val totalSyllabusDone = remember(completedBeginnerLessons) {
+        BeginnerSyllabusCatalog.totalCompletionCount(completedBeginnerLessons)
     }
-    val beginnerProgress = remember(completedBeginnerLessons) {
-        BeginnerSyllabusCatalog.completionFraction(completedBeginnerLessons)
-    }
-    val nextBeginnerLesson = remember(completedBeginnerLessons) {
-        BeginnerSyllabusCatalog.nextRecommendedLesson(completedBeginnerLessons)
+    val totalSyllabusLessons = BeginnerSyllabusCatalog.allLessons.size
+    val totalSyllabusProgress = remember(completedBeginnerLessons) {
+        BeginnerSyllabusCatalog.totalCompletionFraction(completedBeginnerLessons)
     }
 
     Box(
@@ -108,37 +112,129 @@ fun LearningHubScreen(
             StaggeredEntrance(index = 0) {
                 BaeumBrandHeader(
                     title = bText("Learn Korean", "Belajar Korea"),
-                    subtitle = bText("Curated pathways crafted for mastery", "Jalur belajar terstruktur menuju kefasihan"),
+                    subtitle = bText("Clear guided tracks from zero to TOPIK II", "Jalur belajar terarah dari nol hingga TOPIK II"),
                     onSettingsClick = onOpenSettings
                 )
             }
 
             Spacer(modifier = Modifier.height(2.dp))
 
-            // #1 Featured Complete Beginner Guided Syllabus (Zero-to-Seoul 12 Lessons)
+            // #1 Featured 3-Track Guided Syllabus Hub (Pemula Nol -> TOPIK I -> TOPIK II)
             StaggeredEntrance(index = 1) {
-                PathwayCard(
-                    emblem = "입",
-                    title = bText(
-                        "Start from Zero · 12-Lesson Syllabus",
-                        "Mulai dari Nol · Silabus Pemula (12 Pelajaran)"
-                    ),
-                    subtitle = if (beginnerDoneCount >= BeginnerSyllabusCatalog.lessons.size) {
-                        bText(
-                            "Graduated 12/12! Hangul, Batchim, Greetings, Numbers & Seoul Survival",
-                            "Lulus 12/12! Hangul, Batchim, Sapaan, Angka & Praktik Seoul"
-                        )
-                    } else {
-                        bText(
-                            "$beginnerDoneCount/12 done • Next: L${nextBeginnerLesson.number} ${nextBeginnerLesson.titleEn}",
-                            "$beginnerDoneCount/12 selesai • Lanjut: P${nextBeginnerLesson.number} ${nextBeginnerLesson.titleId}"
-                        )
-                    },
-                    progress = beginnerProgress,
-                    accent = extended.mint,
-                    onClick = onOpenBeginnerSyllabus,
-                    testTag = "pathway_beginner_syllabus"
-                )
+                BaeumGlassCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("pathway_beginner_syllabus"),
+                    style = BaeumGlassStyle.HERO,
+                    accentGlowColor = extended.mint,
+                    borderColor = extended.mint.copy(alpha = 0.45f),
+                    onClick = { onOpenSyllabusTrack(BeginnerSyllabusCatalog.activeTrackFor(completedBeginnerLessons)) }
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(50.dp)
+                                .clip(PathwayEmblemShape)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(extended.mint.copy(alpha = 0.26f), extended.mint.copy(alpha = 0.08f))
+                                    )
+                                )
+                                .border(1.dp, extended.mint.copy(alpha = 0.5f), PathwayEmblemShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "길",
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
+                                color = extended.mint
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = bText("3-Track Guided Syllabi", "3 Jalur Silabus Terpandu"),
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "$totalSyllabusDone/$totalSyllabusLessons",
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold),
+                                    color = extended.mint
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = bText(
+                                    "Distinct interactive syllabi with Sentence Building: Zero → TOPIK I → TOPIK II",
+                                    "Silabus berbeda di tiap level + latihan Susun Kalimat: Pemula Nol → TOPIK I → TOPIK II"
+                                ),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    ProgressBarSlim(progress = totalSyllabusProgress, color = extended.mint)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 3 Direct Track Entry Pills
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        SyllabusTrack.entries.forEach { track ->
+                            val tAccent = when (track) {
+                                SyllabusTrack.BEGINNER -> extended.mint
+                                SyllabusTrack.TOPIK_I -> primary
+                                SyllabusTrack.TOPIK_II -> extended.gold
+                            }
+                            val tDone = BeginnerSyllabusCatalog.completionCount(completedBeginnerLessons, track)
+                            val tTotal = BeginnerSyllabusCatalog.lessonsForTrack(track).size
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .defaultMinSize(minHeight = 48.dp)
+                                    .clip(TrackChipShape)
+                                    .background(tAccent.copy(alpha = 0.14f))
+                                    .border(1.dp, tAccent.copy(alpha = 0.45f), TrackChipShape)
+                                    .tactileClickable(pressedScale = 0.95f) { onOpenSyllabusTrack(track) }
+                                    .testTag("learn_track_pill_${track.name.lowercase()}")
+                                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = bText(track.shortLabelEn, track.shortLabelId),
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        ),
+                                        color = tAccent,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "$tDone/$tTotal",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             StaggeredEntrance(index = 2) {
@@ -294,16 +390,28 @@ private fun PathwayCard(
     }
 }
 
-// SCREEN 07 / 24 — TOPIK Center (Levels 1–6)
+// SCREEN 07 / 24 — TOPIK Center (Levels 1–6 + Separate TOPIK I & II Guided Syllabi)
 @Composable
 fun TopikCenterScreen(
     allVocab: List<VocabEntity>,
+    completedSyllabusLessons: Set<String> = emptySet(),
     onBack: () -> Unit,
     onOpenLevelVocab: (String) -> Unit,
     onStartLevelFlashcards: (String?) -> Unit,
     onOpenGrammar: () -> Unit,
-    onOpenExam: () -> Unit
+    onOpenExam: () -> Unit,
+    onOpenSyllabusTrack: (SyllabusTrack) -> Unit = {}
 ) {
+    val extended = LocalBaeumColors.current
+    val topik1Done = remember(completedSyllabusLessons) {
+        BeginnerSyllabusCatalog.completionCount(completedSyllabusLessons, SyllabusTrack.TOPIK_I)
+    }
+    val topik1Total = remember { BeginnerSyllabusCatalog.lessonsForTrack(SyllabusTrack.TOPIK_I).size }
+    val topik2Done = remember(completedSyllabusLessons) {
+        BeginnerSyllabusCatalog.completionCount(completedSyllabusLessons, SyllabusTrack.TOPIK_II)
+    }
+    val topik2Total = remember { BeginnerSyllabusCatalog.lessonsForTrack(SyllabusTrack.TOPIK_II).size }
+
     // Single-pass O(N) level statistics computation
     val topikStats = remember(allVocab) {
         val counts = HashMap<String, IntArray>(8)
@@ -386,12 +494,68 @@ fun TopikCenterScreen(
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = bText(
-                        "Structured vocabulary across TOPIK I (1–2급) and TOPIK II (3–6급). Study tracks are practice curricula, not official certification.",
-                        "Kosakata terstruktur untuk TOPIK I (1–2급) dan TOPIK II (3–6급). Jalur ini adalah kurikulum latihan, bukan sertifikasi resmi."
+                        "Separate guided syllabi and structured vocabulary across TOPIK I (1–2급) and TOPIK II (3–6급).",
+                        "Silabus terpandu terpisah serta kosakata terstruktur untuk TOPIK I (1–2급) dan TOPIK II (3–6급)."
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+
+            // Dedicated TOPIK I vs TOPIK II Guided Syllabus Launchers
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                BaeumGlassCard(
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("topik_center_syllabus_1"),
+                    style = BaeumGlassStyle.STANDARD,
+                    accentGlowColor = MaterialTheme.colorScheme.primary,
+                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                    onClick = { onOpenSyllabusTrack(SyllabusTrack.TOPIK_I) }
+                ) {
+                    Text(
+                        text = bText("TOPIK I SYLLABUS", "SILABUS TOPIK I"),
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = bText("$topik1Done/$topik1Total Lessons", "$topik1Done/$topik1Total Pelajaran"),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = bText("Tenses, connectors & exam tips", "Kala, penghubung & trik ujian"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                BaeumGlassCard(
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("topik_center_syllabus_2"),
+                    style = BaeumGlassStyle.STANDARD,
+                    accentGlowColor = extended.gold,
+                    borderColor = extended.gold.copy(alpha = 0.45f),
+                    onClick = { onOpenSyllabusTrack(SyllabusTrack.TOPIK_II) }
+                ) {
+                    Text(
+                        text = bText("TOPIK II SYLLABUS", "SILABUS TOPIK II"),
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                        color = extended.gold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = bText("$topik2Done/$topik2Total Lessons", "$topik2Done/$topik2Total Pelajaran"),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = bText("Haerache & Writing #51–54", "Haerache & Menulis #51–54"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             Text(

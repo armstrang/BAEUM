@@ -14,17 +14,25 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -293,6 +301,7 @@ fun ComboFlamePill(
  * Non-blocking Seoul Atelier Obsidian-Gold celebration toast for Rank-Ups, Dojang Stamps,
  * Daily Sparks, Daily Seals, and New Blitz Records.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun GlobalCelebrationToast(
     event: CelebrationBannerEvent?,
@@ -300,6 +309,10 @@ fun GlobalCelebrationToast(
     modifier: Modifier = Modifier
 ) {
     val extended = LocalBaeumColors.current
+    val topSafeInsets = WindowInsets.statusBars
+        .union(WindowInsets.statusBarsIgnoringVisibility)
+        .union(WindowInsets.displayCutout)
+        .only(WindowInsetsSides.Top)
     val accent = when (event?.kind) {
         CelebrationKind.LEVEL_UP, CelebrationKind.DAILY_SEAL, CelebrationKind.NEW_BLITZ_RECORD -> extended.gold
         CelebrationKind.STAMP_UNLOCK -> extended.cherryPink
@@ -345,7 +358,7 @@ fun GlobalCelebrationToast(
 
             Box(
                 modifier = Modifier
-                    .statusBarsPadding()
+                    .windowInsetsPadding(topSafeInsets)
                     .padding(horizontal = 16.dp, vertical = 10.dp)
                     .widthIn(max = 520.dp)
                     .fillMaxWidth()

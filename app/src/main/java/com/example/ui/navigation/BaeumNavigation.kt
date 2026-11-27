@@ -19,19 +19,26 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -82,6 +89,7 @@ import com.example.data.seed.ExamType
 import com.example.data.seed.SpeakingDifficulty
 import com.example.domain.curriculum.BeginnerPracticeAction
 import com.example.domain.curriculum.BeginnerSyllabusCatalog
+import com.example.domain.curriculum.SyllabusTrack
 import com.example.domain.exam.ExamSessionMode
 import com.example.domain.fsrs.FsrsRating
 import com.example.domain.quiz.QuizMode
@@ -132,7 +140,7 @@ object BaeumRoutes {
     const val EXAM = "exam_center"
     const val PROGRESS = "learning_analytics"
 
-    const val BEGINNER_SYLLABUS = "beginner_syllabus"
+    const val BEGINNER_SYLLABUS = "beginner_syllabus?track={track}"
     const val BEGINNER_LESSON = "beginner_lesson/{lessonId}"
     const val HANGUL_STUDIO = "hangul_studio"
     const val HANGUL_WRITING = "hangul_writing"
@@ -155,6 +163,11 @@ object BaeumRoutes {
     const val ACTIVE_EXAM = "active_exam"
     const val EXAM_REPORT = "exam_report"
     const val SETTINGS = "settings"
+
+    fun syllabusRoute(track: SyllabusTrack? = null): String {
+        val t = Uri.encode(track?.name.orEmpty())
+        return "beginner_syllabus?track=$t"
+    }
 
     fun beginnerLessonRoute(lessonId: String): String = "beginner_lesson/${Uri.encode(lessonId)}"
 
@@ -227,6 +240,7 @@ fun BaeumAppRoot(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun BaeumMainShell(
     viewModel: BaeumViewModel,
@@ -239,6 +253,11 @@ private fun BaeumMainShell(
     val currentDest = backStackEntry?.destination
     val topRoutes = remember { topLevelTabs.map { it.route }.toSet() }
     val showPrimaryNav = currentDest?.route in topRoutes
+
+    val topSafeInsets = WindowInsets.statusBars
+        .union(WindowInsets.statusBarsIgnoringVisibility)
+        .union(WindowInsets.displayCutout)
+        .only(WindowInsetsSides.Top)
 
     fun navigateTopTab(route: String) {
         navController.navigate(route) {
@@ -258,9 +277,7 @@ private fun BaeumMainShell(
 
             val navHostContent: @Composable (Modifier) -> Unit = { contentModifier ->
                 Box(
-                    modifier = contentModifier
-                        .fillMaxSize()
-                        .statusBarsPadding(),
+                    modifier = contentModifier.fillMaxSize(),
                     contentAlignment = Alignment.TopCenter
                 ) {
                     NavHost(
@@ -376,7 +393,8 @@ private fun BaeumMainShell(
                                         else -> navController.navigate(BaeumRoutes.QUIZ_CENTER)
                                     }
                                 },
-                                onOpenBeginnerSyllabus = { navController.navigate(BaeumRoutes.BEGINNER_SYLLABUS) },
+                                onOpenBeginnerSyllabus = { navController.navigate(BaeumRoutes.syllabusRoute()) },
+                                onOpenSyllabusTrack = { track -> navController.navigate(BaeumRoutes.syllabusRoute(track)) },
                                 onStartNextBeginnerLesson = { lessonId ->
                                     navController.navigate(BaeumRoutes.beginnerLessonRoute(lessonId))
                                 }
@@ -390,7 +408,8 @@ private fun BaeumMainShell(
                                 allVocab = allVocab,
                                 completedBeginnerLessons = habitSnapshot.completedBeginnerLessonIds,
                                 onOpenSettings = { navController.navigate(BaeumRoutes.SETTINGS) },
-                                onOpenBeginnerSyllabus = { navController.navigate(BaeumRoutes.BEGINNER_SYLLABUS) },
+                                onOpenBeginnerSyllabus = { navController.navigate(BaeumRoutes.syllabusRoute()) },
+                                onOpenSyllabusTrack = { track -> navController.navigate(BaeumRoutes.syllabusRoute(track)) },
                                 onSelectHangul = {
                                     viewModel.setActivePathway(CurriculumPathway.HANGUL)
                                     navController.navigate(BaeumRoutes.HANGUL_STUDIO)
@@ -471,11 +490,22 @@ private fun BaeumMainShell(
                             )
                         }
 
-                        // ==================== COMPLETE BEGINNER SYLLABUS ====================
-                        composable(BaeumRoutes.BEGINNER_SYLLABUS) {
+                        // ==================== 3-TRACK GUIDED SYLLABUS ====================
+                        composable(
+                            route = BaeumRoutes.BEGINNER_SYLLABUS,
+                            arguments = listOf(
+                                navArgument("track") {
+                                    type = NavType.StringType
+                                    defaultValue = ""
+                                }
+                            )
+                        ) { entry ->
                             val habitSnapshot by viewModel.habitSnapshot.collectAsStateWithLifecycle()
+                            val trackArg = SyllabusTrack.fromKey(entry.arguments?.getString("track"))
                             BeginnerSyllabusScreen(
                                 completedLessonIds = habitSnapshot.completedBeginnerLessonIds,
+                                perfectLessonIds = habitSnapshot.perfectSyllabusLessonIds,
+                                initialTrack = trackArg,
                                 onBack = { navController.popBackStack() },
                                 onOpenLesson = { lessonId ->
                                     navController.navigate(BaeumRoutes.beginnerLessonRoute(lessonId))
@@ -493,12 +523,18 @@ private fun BaeumMainShell(
                             BeginnerLessonScreen(
                                 lesson = lesson,
                                 isAlreadyCompleted = lessonId in habitSnapshot.completedBeginnerLessonIds,
+                                isAlreadyPerfect = lessonId in habitSnapshot.perfectSyllabusLessonIds,
                                 onBack = { navController.popBackStack() },
                                 onSpeakKorean = { viewModel.speakKorean(it) },
                                 onCheckSound = { ok, step -> viewModel.playBeginnerCheckSound(ok, step) },
-                                onLessonCompleted = { id -> viewModel.completeBeginnerLesson(id) },
+                                onLessonCompleted = { id, isPerfect -> viewModel.completeBeginnerLesson(id, isPerfect) },
                                 onOpenNextLesson = { nextId ->
                                     navController.navigate(BaeumRoutes.beginnerLessonRoute(nextId)) {
+                                        popUpTo(BaeumRoutes.BEGINNER_LESSON) { inclusive = true }
+                                    }
+                                },
+                                onOpenNextTrack = { nextTrack ->
+                                    navController.navigate(BaeumRoutes.syllabusRoute(nextTrack)) {
                                         popUpTo(BaeumRoutes.BEGINNER_LESSON) { inclusive = true }
                                     }
                                 },
@@ -514,6 +550,18 @@ private fun BaeumMainShell(
                                         BeginnerPracticeAction.EVERYDAY_SPEAKING -> {
                                             viewModel.startAutoConversation(SpeakingDifficulty.BEGINNER)
                                             navController.navigate(BaeumRoutes.LIVE_CONVERSATION)
+                                        }
+                                        BeginnerPracticeAction.TOPIK_I_EXAM -> {
+                                            viewModel.startExam(ExamType.TOPIK_I, ExamSessionMode.PRACTICE)
+                                            navController.navigate(BaeumRoutes.ACTIVE_EXAM)
+                                        }
+                                        BeginnerPracticeAction.TOPIK_II_FLASHCARDS -> {
+                                            flashcardViewModel.startSession(curriculumFilter = CurriculumPathway.TOPIK, subCategoryFilter = "3급", dueOnly = false)
+                                            navController.navigate(BaeumRoutes.FLASHCARD)
+                                        }
+                                        BeginnerPracticeAction.TOPIK_II_EXAM -> {
+                                            viewModel.startExam(ExamType.TOPIK_II, ExamSessionMode.PRACTICE)
+                                            navController.navigate(BaeumRoutes.ACTIVE_EXAM)
                                         }
                                     }
                                 }
@@ -546,8 +594,10 @@ private fun BaeumMainShell(
 
                         composable(BaeumRoutes.TOPIK_CENTER) {
                             val allVocab by viewModel.allVocab.collectAsStateWithLifecycle()
+                            val habitSnapshot by viewModel.habitSnapshot.collectAsStateWithLifecycle()
                             TopikCenterScreen(
                                 allVocab = allVocab,
+                                completedSyllabusLessons = habitSnapshot.completedBeginnerLessonIds,
                                 onBack = { navController.popBackStack() },
                                 onOpenLevelVocab = { level ->
                                     navController.navigate(BaeumRoutes.vocabularyRoute(CurriculumPathway.TOPIK, level))
@@ -560,6 +610,9 @@ private fun BaeumMainShell(
                                 onOpenExam = {
                                     viewModel.startExam(ExamType.TOPIK_I, ExamSessionMode.MOCK)
                                     navController.navigate(BaeumRoutes.ACTIVE_EXAM)
+                                },
+                                onOpenSyllabusTrack = { track ->
+                                    navController.navigate(BaeumRoutes.syllabusRoute(track))
                                 }
                             )
                         }
@@ -917,7 +970,7 @@ private fun BaeumMainShell(
                             containerColor = extended.dockSurface,
                             modifier = Modifier
                                 .fillMaxHeight()
-                                .statusBarsPadding()
+                                .windowInsetsPadding(topSafeInsets)
                                 .navigationBarsPadding()
                         ) {
                             topLevelTabs.forEach { tab ->
@@ -938,12 +991,17 @@ private fun BaeumMainShell(
                             }
                         }
                     }
-                    navHostContent(Modifier.weight(1f).navigationBarsPadding())
+                    navHostContent(
+                        Modifier
+                            .weight(1f)
+                            .windowInsetsPadding(topSafeInsets)
+                            .navigationBarsPadding()
+                    )
                 }
             } else {
                 Scaffold(
                     containerColor = Color.Transparent,
-                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                    contentWindowInsets = topSafeInsets,
                     bottomBar = {
                         AnimatedVisibility(
                             visible = showPrimaryNav,

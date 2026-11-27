@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.filled.WbTwilight
@@ -75,6 +76,7 @@ import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.repository.DayForecastPoint
 import com.example.domain.curriculum.BeginnerSyllabusCatalog
+import com.example.domain.curriculum.SyllabusTrack
 import com.example.domain.engagement.DailyAtelierQuest
 import com.example.domain.engagement.DailySeoulSpark
 import com.example.domain.engagement.HabitDashboardSnapshot
@@ -152,6 +154,7 @@ fun HomeDashboardScreen(
     onSpeakKorean: (String) -> Unit = {},
     onQuestAction: (String) -> Unit = {},
     onOpenBeginnerSyllabus: () -> Unit = {},
+    onOpenSyllabusTrack: (SyllabusTrack?) -> Unit = { onOpenBeginnerSyllabus() },
     onStartNextBeginnerLesson: (String) -> Unit = {}
 ) {
     val extended = LocalBaeumColors.current
@@ -169,27 +172,26 @@ fun HomeDashboardScreen(
     }
 
     val currentHour = remember { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
-    val defaultSky = remember(currentHour, extended.isDark) {
-        when {
-            currentHour in 5..10 -> SeoulSkyAtmosphere.MORNING
-            currentHour in 11..16 -> SeoulSkyAtmosphere.DAY
-            !extended.isDark -> SeoulSkyAtmosphere.MORNING
-            else -> SeoulSkyAtmosphere.NIGHT
+    val activeSky = remember(currentHour, extended.isDark) {
+        if (extended.isDark) {
+            SeoulSkyAtmosphere.NIGHT
+        } else if (currentHour in 11..16) {
+            SeoulSkyAtmosphere.DAY
+        } else {
+            SeoulSkyAtmosphere.MORNING
         }
     }
-    var skyOverride by remember { mutableStateOf<SeoulSkyAtmosphere?>(null) }
-    val activeSky = skyOverride ?: defaultSky
 
-    val (greetingKo, greetingSub) = when (activeSky) {
-        SeoulSkyAtmosphere.MORNING -> "좋은 아침이에요!" to bText(
+    val (greetingKo, greetingSub) = when {
+        currentHour in 5..10 -> "좋은 아침이에요!" to bText(
             "Fresh Seoul morning momentum for Korean.",
             "Semangat pagi Seoul untuk belajar bahasa Korea."
         )
-        SeoulSkyAtmosphere.DAY -> "안녕하세요!" to bText(
+        currentHour in 11..16 -> "안녕하세요!" to bText(
             "Bright afternoon focus for today's Korean.",
             "Fokus siang yang cerah untuk bahasa Korea hari ini."
         )
-        SeoulSkyAtmosphere.NIGHT -> "좋은 저녁이에요!" to bText(
+        else -> "좋은 저녁이에요!" to bText(
             "Unwind with a calm Seoul night session.",
             "Tenangkan diri dengan sesi belajar malam ala Seoul."
         )
@@ -358,37 +360,27 @@ fun HomeDashboardScreen(
                             color = eyebrowColor
                         )
                         val activeSkyLabel = bText(activeSky.labelEn, activeSky.labelId)
-                        Box(
+                        Row(
                             modifier = Modifier
-                                .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
-                                .clip(RoundedCornerShape(18.dp))
-                                .tactileClickable(pressedScale = 0.94f) {
-                                    skyOverride = activeSky.next()
-                                }
-                                .testTag("home_sky_atmosphere_toggle"),
-                            contentAlignment = Alignment.CenterEnd
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(skyPillBg)
+                                .border(1.dp, skyPillBorder, RoundedCornerShape(16.dp))
+                                .padding(horizontal = 11.dp, vertical = 6.dp)
+                                .testTag("home_sky_atmosphere_badge"),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(skyPillBg)
-                                    .border(1.dp, skyPillBorder, RoundedCornerShape(16.dp))
-                                    .padding(horizontal = 11.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
-                            ) {
-                                Icon(
-                                    imageVector = activeSky.icon,
-                                    contentDescription = bText("Switch sky atmosphere ($activeSkyLabel)", "Ganti suasana langit ($activeSkyLabel)"),
-                                    tint = skyPillContent,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Text(
-                                    text = "${activeSky.labelKo} · $activeSkyLabel",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                                    color = skyPillContent
-                                )
-                            }
+                            Icon(
+                                imageVector = activeSky.icon,
+                                contentDescription = null,
+                                tint = skyPillContent,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "${activeSky.labelKo} · $activeSkyLabel",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = skyPillContent
+                            )
                         }
                     }
 
@@ -556,16 +548,15 @@ fun HomeDashboardScreen(
             }
         }
 
-        // Complete Beginner Guided 12-Lesson Syllabus Card (prominent until all 12 lessons graduated)
-        if (!BeginnerSyllabusCatalog.isGraduated(habitSnapshot.completedBeginnerLessonIds)) {
-            Spacer(modifier = Modifier.height(18.dp))
-            StaggeredEntrance(index = 3) {
-                BeginnerSyllabusHomeCard(
-                    completedIds = habitSnapshot.completedBeginnerLessonIds,
-                    onOpenSyllabus = onOpenBeginnerSyllabus,
-                    onStartNextLesson = onStartNextBeginnerLesson
-                )
-            }
+        // Multi-Track Guided Learning Path Card (auto-progresses: Pemula Nol -> TOPIK I -> TOPIK II)
+        Spacer(modifier = Modifier.height(18.dp))
+        StaggeredEntrance(index = 3) {
+            BeginnerSyllabusHomeCard(
+                completedIds = habitSnapshot.completedBeginnerLessonIds,
+                perfectIds = habitSnapshot.perfectSyllabusLessonIds,
+                onOpenTrack = onOpenSyllabusTrack,
+                onStartNextLesson = onStartNextBeginnerLesson
+            )
         }
 
         // Instant 1-Tap Playable "Daily Seoul Spark" (오늘의 한마디) Hook
@@ -1471,22 +1462,44 @@ private fun DailyAtelierQuestsCard(
 @Composable
 private fun BeginnerSyllabusHomeCard(
     completedIds: Set<String>,
-    onOpenSyllabus: () -> Unit,
+    perfectIds: Set<String>,
+    onOpenTrack: (SyllabusTrack?) -> Unit,
     onStartNextLesson: (String) -> Unit
 ) {
     val extended = LocalBaeumColors.current
-    val doneCount = remember(completedIds) { BeginnerSyllabusCatalog.completionCount(completedIds) }
-    val totalLessons = BeginnerSyllabusCatalog.lessons.size
-    val progress = remember(completedIds) { BeginnerSyllabusCatalog.completionFraction(completedIds) }
-    val nextLesson = remember(completedIds) { BeginnerSyllabusCatalog.nextRecommendedLesson(completedIds) }
+    val primary = MaterialTheme.colorScheme.primary
+    val activeTrack = remember(completedIds) { BeginnerSyllabusCatalog.activeTrackFor(completedIds) }
+    val doneCount = remember(completedIds, activeTrack) {
+        BeginnerSyllabusCatalog.completionCount(completedIds, activeTrack)
+    }
+    val totalLessons = remember(activeTrack) {
+        BeginnerSyllabusCatalog.lessonsForTrack(activeTrack).size
+    }
+    val perfectCount = remember(perfectIds, activeTrack) {
+        BeginnerSyllabusCatalog.perfectCount(perfectIds, activeTrack)
+    }
+    val progress = remember(completedIds, activeTrack) {
+        BeginnerSyllabusCatalog.completionFraction(completedIds, activeTrack)
+    }
+    val nextLesson = remember(completedIds, activeTrack) {
+        BeginnerSyllabusCatalog.nextRecommendedLesson(completedIds, activeTrack)
+    }
+    val allGraduated = remember(completedIds) {
+        BeginnerSyllabusCatalog.isAllTracksGraduated(completedIds)
+    }
+    val accent = when (activeTrack) {
+        SyllabusTrack.BEGINNER -> extended.mint
+        SyllabusTrack.TOPIK_I -> primary
+        SyllabusTrack.TOPIK_II -> extended.gold
+    }
 
     BaeumGlassCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("home_beginner_syllabus_card"),
         style = BaeumGlassStyle.STANDARD,
-        accentGlowColor = extended.mint,
-        borderColor = extended.mint.copy(alpha = 0.45f)
+        accentGlowColor = accent,
+        borderColor = accent.copy(alpha = 0.45f)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1501,16 +1514,16 @@ private fun BeginnerSyllabusHomeCard(
                 Icon(
                     imageVector = Icons.Filled.School,
                     contentDescription = null,
-                    tint = extended.mint,
+                    tint = accent,
                     modifier = Modifier.size(16.dp)
                 )
                 Text(
-                    text = bText("BEGINNER SYLLABUS · START HERE", "SILABUS PEMULA NOL · MULAI SINI"),
+                    text = "${activeTrack.badgeKo} · " + bText(activeTrack.titleEn, activeTrack.titleId).uppercase(),
                     style = MaterialTheme.typography.labelSmall.copy(
-                        letterSpacing = 1.0.sp,
+                        letterSpacing = 0.8.sp,
                         fontWeight = FontWeight.ExtraBold
                     ),
-                    color = extended.mint,
+                    color = accent,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1519,54 +1532,119 @@ private fun BeginnerSyllabusHomeCard(
                 modifier = Modifier
                     .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                     .clip(HabitPillShape)
-                    .tactileClickable(pressedScale = 0.94f, onClick = onOpenSyllabus),
+                    .tactileClickable(pressedScale = 0.94f) { onOpenTrack(activeTrack) },
                 contentAlignment = Alignment.CenterEnd
             ) {
                 Row(
                     modifier = Modifier
                         .clip(HabitPillShape)
-                        .background(extended.mint.copy(alpha = 0.14f))
-                        .border(1.dp, extended.mint.copy(alpha = 0.36f), HabitPillShape)
+                        .background(accent.copy(alpha = 0.14f))
+                        .border(1.dp, accent.copy(alpha = 0.36f), HabitPillShape)
                         .padding(horizontal = 10.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
                         text = "$doneCount/$totalLessons",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
-                        color = extended.mint
+                        color = accent
                     )
+                    if (perfectCount > 0) {
+                        Icon(
+                            imageVector = Icons.Filled.Star,
+                            contentDescription = null,
+                            tint = extended.gold,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Text(
+                            text = "$perfectCount",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = extended.gold
+                        )
+                    }
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                         contentDescription = bText("View full syllabus", "Lihat seluruh silabus"),
-                        tint = extended.mint,
+                        tint = accent,
                         modifier = Modifier.size(15.dp)
                     )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         Text(
-            text = bText(
-                "Lesson ${nextLesson.number}: ${nextLesson.titleEn}",
-                "Pelajaran ${nextLesson.number}: ${nextLesson.titleId}"
-            ),
+            text = if (allGraduated) {
+                bText("All 3 Korean Syllabi Mastered! 🎉", "Seluruh 3 Silabus Korea Lulus! 🎉")
+            } else {
+                bText(
+                    "Lesson ${nextLesson.number}: ${nextLesson.titleEn}",
+                    "Pelajaran ${nextLesson.number}: ${nextLesson.titleId}"
+                )
+            },
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
             color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = bText(
-                "${nextLesson.goalEn} (~${nextLesson.estimatedMinutes} min)",
-                "${nextLesson.goalId} (~${nextLesson.estimatedMinutes} mnt)"
+                "${nextLesson.goalEn} (~${nextLesson.estimatedMinutes} min · Build + Check)",
+                "${nextLesson.goalId} (~${nextLesson.estimatedMinutes} mnt · Susun Kalimat + Cek)"
             ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Spacer(modifier = Modifier.height(10.dp))
-        ProgressBarSlim(progress = progress, color = extended.mint, height = 5.dp)
+        ProgressBarSlim(progress = progress, color = accent, height = 5.dp)
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // 3 Clear Guided Track Direction Pills: Pemula Nol -> TOPIK I -> TOPIK II
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            SyllabusTrack.entries.forEach { track ->
+                val isCurrent = track == activeTrack
+                val tAccent = when (track) {
+                    SyllabusTrack.BEGINNER -> extended.mint
+                    SyllabusTrack.TOPIK_I -> primary
+                    SyllabusTrack.TOPIK_II -> extended.gold
+                }
+                val tDone = BeginnerSyllabusCatalog.completionCount(completedIds, track)
+                val tTotal = BeginnerSyllabusCatalog.lessonsForTrack(track).size
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(HabitPillShape)
+                        .background(
+                            if (isCurrent) tAccent.copy(alpha = 0.16f)
+                            else extended.elevatedSurface.copy(alpha = 0.48f)
+                        )
+                        .border(
+                            1.dp,
+                            if (isCurrent) tAccent.copy(alpha = 0.55f) else extended.glassHighlightBorder,
+                            HabitPillShape
+                        )
+                        .tactileClickable(pressedScale = 0.95f) { onOpenTrack(track) }
+                        .padding(horizontal = 6.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "${bText(track.shortLabelEn, track.shortLabelId)} $tDone/$tTotal",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 10.sp,
+                            fontWeight = if (isCurrent) FontWeight.ExtraBold else FontWeight.SemiBold
+                        ),
+                        color = if (isCurrent) tAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(12.dp))
 
         Row(
@@ -1584,8 +1662,8 @@ private fun BeginnerSyllabusHomeCard(
                 testTag = "home_beginner_start_next_btn"
             )
             BaeumSecondaryButton(
-                text = bText("12 Lessons", "Lihat Silabus"),
-                onClick = onOpenSyllabus,
+                text = bText("3 Syllabi", "3 Jalur Silabus"),
+                onClick = { onOpenTrack(activeTrack) },
                 modifier = Modifier.weight(1f),
                 testTag = "home_beginner_view_all_btn"
             )

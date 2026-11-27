@@ -121,7 +121,8 @@ interface UserPreferencesRepository {
     suspend fun unlockStamps(stampIds: Set<String>): Set<String>
     suspend fun recordBeginnerLessonCompleted(
         lessonId: String,
-        xpReward: Int = com.example.domain.curriculum.BeginnerSyllabusCatalog.LESSON_XP_REWARD
+        xpReward: Int = com.example.domain.curriculum.BeginnerSyllabusCatalog.LESSON_XP_REWARD,
+        isPerfect: Boolean = false
     ): Boolean
 
     suspend fun clearAllPreferences()
@@ -174,6 +175,7 @@ class DataStoreUserPreferencesRepository(
         val UNLOCKED_STAMP_IDS = stringPreferencesKey("engagement_unlocked_stamps")
         val SOUND_EFFECTS_ENABLED = booleanPreferencesKey("engagement_sound_effects_enabled")
         val COMPLETED_BEGINNER_LESSONS = stringPreferencesKey("engagement_completed_beginner_lessons")
+        val PERFECT_SYLLABUS_LESSONS = stringPreferencesKey("engagement_perfect_syllabus_lessons")
     }
 
     private val safePreferencesFlow: Flow<Preferences> = dataStore.data
@@ -547,26 +549,41 @@ class DataStoreUserPreferencesRepository(
         return newlyUnlocked
     }
 
-    override suspend fun recordBeginnerLessonCompleted(lessonId: String, xpReward: Int): Boolean {
+    override suspend fun recordBeginnerLessonCompleted(
+        lessonId: String,
+        xpReward: Int,
+        isPerfect: Boolean
+    ): Boolean {
         val cleanId = lessonId.trim()
         if (cleanId.isBlank()) return false
+        val catalog = com.example.domain.curriculum.BeginnerSyllabusCatalog
         var newlyCompleted = false
         dataStore.edit { prefs ->
             val existing = parseStampIds(prefs[Keys.COMPLETED_BEGINNER_LESSONS])
+            val existingPerfect = parseStampIds(prefs[Keys.PERFECT_SYLLABUS_LESSONS])
+            var bonusXp = 0
+
             if (cleanId !in existing) {
                 newlyCompleted = true
                 val updated = existing + cleanId
                 prefs[Keys.COMPLETED_BEGINNER_LESSONS] = updated.sorted().joinToString(",")
-                val curXp = (prefs[Keys.TOTAL_XP] ?: 0).coerceAtLeast(0)
-                val graduatedBonus = if (
-                    com.example.domain.curriculum.BeginnerSyllabusCatalog.isGraduated(updated) &&
-                    !com.example.domain.curriculum.BeginnerSyllabusCatalog.isGraduated(existing)
-                ) {
-                    com.example.domain.curriculum.BeginnerSyllabusCatalog.GRADUATION_BONUS_XP
-                } else {
-                    0
+                bonusXp += xpReward.coerceAtLeast(0)
+
+                val track = catalog.lessonById(cleanId)?.track ?: com.example.domain.curriculum.SyllabusTrack.BEGINNER
+                if (catalog.isTrackGraduated(updated, track) && !catalog.isTrackGraduated(existing, track)) {
+                    bonusXp += track.graduationBonusXp
                 }
-                prefs[Keys.TOTAL_XP] = curXp + xpReward.coerceAtLeast(0) + graduatedBonus
+            }
+
+            if (isPerfect && cleanId !in existingPerfect) {
+                val updatedPerfect = existingPerfect + cleanId
+                prefs[Keys.PERFECT_SYLLABUS_LESSONS] = updatedPerfect.sorted().joinToString(",")
+                bonusXp += catalog.PERFECT_STAR_BONUS_XP
+            }
+
+            if (bonusXp > 0) {
+                val curXp = (prefs[Keys.TOTAL_XP] ?: 0).coerceAtLeast(0)
+                prefs[Keys.TOTAL_XP] = curXp + bonusXp
             }
         }
         return newlyCompleted
@@ -612,7 +629,8 @@ class DataStoreUserPreferencesRepository(
         dailySealClaimedDayKey = prefs[Keys.DAILY_SEAL_CLAIMED_DAY_KEY] ?: "",
         unlockedStampIds = parseStampIds(prefs[Keys.UNLOCKED_STAMP_IDS]),
         soundEffectsEnabled = prefs[Keys.SOUND_EFFECTS_ENABLED] ?: true,
-        completedBeginnerLessonIds = parseStampIds(prefs[Keys.COMPLETED_BEGINNER_LESSONS])
+        completedBeginnerLessonIds = parseStampIds(prefs[Keys.COMPLETED_BEGINNER_LESSONS]),
+        perfectSyllabusLessonIds = parseStampIds(prefs[Keys.PERFECT_SYLLABUS_LESSONS])
     )
 
     private fun parseStampIds(raw: String?): Set<String> {

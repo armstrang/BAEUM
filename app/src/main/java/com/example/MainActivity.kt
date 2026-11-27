@@ -9,6 +9,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.audio.KoreanAudioController
@@ -80,12 +82,9 @@ class MainActivity : ComponentActivity() {
             }
 
             LaunchedEffect(isDark) {
-                val style = if (isDark) {
-                    SystemBarStyle.dark(Color.TRANSPARENT)
-                } else {
-                    SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
-                }
-                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                val controller = WindowCompat.getInsetsController(window, window.decorView)
+                controller.isAppearanceLightStatusBars = !isDark
+                controller.isAppearanceLightNavigationBars = !isDark
             }
 
             BaeumTheme(
@@ -99,6 +98,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+        ViewCompat.requestApplyInsets(window.decorView)
     }
 
     override fun onStop() {

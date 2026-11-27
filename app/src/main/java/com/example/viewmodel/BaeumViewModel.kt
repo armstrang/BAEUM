@@ -279,7 +279,8 @@ class BaeumViewModel(
             bestComboEver = eng.bestComboEver,
             unlockedStampIds = eng.unlockedStampIds,
             soundEffectsEnabled = eng.soundEffectsEnabled,
-            completedBeginnerLessonIds = eng.completedBeginnerLessonIds
+            completedBeginnerLessonIds = eng.completedBeginnerLessonIds,
+            perfectSyllabusLessonIds = eng.perfectSyllabusLessonIds
         )
     }
         .conflate()
@@ -694,47 +695,69 @@ class BaeumViewModel(
         }
     }
 
-    fun completeBeginnerLesson(lessonId: String) {
-        val lesson = com.example.domain.curriculum.BeginnerSyllabusCatalog.lessonById(lessonId) ?: return
+    fun completeBeginnerLesson(lessonId: String, isPerfect: Boolean = false) {
+        val catalog = com.example.domain.curriculum.BeginnerSyllabusCatalog
+        val lesson = catalog.lessonById(lessonId) ?: return
         val prevDone = settings.value.engagement.completedBeginnerLessonIds
-        val wasGraduated = com.example.domain.curriculum.BeginnerSyllabusCatalog.isGraduated(prevDone)
+        val prevPerfect = settings.value.engagement.perfectSyllabusLessonIds
+        val track = lesson.track
+        val wasTrackGraduated = catalog.isTrackGraduated(prevDone, track)
         val todayKey = BaeumRepository.localDayKey()
         soundEffects.playStampUnlock()
 
         viewModelScope.launch {
             val newlyCompleted = userPreferencesRepository.recordBeginnerLessonCompleted(
                 lessonId = lesson.id,
-                xpReward = lesson.xpReward
+                xpReward = lesson.xpReward,
+                isPerfect = isPerfect
             )
+            val newlyPerfected = isPerfect && lesson.id !in prevPerfect
             repository.recordStudySeconds(lesson.estimatedMinutes * 45)
             userPreferencesRepository.recordStudyActivity(todayKey)
 
             val nowDone = prevDone + lesson.id
-            val justGraduated = !wasGraduated && com.example.domain.curriculum.BeginnerSyllabusCatalog.isGraduated(nowDone)
-            if (justGraduated) {
+            val justGraduatedTrack = !wasTrackGraduated && catalog.isTrackGraduated(nowDone, track)
+            val perfectBonus = if (newlyPerfected) catalog.PERFECT_STAR_BONUS_XP else 0
+            val baseEarned = if (newlyCompleted) lesson.xpReward else 0
+            val totalEarned = baseEarned + perfectBonus + if (justGraduatedTrack) track.graduationBonusXp else 0
+
+            if (justGraduatedTrack) {
                 soundEffects.playLevelUp()
+                val nextTrack = catalog.nextTrackAfter(track)
+                val nextPromptEn = if (nextTrack != null) "Ready for ${nextTrack.shortLabelEn}!" else "All 3 BAEUM syllabi mastered!"
+                val nextPromptId = if (nextTrack != null) "Siap lanjut ke ${nextTrack.shortLabelId}!" else "Seluruh 3 Silabus BAEUM tuntas!"
                 emitCelebration(
                     CelebrationBannerEvent(
                         kind = CelebrationKind.DAILY_SEAL,
-                        titleEn = "Zero-to-Seoul Syllabus Graduated!",
-                        titleId = "Lulus Silabus Pemula dari Nol!",
-                        subtitleEn = "All 12 lessons complete • +${lesson.xpReward + com.example.domain.curriculum.BeginnerSyllabusCatalog.GRADUATION_BONUS_XP} XP! Ready for TOPIK 1급.",
-                        subtitleId = "Semua 12 pelajaran selesai • +${lesson.xpReward + com.example.domain.curriculum.BeginnerSyllabusCatalog.GRADUATION_BONUS_XP} XP! Siap ke TOPIK 1급.",
+                        titleEn = "${track.shortLabelEn} Syllabus Graduated!",
+                        titleId = "Lulus Silabus ${track.shortLabelId}!",
+                        subtitleEn = "+$totalEarned XP earned! $nextPromptEn",
+                        subtitleId = "Meraih +$totalEarned XP! $nextPromptId",
                         badgeKo = "수료",
-                        xpDelta = lesson.xpReward + com.example.domain.curriculum.BeginnerSyllabusCatalog.GRADUATION_BONUS_XP,
+                        xpDelta = totalEarned,
                         showConfetti = true
                     )
                 )
-            } else if (newlyCompleted) {
+            } else if (newlyCompleted || newlyPerfected) {
+                if (newlyPerfected) soundEffects.playCorrect(10)
+                val starBadge = if (isPerfect) "★★★ " else ""
                 emitCelebration(
                     CelebrationBannerEvent(
                         kind = CelebrationKind.DAILY_SPARK,
-                        titleEn = "Lesson ${lesson.number} Complete · +${lesson.xpReward} XP!",
-                        titleId = "Pelajaran ${lesson.number} Selesai · +${lesson.xpReward} XP!",
-                        subtitleEn = lesson.titleEn,
-                        subtitleId = lesson.titleId,
+                        titleEn = "${starBadge}${track.shortLabelEn} #${lesson.number} · +$totalEarned XP!",
+                        titleId = "${starBadge}${track.shortLabelId} #${lesson.number} · +$totalEarned XP!",
+                        subtitleEn = if (newlyPerfected && !newlyCompleted) {
+                            "3-Star Perfect Mastery unlocked!"
+                        } else {
+                            lesson.titleEn
+                        },
+                        subtitleId = if (newlyPerfected && !newlyCompleted) {
+                            "Stempel Sempurna ★★★ terbuka!"
+                        } else {
+                            lesson.titleId
+                        },
                         badgeKo = lesson.emblemKo,
-                        xpDelta = lesson.xpReward,
+                        xpDelta = totalEarned,
                         showConfetti = true
                     )
                 )
