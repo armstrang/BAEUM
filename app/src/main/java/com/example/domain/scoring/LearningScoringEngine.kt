@@ -135,6 +135,11 @@ data class LearnerReadinessProfile(
  */
 object LearningScoringEngine {
 
+    private val WHITESPACE_REGEX = Regex("\\s+")
+    private val SENTENCE_SPLIT_REGEX = Regex("[.?!。\n]+")
+    private val DUAL_BLANK_MARKER_REGEX = Regex("\\(\\s*[ㄱㄴ]\\s*\\)")
+    private val PUNCTUATION_WHITESPACE_REGEX = Regex("[.?!,~\"'\\s]+")
+
     /**
      * 4-Axis Korean Open-Response Rubric used by TOPIK II Writing (51–54번) and TOPIK Speaking exams:
      * - Relevance & Keyword Coverage (35%)
@@ -155,7 +160,7 @@ object LearningScoringEngine {
     ): OpenResponseRubricScore {
         val rawCleaned = text.trim()
         val strippedForEval = if (isShortDualBlank) {
-            rawCleaned.replace(Regex("\\(\\s*[ㄱㄴ]\\s*\\)"), "").trim()
+            rawCleaned.replace(DUAL_BLANK_MARKER_REGEX, "").trim()
         } else {
             rawCleaned
         }
@@ -180,7 +185,7 @@ object LearningScoringEngine {
 
         val hangulChars = strippedForEval.filter { it.code in 0xAC00..0xD7A3 }
         val hangulCount = hangulChars.length
-        val totalCharsWithSpaces = strippedForEval.replace(Regex("\\s+"), " ").length
+        val totalCharsWithSpaces = strippedForEval.replace(WHITESPACE_REGEX, " ").length
         val uniqueHangulRatio = if (hangulCount > 0) {
             hangulChars.toSet().size.toDouble() / hangulCount.coerceAtMost(40).toDouble()
         } else 0.0
@@ -205,8 +210,8 @@ object LearningScoringEngine {
         val relevanceScore = (relevanceRaw * spamPenalty).roundToInt().coerceIn(0, 100)
 
         // 2. Completeness & Length (0..100)
-        val wordTokens = strippedForEval.split(Regex("\\s+")).filter { it.isNotBlank() }
-        val sentenceCount = strippedForEval.split(Regex("[.?!。\n]+")).count { it.trim().length >= 3 }
+        val wordTokens = strippedForEval.split(WHITESPACE_REGEX).filter { it.isNotBlank() }
+        val sentenceCount = strippedForEval.split(SENTENCE_SPLIT_REGEX).count { it.trim().length >= 3 }
         val usesOfficialCharCount = !isShortDualBlank && targetMinHangul >= 150
         val effectiveLength = if (usesOfficialCharCount) {
             // Prevent whitespace padding from gaming 원고지 character count
@@ -216,7 +221,7 @@ object LearningScoringEngine {
         }
 
         val completenessRaw = if (isShortDualBlank) {
-            val lines = rawCleaned.lines().map { it.replace(Regex("\\(\\s*[ㄱㄴ]\\s*\\)"), "").trim() }
+            val lines = rawCleaned.lines().map { it.replace(DUAL_BLANK_MARKER_REGEX, "").trim() }
                 .filter { HangulUnicodeEngine.containsHangul(it) }
             val bothFilledBonus = if (lines.size >= 2) 45.0 else 15.0
             val lenRatio = (hangulCount.toDouble() / targetMinHangul.coerceAtLeast(10)).coerceIn(0.0, 1.0)
@@ -559,19 +564,39 @@ object LearningScoringEngine {
         speakingSessions: List<SpeakingSessionEntity>,
         nowEpochMs: Long = System.currentTimeMillis()
     ): LearnerReadinessProfile {
-        val reviewed = vocab.filter { it.reps > 0 }
-        val leechCount = vocab.count { FsrsScheduler.isLeech(it.toFsrsSnapshot()) || it.quizWrongCount >= 4 }
+        val masteredName = CardMemoryStage.MASTERED.name
+        var reviewedCount = 0
+        var leechCount = 0
+        var mastered = 0
+        var retrievabilitySum = 0.0
 
-        val avgRetPct = if (reviewed.isNotEmpty()) {
-            (reviewed.map { FsrsScheduler.currentRetrievability(it.toFsrsSnapshot(), nowEpochMs) }.average() * 100.0)
+        for (item in vocab) {
+            if (item.reps > 0) {
+                reviewedCount++
+                retrievabilitySum += FsrsScheduler.currentRetrievability(
+                    reps = item.reps,
+                    stability = item.stability,
+                    lastReviewEpochMs = item.lastReviewEpochMs,
+                    nowEpochMs = nowEpochMs
+                )
+            }
+            if (FsrsScheduler.isLeech(item.lapses) || item.quizWrongCount >= 4) {
+                leechCount++
+            }
+            if (item.stage == masteredName) {
+                mastered++
+            }
+        }
+
+        val avgRetPct = if (reviewedCount > 0) {
+            ((retrievabilitySum / reviewedCount) * 100.0)
                 .roundToInt()
                 .coerceIn(0, 100)
         } else 0
 
-        val mastered = vocab.count { it.stage == CardMemoryStage.MASTERED.name }
-        val vocabCoverageBonus = ((reviewed.size.toDouble() / 120.0).coerceAtMost(1.0) * 35.0) +
+        val vocabCoverageBonus = ((reviewedCount.toDouble() / 120.0).coerceAtMost(1.0) * 35.0) +
             ((mastered.toDouble() / 60.0).coerceAtMost(1.0) * 20.0)
-        val vocabRetentionScore = if (reviewed.isEmpty()) 0 else {
+        val vocabRetentionScore = if (reviewedCount == 0) 0 else {
             (avgRetPct * 0.45 + vocabCoverageBonus).roundToInt().coerceIn(0, 100)
         }
 
@@ -639,7 +664,7 @@ object LearningScoringEngine {
     }
 
     private fun normalizeKoreanAnswer(input: String): String =
-        input.trim().replace(Regex("[.?!,~\"'\\s]+"), "")
+        input.trim().replace(PUNCTUATION_WHITESPACE_REGEX, "")
 
     private fun decomposeToJamoString(text: String): String {
         val sb = StringBuilder(text.length * 3)

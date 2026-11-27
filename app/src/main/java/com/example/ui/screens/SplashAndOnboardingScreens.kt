@@ -329,17 +329,18 @@ fun OnboardingScreen(
             Spacer(modifier = Modifier.height(10.dp))
 
             // Animated expanding step pills
+            val pillMs = if (extended.reducedMotion) 0 else 250
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 (1..3).forEach { idx ->
                     val active = idx == step
                     val width by animateDpAsState(
                         targetValue = if (active) 28.dp else 8.dp,
-                        animationSpec = BaeumMotion.silkSpring(),
+                        animationSpec = if (extended.reducedMotion) tween(0) else BaeumMotion.silkSpring(),
                         label = "step_pill_$idx"
                     )
                     val color by animateColorAsState(
                         targetValue = if (idx <= step) MaterialTheme.colorScheme.primary else extended.cardBorder,
-                        animationSpec = tween(250),
+                        animationSpec = tween(pillMs),
                         label = "step_color_$idx"
                     )
                     Box(
@@ -371,7 +372,16 @@ fun OnboardingScreen(
             Spacer(modifier = Modifier.height(18.dp))
 
             // Bespoke Moon Jar Editorial Motto Hero Card
-            val mottoShape = RoundedCornerShape(30.dp)
+            val mottoShape = androidx.compose.runtime.remember { RoundedCornerShape(30.dp) }
+            val primaryColor = MaterialTheme.colorScheme.primary
+            val mottoBorderBrush = androidx.compose.runtime.remember(extended.glassHighlightBorder, primaryColor) {
+                Brush.linearGradient(
+                    listOf(extended.glassHighlightBorder, primaryColor.copy(alpha = 0.4f))
+                )
+            }
+            val mottoScrimBrush = androidx.compose.runtime.remember {
+                Brush.verticalGradient(listOf(Color(0x88080D1D), Color(0xCC0A0F22)))
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -380,9 +390,7 @@ fun OnboardingScreen(
                     .clip(mottoShape)
                     .border(
                         width = 1.dp,
-                        brush = Brush.linearGradient(
-                            listOf(extended.glassHighlightBorder, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f))
-                        ),
+                        brush = mottoBorderBrush,
                         shape = mottoShape
                     )
             ) {
@@ -395,11 +403,7 @@ fun OnboardingScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color(0x88080D1D), Color(0xCC0A0F22))
-                            )
-                        )
+                        .background(mottoScrimBrush)
                 )
                 Column(
                     modifier = Modifier
@@ -411,7 +415,7 @@ fun OnboardingScreen(
                     AnimatedContent(
                         targetState = step,
                         transitionSpec = {
-                            fadeIn(tween(300, easing = BaeumMotion.SilkEasing)) togetherWith fadeOut(tween(180))
+                            BaeumMotion.subtleCrossfadeTransform(extended.reducedMotion, durationMs = 280)
                         },
                         label = "motto_text"
                     ) { currentStep ->
@@ -450,15 +454,11 @@ fun OnboardingScreen(
             AnimatedContent(
                 targetState = step,
                 transitionSpec = {
-                    val forward = targetState > initialState
-                    val slideSpec = tween<androidx.compose.ui.unit.IntOffset>(320, easing = BaeumMotion.SilkEasing)
-                    if (forward) {
-                        (slideInHorizontally(slideSpec) { it / 5 } + fadeIn(tween(280)))
-                            .togetherWith(slideOutHorizontally(slideSpec) { -it / 6 } + fadeOut(tween(180)))
-                    } else {
-                        (slideInHorizontally(slideSpec) { -it / 5 } + fadeIn(tween(280)))
-                            .togetherWith(slideOutHorizontally(slideSpec) { it / 6 } + fadeOut(tween(180)))
-                    }
+                    BaeumMotion.directionalContentTransform(
+                        forward = targetState > initialState,
+                        reducedMotion = extended.reducedMotion,
+                        durationMs = 300
+                    )
                 },
                 label = "onboarding_step"
             ) { currentStep ->
@@ -547,6 +547,8 @@ fun OnboardingScreen(
     }
 }
 
+private val OnboardingCardShape = RoundedCornerShape(24.dp)
+
 @Composable
 private fun OnboardingOptionCard(
     title: String,
@@ -556,29 +558,32 @@ private fun OnboardingOptionCard(
     testTag: String
 ) {
     val extended = LocalBaeumColors.current
-    val shape = RoundedCornerShape(24.dp)
+    val primary = MaterialTheme.colorScheme.primary
+    val primaryContainer = MaterialTheme.colorScheme.primaryContainer
     val borderColor by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.primary else extended.cardBorder.copy(alpha = 0.6f),
-        animationSpec = tween(220),
+        targetValue = if (selected) primary else extended.cardBorder.copy(alpha = 0.6f),
+        animationSpec = tween(if (extended.reducedMotion) 0 else 220),
         label = "opt_border"
     )
-    val bgBrush = if (selected) {
-        Brush.horizontalGradient(
-            listOf(
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f),
-                extended.glassFillTop
+    val bgBrush = androidx.compose.runtime.remember(selected, primaryContainer, extended.glassFillTop, extended.glassFillBottom) {
+        if (selected) {
+            Brush.horizontalGradient(
+                listOf(primaryContainer.copy(alpha = 0.75f), extended.glassFillTop)
             )
-        )
-    } else {
-        Brush.verticalGradient(listOf(extended.glassFillTop, extended.glassFillBottom))
+        } else {
+            Brush.verticalGradient(listOf(extended.glassFillTop, extended.glassFillBottom))
+        }
+    }
+    val checkBrush = androidx.compose.runtime.remember(primary, extended.mint) {
+        Brush.linearGradient(listOf(primary, extended.mint))
     }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(shape)
+            .clip(OnboardingCardShape)
             .background(bgBrush)
-            .border(width = if (selected) 1.5.dp else 1.dp, color = borderColor, shape = shape)
+            .border(width = if (selected) 1.5.dp else 1.dp, color = borderColor, shape = OnboardingCardShape)
             .tactileClickable(pressedScale = 0.975f, onClick = onClick)
             .testTag(testTag)
     ) {
@@ -608,9 +613,7 @@ private fun OnboardingOptionCard(
                     modifier = Modifier
                         .size(30.dp)
                         .clip(CircleShape)
-                        .background(
-                            Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, extended.mint))
-                        ),
+                        .background(checkBrush),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(

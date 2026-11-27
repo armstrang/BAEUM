@@ -140,16 +140,20 @@ class BaeumViewModel(
     val dashboardSummary: StateFlow<DashboardSummary> = combine(
         settings, allVocab, dailyStats, quizRecords
     ) { userSettings, vocab, stats, quizzes ->
-        val todayKey = BaeumRepository.localDayKey()
+        val nowMs = System.currentTimeMillis()
+        val todayKey = BaeumRepository.localDayKey(nowMs)
         val todayStat = stats.firstOrNull { it.dayKey == todayKey }
-        val roomStreak = BaeumRepository.computeStudyStreak(stats)
+        val roomStreak = BaeumRepository.computeStudyStreak(stats, nowMs)
         val persistedStreak = userSettings.learningStreak.effectiveCurrentStreak(todayKey)
         val streak = maxOf(persistedStreak, roomStreak)
         val longestStreak = maxOf(userSettings.learningStreak.longestStreakDays, streak)
-        val forecast = BaeumRepository.buildSevenDayForecast(vocab)
-        val dueToday = BaeumRepository.countDueTodayOnly(vocab)
-        val overdue = BaeumRepository.countOverdue(vocab)
-        val mastered = BaeumRepository.countStage(vocab, CardMemoryStage.MASTERED)
+
+        // Single O(N) pass across 6,600+ vocabulary records instead of 8 separate scans
+        val agg = BaeumRepository.computeVocabAggregate(
+            vocab = vocab,
+            activePathway = userSettings.activePathway,
+            nowEpochMs = nowMs
+        )
         val totalSecs = stats.sumOf { it.studySeconds }
         val totalQ = quizzes.sumOf { it.totalQuestions }
         val totalCorrect = quizzes.sumOf { it.correctAnswers }
@@ -157,8 +161,6 @@ class BaeumViewModel(
 
         val lang = userSettings.translationLanguage
         val isId = lang.equals("ID", ignoreCase = true)
-        val activeVocab = vocab.filter { it.curriculum == userSettings.activePathway }
-        val activeLearned = activeVocab.count { it.reps > 0 }
         val pathwayLabel = when (userSettings.activePathway) {
             CurriculumPathway.HANGUL -> "Hangul"
             CurriculumPathway.TOPIK -> "TOPIK I"
@@ -167,11 +169,10 @@ class BaeumViewModel(
             else -> "TOPIK I"
         }
 
-        val weakQuizVocab = vocab.count { it.quizWrongCount > it.quizCorrectCount }
         val recommendation = when {
-            dueToday > 0 -> if (isId) "Ulas $dueToday kartu FSRS yang terjadwal hari ini" else "Review $dueToday scheduled FSRS card(s)"
-            weakQuizVocab >= 2 -> if (isId) "Latih $weakQuizVocab kosakata lemah di Kuis Pintar" else "Practice $weakQuizVocab weak vocabulary item(s) in Smart Quiz"
-            vocab.count { it.reps > 0 } == 0 -> if (isId) "Mulai sesi Kartu Pintar pertamamu" else "Start your first Smart Flashcard session"
+            agg.dueTodayCount > 0 -> if (isId) "Ulas ${agg.dueTodayCount} kartu FSRS yang terjadwal hari ini" else "Review ${agg.dueTodayCount} scheduled FSRS card(s)"
+            agg.weakQuizCount >= 2 -> if (isId) "Latih ${agg.weakQuizCount} kosakata lemah di Kuis Pintar" else "Practice ${agg.weakQuizCount} weak vocabulary item(s) in Smart Quiz"
+            agg.reviewedCount == 0 -> if (isId) "Mulai sesi Kartu Pintar pertamamu" else "Start your first Smart Flashcard session"
             quizzes.isEmpty() -> if (isId) "Uji daya ingatmu di Pusat Kuis (Batchim & Kosakata)" else "Test your recall in Quiz Center (Batchim & Recall)"
             else -> if (isId) "Latih percakapan bahasa Korea langsung di tab Bicara" else "Practice a live Korean conversation in Speak"
         }
@@ -181,16 +182,16 @@ class BaeumViewModel(
             dailyGoal = userSettings.dailyGoalWords,
             streakDays = streak,
             longestStreakDays = longestStreak,
-            dueTodayCount = dueToday,
-            overdueCount = overdue,
-            sevenDayForecast = forecast,
-            masteredCount = mastered,
-            totalVocabCount = vocab.size,
+            dueTodayCount = agg.dueTodayCount,
+            overdueCount = agg.overdueCount,
+            sevenDayForecast = agg.sevenDayForecast,
+            masteredCount = agg.masteredCount,
+            totalVocabCount = agg.totalCount,
             totalStudySeconds = totalSecs,
             quizAccuracyPercent = quizAcc,
             activePathwayLabel = pathwayLabel,
-            activePathwayLearned = activeLearned,
-            activePathwayTotal = activeVocab.size,
+            activePathwayLearned = agg.activePathwayLearned,
+            activePathwayTotal = agg.activePathwayTotal,
             recommendedFocus = recommendation
         )
     }

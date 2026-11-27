@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -109,6 +110,7 @@ import kotlinx.coroutines.delay
 import java.util.Locale
 
 private val CIRCLED_NUMBERS = listOf("①", "②", "③", "④", "⑤")
+private val EXAM_WHITESPACE_REGEX = Regex("\\s+")
 
 // ==================== SCREEN 20 — EXAMINATION CENTER ====================
 @Composable
@@ -1092,51 +1094,63 @@ fun ActiveExamScreen(
                 }
             }
 
-            // Official TOPIK Paper Stimulus Card (<보기>, [안내문], <자료>, underlined text)
-            SeoulCard(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = q.instructionKo,
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.primary
-                )
+            // Official TOPIK Paper Stimulus Card (<보기>, [안내문], <자료>, underlined text) with directional glide
+            AnimatedContent(
+                targetState = session.currentIndex to q,
+                transitionSpec = {
+                    BaeumMotion.directionalContentTransform(
+                        forward = targetState.first >= initialState.first,
+                        reducedMotion = extended.reducedMotion,
+                        durationMs = 260
+                    )
+                },
+                label = "exam_question_stimulus"
+            ) { (_, activeQ) ->
+                SeoulCard(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = activeQ.instructionKo,
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
 
-                if (!q.passageBoxKo.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                        color = if (extended.isDark) {
-                            extended.elevatedSurface.copy(alpha = 0.85f)
-                        } else {
-                            Color(0xFFFDFBF6) // subtle Hanji paper tint in Light Mode
-                        },
-                        border = BorderStroke(1.dp, extended.glassHighlightBorder)
-                    ) {
-                        Text(
-                            text = buildUnderlinedKoreanText(
-                                fullText = q.passageBoxKo,
-                                underlinedTarget = q.underlinedText,
-                                highlightColor = MaterialTheme.colorScheme.primary
-                            ),
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                lineHeight = 26.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(14.dp)
-                        )
+                    if (!activeQ.passageBoxKo.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (extended.isDark) {
+                                extended.elevatedSurface.copy(alpha = 0.85f)
+                            } else {
+                                Color(0xFFFDFBF6) // subtle Hanji paper tint in Light Mode
+                            },
+                            border = BorderStroke(1.dp, extended.glassHighlightBorder)
+                        ) {
+                            Text(
+                                text = buildUnderlinedKoreanText(
+                                    fullText = activeQ.passageBoxKo,
+                                    underlinedTarget = activeQ.underlinedText,
+                                    highlightColor = MaterialTheme.colorScheme.primary
+                                ),
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    lineHeight = 26.sp
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(14.dp)
+                            )
+                        }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = buildUnderlinedKoreanText(
-                        fullText = q.stimulusKo,
-                        underlinedTarget = q.underlinedText,
-                        highlightColor = MaterialTheme.colorScheme.primary
-                    ),
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = buildUnderlinedKoreanText(
+                            fullText = activeQ.stimulusKo,
+                            underlinedTarget = activeQ.underlinedText,
+                            highlightColor = MaterialTheme.colorScheme.primary
+                        ),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
 
             // Answer Input Area: Open-ended (Writing 51-54 / Speaking 1-6) OR MC (① ② ③ ④ + Elimination)
@@ -1172,9 +1186,9 @@ fun ActiveExamScreen(
                             }
                             Surface(
                                 modifier = Modifier
-                                    .defaultMinSize(minHeight = 44.dp)
+                                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
                                     .clip(RoundedCornerShape(14.dp))
-                                    .clickable {
+                                    .tactileClickable(pressedScale = 0.94f) {
                                         if (speakingPhase == "IDLE") {
                                             speakingPhase = "PREP"
                                             speakingPhaseSec = q.prepSeconds.coerceAtLeast(15)
@@ -1202,7 +1216,7 @@ fun ActiveExamScreen(
                                 .fillMaxWidth()
                                 .defaultMinSize(minHeight = 50.dp)
                                 .clip(RoundedCornerShape(16.dp))
-                                .clickable {
+                                .tactileClickable(pressedScale = 0.97f) {
                                     if (isListeningVoice) onStopVoiceAnswer() else onStartVoiceAnswer()
                                 },
                             shape = RoundedCornerShape(16.dp),
@@ -1287,7 +1301,9 @@ fun ActiveExamScreen(
                     }
                 } else {
                     // Single Open Editor + Official 원고지 Character Counter (for 53번 200~300자, 54번 600~700자, Speaking)
-                    val charsWithSpaces = draft.trim().replace(Regex("\\s+"), " ").length.takeIf { draft.isNotBlank() } ?: 0
+                    val charsWithSpaces = remember(draft) {
+                        draft.trim().replace(EXAM_WHITESPACE_REGEX, " ").length.takeIf { draft.isNotBlank() } ?: 0
+                    }
                     val hangulOnly = draft.count { it.code in 0xAC00..0xD7A3 }
                     val minC = q.targetMinChars
                     val maxC = q.targetMaxChars

@@ -250,7 +250,13 @@ fun PronunciationLabScreen(
                     // Target Hangul + Pronunciation Display
                     AnimatedContent(
                         targetState = activeDrill,
-                        transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(180)) },
+                        transitionSpec = {
+                            if (extended.reducedMotion) {
+                                fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                            } else {
+                                fadeIn(tween(220)) togetherWith fadeOut(tween(160))
+                            }
+                        },
                         label = "active_pron_drill"
                     ) { drill ->
                         Column(
@@ -496,9 +502,15 @@ fun PronunciationLabScreen(
                 color = MaterialTheme.colorScheme.onBackground
             )
 
+            val contrastDrills = remember(activePool) {
+                activePool.filter { it.category == PronunciationDrillCategory.MINIMAL_CONTRAST }
+            }
+            val otherDrills = remember(activePool) {
+                activePool.filter { it.category != PronunciationDrillCategory.MINIMAL_CONTRAST }
+            }
+
             // Contrast Triplet Quick Cards (when showing All or Minimal Contrast)
             if (state.selectedCategory == null || state.selectedCategory == PronunciationDrillCategory.MINIMAL_CONTRAST) {
-                val contrastDrills = activePool.filter { it.category == PronunciationDrillCategory.MINIMAL_CONTRAST }
                 val grouped = remember(contrastDrills) {
                     contrastDrills.groupBy { it.contrastGroup.joinToString(" • ") }
                 }
@@ -580,7 +592,6 @@ fun PronunciationLabScreen(
             }
 
             // Sound Change & Phrase Drills
-            val otherDrills = activePool.filter { it.category != PronunciationDrillCategory.MINIMAL_CONTRAST }
             otherDrills.forEach { drill ->
                 val isSelected = drill.id == activeDrill.id
                 val isPassed = drill.id in state.passedDrillIds

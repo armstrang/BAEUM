@@ -641,9 +641,13 @@ fun SmartFlashcardScreen(
 
                                 AnimatedVisibility(
                                     visible = session.isRevealed,
-                                    enter = fadeIn(tween(280, easing = BaeumMotion.SilkEasing)) +
-                                        expandVertically(animationSpec = BaeumMotion.silkSpring()),
-                                    exit = fadeOut(tween(140))
+                                    enter = if (extended.reducedMotion) {
+                                        fadeIn(tween(0))
+                                    } else {
+                                        fadeIn(tween(280, easing = BaeumMotion.SilkEasing)) +
+                                            expandVertically(animationSpec = BaeumMotion.silkSpring())
+                                    },
+                                    exit = fadeOut(tween(if (extended.reducedMotion) 0 else 140))
                                 ) {
                                     Column(
                                         modifier = Modifier.fillMaxWidth(),
@@ -850,6 +854,8 @@ fun SmartFlashcardScreen(
     }
 }
 
+private val FsrsRatingShape = RoundedCornerShape(22.dp)
+
 @Composable
 private fun FsrsRatingButton(
     label: String,
@@ -860,20 +866,15 @@ private fun FsrsRatingButton(
     testTag: String,
     onClick: () -> Unit
 ) {
-    val shape = RoundedCornerShape(22.dp)
+    val bgBrush = remember(accent) {
+        Brush.verticalGradient(listOf(accent.copy(alpha = 0.16f), accent.copy(alpha = 0.06f)))
+    }
     Box(
         modifier = modifier
             .height(68.dp)
-            .clip(shape)
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        accent.copy(alpha = 0.16f),
-                        accent.copy(alpha = 0.06f)
-                    )
-                )
-            )
-            .border(1.2.dp, accent.copy(alpha = 0.55f), shape)
+            .clip(FsrsRatingShape)
+            .background(bgBrush)
+            .border(1.2.dp, accent.copy(alpha = 0.55f), FsrsRatingShape)
             .tactileClickable(enabled = enabled, pressedScale = 0.93f, onClick = onClick)
             .testTag(testTag),
         contentAlignment = Alignment.Center
@@ -907,16 +908,17 @@ fun ReviewPlannerScreen(
     onStartNewStudy: () -> Unit
 ) {
     val extended = LocalBaeumColors.current
-    val dueToday = remember(allVocab) { BaeumRepository.countDueTodayOnly(allVocab) }
-    val overdue = remember(allVocab) { BaeumRepository.countOverdue(allVocab) }
-    val forecast = remember(allVocab) { BaeumRepository.buildSevenDayForecast(allVocab) }
-    var selectedDay by remember { mutableStateOf<DayForecastPoint?>(forecast.firstOrNull()) }
+    val plannerSnapshot = remember(allVocab) { BaeumRepository.computeVocabAggregate(allVocab) }
+    val dueToday = plannerSnapshot.dueTodayCount
+    val overdue = plannerSnapshot.overdueCount
+    val forecast = plannerSnapshot.sevenDayForecast
+    var selectedDay by remember(forecast) { mutableStateOf<DayForecastPoint?>(forecast.firstOrNull()) }
 
-    val total = allVocab.size.coerceAtLeast(1)
-    val newCount = remember(allVocab) { BaeumRepository.countStage(allVocab, CardMemoryStage.NEW) }
-    val learningCount = remember(allVocab) { BaeumRepository.countStage(allVocab, CardMemoryStage.LEARNING) }
-    val reviewCount = remember(allVocab) { BaeumRepository.countStage(allVocab, CardMemoryStage.REVIEW) }
-    val masteredCount = remember(allVocab) { BaeumRepository.countStage(allVocab, CardMemoryStage.MASTERED) }
+    val total = plannerSnapshot.totalCount.coerceAtLeast(1)
+    val newCount = plannerSnapshot.newCount
+    val learningCount = plannerSnapshot.learningCount
+    val reviewCount = plannerSnapshot.reviewCount
+    val masteredCount = plannerSnapshot.masteredCount
 
     Column(
         modifier = Modifier

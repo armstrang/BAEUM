@@ -83,6 +83,8 @@ import com.example.ui.theme.localizedTitle
 import com.example.ui.theme.rememberAnimatedInt
 import com.example.ui.theme.tactileClickable
 
+private val QuizModePairs = QuizMode.entries.chunked(2)
+
 // SCREEN 13 / 24 — Quiz Center (Adaptive learning modes including Vocabulary Recall & Sentence Arrangement)
 @Composable
 fun QuizCenterScreen(
@@ -91,8 +93,10 @@ fun QuizCenterScreen(
     onBack: () -> Unit,
     onSelectQuizMode: (QuizMode, Boolean) -> Unit
 ) {
-    val weakCount = allVocab.count { it.quizWrongCount > it.quizCorrectCount || it.lapses > 0 }
-    val modePairs = QuizMode.entries.chunked(2)
+    val weakCount = remember(allVocab) {
+        allVocab.count { it.quizWrongCount > it.quizCorrectCount || it.lapses > 0 }
+    }
+    val modePairs = QuizModePairs
     val extended = LocalBaeumColors.current
 
     Column(
@@ -678,14 +682,15 @@ fun ActiveQuizScreen(
                                 isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f)
                                 else -> extended.glassFillTop
                             }
+                            val optAnimMs = if (extended.reducedMotion) 0 else 220
                             val borderColor by animateColorAsState(
                                 targetValue = targetBorder,
-                                animationSpec = tween(220),
+                                animationSpec = tween(optAnimMs),
                                 label = "quiz_opt_border_$idx"
                             )
                             val bgColor by animateColorAsState(
                                 targetValue = targetBg,
-                                animationSpec = tween(220),
+                                animationSpec = tween(optAnimMs),
                                 label = "quiz_opt_bg_$idx"
                             )
 
@@ -737,10 +742,14 @@ fun ActiveQuizScreen(
                 // Animated Instant Feedback Card
                 AnimatedVisibility(
                     visible = state.isChecked,
-                    enter = fadeIn(tween(240, easing = BaeumMotion.SilkEasing)) +
-                        expandVertically(animationSpec = BaeumMotion.silkSpring()) +
-                        scaleIn(initialScale = 0.96f, animationSpec = BaeumMotion.silkSpring()),
-                    exit = fadeOut(tween(150))
+                    enter = if (extended.reducedMotion) {
+                        fadeIn(tween(0))
+                    } else {
+                        fadeIn(tween(240, easing = BaeumMotion.SilkEasing)) +
+                            expandVertically(animationSpec = BaeumMotion.silkSpring()) +
+                            scaleIn(initialScale = 0.96f, animationSpec = BaeumMotion.silkSpring())
+                    },
+                    exit = fadeOut(tween(if (extended.reducedMotion) 0 else 150))
                 ) {
                     val accent = if (state.isCorrect) extended.mint else extended.cherryPink
                     SeoulCard(

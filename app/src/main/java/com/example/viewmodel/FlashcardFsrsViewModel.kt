@@ -465,24 +465,21 @@ class FlashcardFsrsViewModel(
 
     private fun computeDeckOverview(vocab: List<VocabEntity>, nowEpochMs: Long): FsrsDeckOverview {
         if (vocab.isEmpty()) return FsrsDeckOverview()
-        val reviewed = vocab.filter { it.reps > 0 && it.stability > 0.0 }
-        val avgR = if (reviewed.isNotEmpty()) {
-            (reviewed.map { FsrsScheduler.currentRetrievability(it.toFsrsSnapshot(), nowEpochMs) }.average() * 100.0)
-                .roundToInt()
-                .coerceIn(0, 100)
-        } else {
-            null
-        }
+        val agg = BaeumRepository.computeVocabAggregate(
+            vocab = vocab,
+            nowEpochMs = nowEpochMs,
+            includeRetrievability = true
+        )
         return FsrsDeckOverview(
-            totalCards = vocab.size,
-            dueNowCount = BaeumRepository.countDueTodayOnly(vocab, nowEpochMs),
-            overdueCount = BaeumRepository.countOverdue(vocab, nowEpochMs),
-            newCount = vocab.count { it.stage == CardMemoryStage.NEW.name },
-            learningCount = vocab.count { it.stage == CardMemoryStage.LEARNING.name },
-            reviewCount = vocab.count { it.stage == CardMemoryStage.REVIEW.name },
-            masteredCount = vocab.count { it.stage == CardMemoryStage.MASTERED.name },
-            leechCount = vocab.count { FsrsScheduler.isLeech(it.toFsrsSnapshot()) },
-            averageRetrievabilityPercent = avgR
+            totalCards = agg.totalCount,
+            dueNowCount = agg.dueTodayCount,
+            overdueCount = agg.overdueCount,
+            newCount = agg.newCount,
+            learningCount = agg.learningCount,
+            reviewCount = agg.reviewCount,
+            masteredCount = agg.masteredCount,
+            leechCount = agg.leechCount,
+            averageRetrievabilityPercent = agg.averageRetrievabilityPercent
         )
     }
 

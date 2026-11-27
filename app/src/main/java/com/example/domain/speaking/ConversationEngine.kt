@@ -104,6 +104,9 @@ object ConversationEngine {
         return candidates.random()
     }
 
+    private val CONVERSATION_WHITESPACE_REGEX = Regex("\\s+")
+    private val PREDICATE_COMPLETION_MARKERS = listOf("주세요", "싶어요", "할게요", "겠습니다", "세요")
+
     fun startScenario(scenario: SpeakingScenario): LiveConversationState {
         val firstId = scenario.turns.firstOrNull()?.turnId
         return LiveConversationState(
@@ -173,7 +176,7 @@ object ConversationEngine {
         val relevance = (relevanceRaw * spamPenalty).roundToInt().coerceIn(0, 10)
 
         // 2. Vocabulary richness (0..10)
-        val wordTokens = cleaned.split(Regex("\\s+")).filter { it.isNotBlank() }
+        val wordTokens = cleaned.split(CONVERSATION_WHITESPACE_REGEX).filter { it.isNotBlank() }
         val vocabularyRaw = when {
             wordTokens.size >= 5 && hangulCharCount >= 12 -> 10
             wordTokens.size >= 3 && hangulCharCount >= 7 -> 8
@@ -190,7 +193,7 @@ object ConversationEngine {
         val endsPolite = KoreanLinguisticsEngine.hasPoliteHaeyoEnding(cleaned)
         val hasGrammaticalStructure = particleCount > 0 || connectorCount > 0
         val hasPredicateCompletion = endsFormal || endsPolite ||
-            listOf("주세요", "싶어요", "할게요", "겠습니다", "세요").any { cleaned.contains(it) }
+            PREDICATE_COMPLETION_MARKERS.any { cleaned.contains(it) }
 
         val grammarRaw = when {
             (particleCount + connectorCount) >= 2 && hasPredicateCompletion && hangulCharCount >= 8 -> 10

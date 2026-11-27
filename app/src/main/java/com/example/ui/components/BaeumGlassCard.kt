@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
@@ -75,7 +76,7 @@ enum class BaeumGlassStyle(
  * Avoids heavy real-time `Modifier.blur` passes so LazyColumn scrolling stays locked at 60/120fps:
  * 1. Soft tinted elevation shadow (`shadow`) tuned for Seoul Night obsidian or Seoul Morning porcelain.
  * 2. Cached `drawWithCache` vertical silk surface gradient + whisper-soft internal ambient sheen.
- * 3. Hairline specular beveled border (`1.dp`) keeping foreground Hangul typography razor-sharp.
+ * 3. Memoized hairline specular beveled border (`1.dp`) keeping foreground Hangul typography razor-sharp.
  * 4. Optional tactile spring-press compression and haptic feedback when [onClick] is supplied.
  */
 @Composable
@@ -93,14 +94,17 @@ fun BaeumGlassCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val extended = LocalBaeumColors.current
-    val shape = RoundedCornerShape(cornerRadius)
+    val shape = remember(cornerRadius) { RoundedCornerShape(cornerRadius) }
     val useCustomFill = containerColor != Color.Unspecified
     val useCustomBorder = borderColor != Color.Unspecified
 
-    val shadowTint = if (extended.isDark) {
-        if (useCustomBorder) borderColor.copy(alpha = 0.28f) else Color(0x66000000)
-    } else {
-        if (useCustomBorder) borderColor.copy(alpha = 0.22f) else Color(0x22192138)
+    val isDark = extended.isDark
+    val shadowTint = remember(isDark, useCustomBorder, borderColor) {
+        if (isDark) {
+            if (useCustomBorder) borderColor.copy(alpha = 0.28f) else Color(0x66000000)
+        } else {
+            if (useCustomBorder) borderColor.copy(alpha = 0.22f) else Color(0x22192138)
+        }
     }
 
     val topFill = if (useCustomFill) containerColor else extended.glassFillTop
@@ -110,33 +114,34 @@ fun BaeumGlassCard(
         extended.glassFillBottom
     }
     val orbSecondary = extended.mint
-    val isDark = extended.isDark
     val borderWidth = 1.dp
 
-    val borderBrush = if (useCustomBorder) {
-        Brush.linearGradient(
-            colors = listOf(
-                borderColor,
-                borderColor.copy(alpha = if (isDark) 0.50f else 0.76f),
-                extended.cardBorder.copy(alpha = if (isDark) 0.40f else 0.70f)
+    val borderBrush = remember(useCustomBorder, borderColor, isDark, extended.glassHighlightBorder, extended.cardBorder) {
+        if (useCustomBorder) {
+            Brush.linearGradient(
+                colors = listOf(
+                    borderColor,
+                    borderColor.copy(alpha = if (isDark) 0.50f else 0.76f),
+                    extended.cardBorder.copy(alpha = if (isDark) 0.40f else 0.70f)
+                )
             )
-        )
-    } else if (isDark) {
-        Brush.linearGradient(
-            colors = listOf(
-                extended.glassHighlightBorder,
-                extended.cardBorder.copy(alpha = 0.65f),
-                extended.cardBorder.copy(alpha = 0.30f)
+        } else if (isDark) {
+            Brush.linearGradient(
+                colors = listOf(
+                    extended.glassHighlightBorder,
+                    extended.cardBorder.copy(alpha = 0.65f),
+                    extended.cardBorder.copy(alpha = 0.30f)
+                )
             )
-        )
-    } else {
-        Brush.linearGradient(
-            colors = listOf(
-                extended.cardBorder,
-                extended.glassHighlightBorder,
-                extended.cardBorder.copy(alpha = 0.85f)
+        } else {
+            Brush.linearGradient(
+                colors = listOf(
+                    extended.cardBorder,
+                    extended.glassHighlightBorder,
+                    extended.cardBorder.copy(alpha = 0.85f)
+                )
             )
-        )
+        }
     }
 
     Box(
@@ -178,12 +183,25 @@ fun BaeumGlassCard(
                         1.0f to extended.cardBorder.copy(alpha = 0.06f)
                     )
                 }
+                val topRimBrush = Brush.horizontalGradient(
+                    colors = listOf(
+                        Color.Transparent,
+                        Color.White.copy(alpha = if (isDark) style.specularAlpha * 1.4f else 0.65f),
+                        Color.Transparent
+                    )
+                )
 
                 onDrawBehind {
                     drawRect(brush = baseFillBrush)
                     drawCircle(brush = orb1Brush, radius = maxDim * 0.64f, center = topLeftOrb)
                     drawCircle(brush = orb2Brush, radius = maxDim * 0.52f, center = bottomRightOrb)
                     drawRect(brush = sheenBrush)
+                    drawLine(
+                        brush = topRimBrush,
+                        start = Offset(size.width * 0.12f, 1f),
+                        end = Offset(size.width * 0.88f, 1f),
+                        strokeWidth = 1.5f
+                    )
                 }
             }
             .border(width = borderWidth, brush = borderBrush, shape = shape)

@@ -6,7 +6,6 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -39,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -209,38 +209,36 @@ private fun SpeakingWaveCrest(
     val crestHeights = androidx.compose.runtime.remember {
         floatArrayOf(0.28f, 0.45f, 0.72f, 0.40f, 0.88f, 0.56f, 0.96f, 0.62f, 0.82f, 0.44f, 0.68f, 0.35f, 0.52f, 0.25f)
     }
-    Canvas(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(52.dp)
-    ) {
-        val phase = wavePhaseState.value
-        val count = crestHeights.size
-        val slot = size.width / (count + 4)
-        val startX = slot * 2f
-        val barW = slot * 0.44f
-        crestHeights.forEachIndexed { i, base ->
-            val pulse = if (reducedMotion) 1f else (0.86f + 0.14f * sin(phase + i * 0.55f))
-            val h = (size.height * base * pulse).coerceAtLeast(8f)
-            val x = startX + i * slot
-            val y = (size.height - h) / 2f
-            val barBrush = Brush.verticalGradient(
-                colors = if (i % 3 == 0) {
-                    listOf(mint, primary.copy(alpha = 0.75f))
-                } else {
-                    listOf(primary, mint.copy(alpha = 0.65f))
-                },
-                startY = y,
-                endY = y + h
-            )
-            drawRoundRect(
-                brush = barBrush,
-                topLeft = Offset(x, y),
-                size = Size(barW, h),
-                cornerRadius = CornerRadius(barW / 2f, barW / 2f)
-            )
-        }
-    }
+            .drawWithCache {
+                val mintPrimaryBrush = Brush.verticalGradient(listOf(mint, primary.copy(alpha = 0.75f)))
+                val primaryMintBrush = Brush.verticalGradient(listOf(primary, mint.copy(alpha = 0.65f)))
+                val count = crestHeights.size
+                val slot = size.width / (count + 4)
+                val startX = slot * 2f
+                val barW = slot * 0.44f
+                val radius = CornerRadius(barW / 2f, barW / 2f)
+
+                onDrawBehind {
+                    val phase = wavePhaseState.value
+                    for (i in 0 until count) {
+                        val pulse = if (reducedMotion) 1f else (0.86f + 0.14f * sin(phase + i * 0.55f))
+                        val h = (size.height * crestHeights[i] * pulse).coerceAtLeast(8f)
+                        val x = startX + i * slot
+                        val y = (size.height - h) / 2f
+                        drawRoundRect(
+                            brush = if (i % 3 == 0) mintPrimaryBrush else primaryMintBrush,
+                            topLeft = Offset(x, y),
+                            size = Size(barW, h),
+                            cornerRadius = radius
+                        )
+                    }
+                }
+            }
+    )
 }
 
 @Composable
@@ -252,6 +250,9 @@ private fun SpeakingModuleRow(
     onClick: () -> Unit,
     testTag: String
 ) {
+    val iconBgBrush = androidx.compose.runtime.remember(accent) {
+        Brush.verticalGradient(listOf(accent.copy(alpha = 0.22f), accent.copy(alpha = 0.08f)))
+    }
     BaeumGlassCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -268,11 +269,7 @@ private fun SpeakingModuleRow(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(CircleShape)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(accent.copy(alpha = 0.22f), accent.copy(alpha = 0.08f))
-                        )
-                    )
+                    .background(iconBgBrush)
                     .border(1.dp, accent.copy(alpha = 0.4f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
@@ -309,11 +306,14 @@ fun DifficultySelectionScreen(
     onSelectDifficulty: (SpeakingDifficulty) -> Unit
 ) {
     val extended = LocalBaeumColors.current
-    val cards = listOf(
-        Triple(SpeakingDifficulty.BEGINNER, extended.mint, KoreanSpeakingSeed.scenariosByDifficulty(SpeakingDifficulty.BEGINNER).size),
-        Triple(SpeakingDifficulty.INTERMEDIATE, MaterialTheme.colorScheme.primary, KoreanSpeakingSeed.scenariosByDifficulty(SpeakingDifficulty.INTERMEDIATE).size),
-        Triple(SpeakingDifficulty.ADVANCED, extended.gold, KoreanSpeakingSeed.scenariosByDifficulty(SpeakingDifficulty.ADVANCED).size)
-    )
+    val primary = MaterialTheme.colorScheme.primary
+    val cards = androidx.compose.runtime.remember(extended.mint, primary, extended.gold) {
+        listOf(
+            Triple(SpeakingDifficulty.BEGINNER, extended.mint, KoreanSpeakingSeed.scenariosByDifficulty(SpeakingDifficulty.BEGINNER).size),
+            Triple(SpeakingDifficulty.INTERMEDIATE, primary, KoreanSpeakingSeed.scenariosByDifficulty(SpeakingDifficulty.INTERMEDIATE).size),
+            Triple(SpeakingDifficulty.ADVANCED, extended.gold, KoreanSpeakingSeed.scenariosByDifficulty(SpeakingDifficulty.ADVANCED).size)
+        )
+    }
 
     Column(
         modifier = Modifier

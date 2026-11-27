@@ -78,13 +78,15 @@ object KoreanLinguisticsEngine {
         return if (endsWithBatchim(trimmed)) "$trimmed$withBatchim" else "$trimmed$withoutBatchim"
     }
 
+    private val WHITESPACE_REGEX = Regex("\\s+")
+
     /**
      * Revised Romanization of Korean with common phonological assimilation rules
      * (palatalization, double-batchim & single-batchim liaison, ㅎ-drop, nasalization,
      * ㄹ-nasalization, liquidization, and 2-way aspiration).
      */
     fun romanize(text: String): String {
-        val words = text.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val words = text.trim().split(WHITESPACE_REGEX).filter { it.isNotEmpty() }
         return words.joinToString(" ") { word -> romanizeWord(word) }
     }
 
@@ -531,7 +533,7 @@ object KoreanLinguisticsEngine {
 
     private fun cleanKoreanTokens(text: String): List<String> =
         text.trim()
-            .split(Regex("\\s+"))
+            .split(WHITESPACE_REGEX)
             .map { token -> token.trim { !isHangulSyllable(it) && !it.isLetterOrDigit() } }
             .filter { it.isNotEmpty() }
 

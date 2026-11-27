@@ -507,18 +507,25 @@ object KoreanPronunciationEvaluator {
             )
         }
 
-        // Align syllables via dynamic programming (Needleman-Wunsch style) using Jamo similarity
+        // Align syllables via dynamic programming (Needleman-Wunsch style) using Jamo similarity.
+        // Cache simMatrix & issueMatrix so syllableSimilarity is computed once per cell, not twice.
         val n = target.length
         val m = recognized.length
         val dp = Array(n + 1) { FloatArray(m + 1) }
+        val simMatrix = Array(n) { FloatArray(m) }
+        val issueMatrix = Array(n) { arrayOfNulls<PhoneticIssueType>(m) }
         val gapPenalty = -0.35f
+        val eps = 1e-4f
 
         for (i in 1..n) dp[i][0] = i * gapPenalty
         for (j in 1..m) dp[0][j] = j * gapPenalty
 
         for (i in 1..n) {
+            val tChar = target[i - 1]
             for (j in 1..m) {
-                val sim = syllableSimilarity(target[i - 1], recognized[j - 1]).first
+                val (sim, issue) = syllableSimilarity(tChar, recognized[j - 1])
+                simMatrix[i - 1][j - 1] = sim
+                issueMatrix[i - 1][j - 1] = issue
                 val matchScore = dp[i - 1][j - 1] + sim
                 val deleteTarget = dp[i - 1][j] + gapPenalty
                 val insertRec = dp[i][j - 1] + gapPenalty
@@ -526,8 +533,8 @@ object KoreanPronunciationEvaluator {
             }
         }
 
-        // Backtrack to build per-target-syllable alignment
-        val aligned = mutableListOf<SyllableMatchResult>()
+        // Backtrack with epsilon tolerance to avoid float-rounding path mismatches
+        val aligned = ArrayList<SyllableMatchResult>(n)
         var i = n
         var j = m
         var totalSim = 0f
@@ -535,8 +542,8 @@ object KoreanPronunciationEvaluator {
 
         while (i > 0 || j > 0) {
             if (i > 0 && j > 0) {
-                val (sim, issue) = syllableSimilarity(target[i - 1], recognized[j - 1])
-                if (dp[i][j] == dp[i - 1][j - 1] + sim) {
+                val sim = simMatrix[i - 1][j - 1]
+                if (kotlin.math.abs(dp[i][j] - (dp[i - 1][j - 1] + sim)) < eps) {
                     totalSim += sim
                     val level = when {
                         sim >= 0.99f -> SyllableMatchLevel.EXACT
@@ -548,7 +555,7 @@ object KoreanPronunciationEvaluator {
                             targetSyllable = target[i - 1],
                             recognizedSyllable = recognized[j - 1],
                             matchLevel = level,
-                            issueType = if (level == SyllableMatchLevel.EXACT) null else issue
+                            issueType = if (level == SyllableMatchLevel.EXACT) null else issueMatrix[i - 1][j - 1]
                         )
                     )
                     i--
@@ -556,7 +563,7 @@ object KoreanPronunciationEvaluator {
                     continue
                 }
             }
-            if (i > 0 && (j == 0 || dp[i][j] == dp[i - 1][j] + gapPenalty)) {
+            if (i > 0 && (j == 0 || kotlin.math.abs(dp[i][j] - (dp[i - 1][j] + gapPenalty)) < eps)) {
                 aligned.add(
                     SyllableMatchResult(
                         targetSyllable = target[i - 1],

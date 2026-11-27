@@ -1,5 +1,6 @@
 package com.example.ui.theme
 
+import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -13,6 +14,12 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -32,13 +39,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
@@ -75,6 +83,45 @@ object BaeumMotion {
         dampingRatio = Spring.DampingRatioMediumBouncy,
         stiffness = 360f
     )
+
+    /**
+     * Unified directional slide + silk fade transition for stepped content (questions, steps, cards).
+     * Automatically collapses to an instant cut when [reducedMotion] is enabled.
+     */
+    fun directionalContentTransform(
+        forward: Boolean,
+        reducedMotion: Boolean,
+        durationMs: Int = 280
+    ): ContentTransform {
+        if (reducedMotion) {
+            return fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+        }
+        val slideSpec = tween<IntOffset>(durationMs, easing = SilkEasing)
+        val exitMs = (durationMs * 0.68f).toInt()
+        val direction = if (forward) 1 else -1
+        return (slideInHorizontally(slideSpec) { direction * (it * 0.14f).toInt() } +
+            fadeIn(tween(durationMs, easing = SilkEasing)) +
+            scaleIn(initialScale = 0.975f, animationSpec = tween(durationMs, easing = SilkEasing)))
+            .togetherWith(
+                slideOutHorizontally(tween(exitMs, easing = SilkEasing)) { -direction * (it * 0.10f).toInt() } +
+                    fadeOut(tween(exitMs))
+            )
+    }
+
+    /**
+     * Subtle editorial crossfade for switching tabs, grammar cards, or speech levels.
+     */
+    fun subtleCrossfadeTransform(
+        reducedMotion: Boolean,
+        durationMs: Int = 220
+    ): ContentTransform {
+        if (reducedMotion) {
+            return fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+        }
+        return (fadeIn(tween(durationMs, easing = VelvetEasing)) +
+            scaleIn(initialScale = 0.985f, animationSpec = tween(durationMs, easing = VelvetEasing)))
+            .togetherWith(fadeOut(tween((durationMs * 0.65f).toInt())))
+    }
 }
 
 /**
@@ -99,7 +146,8 @@ fun rememberAnimatedInt(
 
 /**
  * Adds luxury tactile spring compression + gentle ripple + subtle haptic feedback to any clickable surface.
- * Defers scale and alpha reads strictly to the draw phase (`graphicsLayer`) to avoid recomposition.
+ * Uses a single `pressProgress` animation (0f..1f) read strictly in `graphicsLayer` draw phase
+ * and bypasses animations altogether when [reducedMotion] is enabled or [enabled] is false.
  */
 fun Modifier.tactileClickable(
     enabled: Boolean = true,
@@ -110,42 +158,45 @@ fun Modifier.tactileClickable(
     val reducedMotion = LocalBaeumColors.current.reducedMotion
     val haptics = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
 
-    val scaleState = animateFloatAsState(
-        targetValue = if (isPressed && enabled && !reducedMotion) pressedScale else 1f,
-        animationSpec = BaeumMotion.silkSpring(),
-        label = "tactile_scale"
+    val clickModifier = Modifier.clickable(
+        interactionSource = interactionSource,
+        indication = ripple(bounded = true),
+        enabled = enabled,
+        onClick = {
+            if (hapticEnabled) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
+            onClick()
+        }
     )
-    val pressAlphaState = animateFloatAsState(
-        targetValue = if (isPressed && enabled && !reducedMotion) 0.94f else 1f,
-        animationSpec = tween(110),
-        label = "tactile_alpha"
+
+    if (reducedMotion || !enabled) {
+        return@composed this.then(clickModifier)
+    }
+
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressProgressState = animateFloatAsState(
+        targetValue = if (isPressed) 1f else 0f,
+        animationSpec = BaeumMotion.silkSpring(),
+        label = "tactile_press"
     )
 
     this
         .graphicsLayer {
-            val s = scaleState.value
+            val p = pressProgressState.value
+            val s = 1f - (1f - pressedScale) * p
             scaleX = s
             scaleY = s
-            alpha = pressAlphaState.value
+            alpha = 1f - (0.06f * p)
         }
-        .clickable(
-            interactionSource = interactionSource,
-            indication = ripple(bounded = true),
-            enabled = enabled,
-            onClick = {
-                if (hapticEnabled) {
-                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                }
-                onClick()
-            }
-        )
+        .then(clickModifier)
 }
 
 /**
  * Adds a delicate diagonal glass light-sweep glint across opt-in surfaces.
- * Reads animation state strictly during draw phase (`drawWithContent`) and honors reduced motion.
+ * Pre-caches a single [Brush] inside `drawWithCache` and translates it per frame via GPU transform
+ * for zero per-frame allocations while honoring reduced motion.
  */
 fun Modifier.luxuryShimmer(
     enabled: Boolean = true,
@@ -166,25 +217,32 @@ fun Modifier.luxuryShimmer(
         label = "shimmer_sweep"
     )
 
-    this.drawWithContent {
-        drawContent()
-        val progress = progressState.value
-        if (progress in -0.35f..1.35f) {
-            val w = size.width
-            val h = size.height
-            val centerX = w * progress
-            val bandW = w * 0.34f
-            drawRect(
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        Color.Transparent,
-                        Color.White.copy(alpha = shimmerAlpha),
-                        Color.Transparent
-                    ),
-                    start = Offset(centerX - bandW, 0f),
-                    end = Offset(centerX + bandW, h)
-                )
-            )
+    this.drawWithCache {
+        val w = size.width.coerceAtLeast(1f)
+        val h = size.height.coerceAtLeast(1f)
+        val bandW = w * 0.34f
+        val cachedBrush = Brush.linearGradient(
+            colors = listOf(
+                Color.Transparent,
+                Color.White.copy(alpha = shimmerAlpha),
+                Color.Transparent
+            ),
+            start = Offset(-bandW, 0f),
+            end = Offset(bandW, h)
+        )
+        onDrawWithContent {
+            drawContent()
+            val progress = progressState.value
+            if (progress in -0.35f..1.35f) {
+                val centerX = w * progress
+                withTransform({ translate(left = centerX) }) {
+                    drawRect(
+                        brush = cachedBrush,
+                        topLeft = Offset(-bandW, 0f),
+                        size = androidx.compose.ui.geometry.Size(bandW * 2f, h)
+                    )
+                }
+            }
         }
     }
 }
@@ -194,10 +252,11 @@ fun Modifier.luxuryShimmer(
  */
 fun Modifier.gentleShake(triggerKey: Int): Modifier = composed {
     val reducedMotion = LocalBaeumColors.current.reducedMotion
+    if (reducedMotion) return@composed this
     val offsetX = remember { Animatable(0f) }
 
     LaunchedEffect(triggerKey) {
-        if (triggerKey > 0 && !reducedMotion) {
+        if (triggerKey > 0) {
             val hops = listOf(-14f, 12f, -8f, 5f, 0f)
             hops.forEach { target ->
                 offsetX.animateTo(
@@ -215,29 +274,36 @@ fun Modifier.gentleShake(triggerKey: Int): Modifier = composed {
 
 /**
  * Smooth staggered choreography for cards and sections entering the viewport.
- * Defers progress reads into `graphicsLayer` so children never recompose during entrance.
+ * Defers progress reads into `graphicsLayer` so children never recompose during entrance,
+ * and bypasses animation allocation completely when [reducedMotion] is enabled.
  */
 @Composable
 fun StaggeredEntrance(
     index: Int,
     modifier: Modifier = Modifier,
-    delayStepMs: Long = 44L,
+    delayStepMs: Long = 40L,
     content: @Composable () -> Unit
 ) {
     val reducedMotion = LocalBaeumColors.current.reducedMotion
-    var visible by remember(index, reducedMotion) { mutableStateOf(reducedMotion) }
+    if (reducedMotion) {
+        Box(modifier = modifier) { content() }
+        return
+    }
 
-    LaunchedEffect(index, reducedMotion) {
-        if (!reducedMotion && !visible) {
-            delay((index.coerceIn(0, 8)) * delayStepMs)
+    var visible by remember(index) { mutableStateOf(false) }
+
+    LaunchedEffect(index) {
+        if (!visible) {
+            val delayMs = (index.coerceIn(0, 8)) * delayStepMs
+            if (delayMs > 0L) delay(delayMs)
             visible = true
         }
     }
 
     val progressState = animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
-        animationSpec = if (reducedMotion) tween(0) else tween(
-            durationMillis = 420,
+        animationSpec = tween(
+            durationMillis = 380,
             easing = BaeumMotion.SilkEasing
         ),
         label = "stagger_entrance_$index"
@@ -247,8 +313,8 @@ fun StaggeredEntrance(
         modifier = modifier.graphicsLayer {
             val progress = progressState.value
             alpha = progress
-            translationY = (1f - progress) * 18.dp.toPx()
-            val sc = 0.978f + (0.022f * progress)
+            translationY = (1f - progress) * 16.dp.toPx()
+            val sc = 0.982f + (0.018f * progress)
             scaleX = sc
             scaleY = sc
         }

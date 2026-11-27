@@ -429,17 +429,21 @@ class DataStoreUserPreferencesRepository(
     companion object {
         private val DAY_KEY_REGEX = Regex("^\\d{4}-\\d{2}-\\d{2}$")
 
+        private val STRICT_DAY_KEY_FORMAT: ThreadLocal<SimpleDateFormat> = object : ThreadLocal<SimpleDateFormat>() {
+            override fun initialValue(): SimpleDateFormat =
+                SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false }
+        }
+
         fun create(context: Context): DataStoreUserPreferencesRepository =
             DataStoreUserPreferencesRepository(context.applicationContext.baeumDataStore)
 
         fun todayDayKey(epochMs: Long = System.currentTimeMillis()): String {
-            val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-            return fmt.format(Date(epochMs))
+            return STRICT_DAY_KEY_FORMAT.get()!!.format(Date(epochMs))
         }
 
         fun previousDayKey(dayKey: String): String {
             if (!DAY_KEY_REGEX.matches(dayKey)) return ""
-            val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { isLenient = false }
+            val fmt = STRICT_DAY_KEY_FORMAT.get()!!
             val parsed = runCatching { fmt.parse(dayKey) }.getOrNull() ?: return ""
             val cal = Calendar.getInstance().apply {
                 time = parsed

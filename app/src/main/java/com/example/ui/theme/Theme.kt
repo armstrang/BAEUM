@@ -9,6 +9,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -131,50 +132,53 @@ fun BaeumTheme(
     }
 
     val colorScheme = if (useDark) SeoulNightColorScheme else SeoulMorningColorScheme
-    val extendedColors = if (useDark) {
-        BaeumExtendedColors(
-            mint = SeoulMint,
-            cherryPink = SeoulCherryPink,
-            gold = SeoulGold,
-            cardBorder = SeoulBorderDark,
-            elevatedSurface = SeoulElevated,
-            glassFillTop = Color(0xF519223B),
-            glassFillBottom = Color(0xF2121A2E),
-            glassHighlightBorder = SeoulSpecularRimDark,
-            buttonGradientStart = SeoulLavenderBright,
-            buttonGradientEnd = SeoulLavenderDim,
-            ambientGlowPrimary = Color(0x267B6BE6),
-            ambientGlowSecondary = Color(0x1867D8CB),
-            ambientGlowGold = Color(0x14F3C77B),
-            dockSurface = Color(0xF512192D),
-            isDark = true,
-            reducedMotion = reducedMotion
-        )
-    } else {
-        BaeumExtendedColors(
-            mint = MorningMint,
-            cherryPink = MorningCherryPink,
-            gold = MorningGold,
-            cardBorder = MorningBorderLight,
-            elevatedSurface = MorningSubtle,
-            glassFillTop = Color(0xFFFFFFFF),
-            glassFillBottom = Color(0xFFFBFBFF),
-            glassHighlightBorder = MorningSpecularRimLight,
-            buttonGradientStart = MorningPrimary,
-            buttonGradientEnd = MorningPrimaryDeep,
-            ambientGlowPrimary = Color(0x145B46C8),
-            ambientGlowSecondary = Color(0x0E0B7469),
-            ambientGlowGold = Color(0x0C8C5300),
-            dockSurface = Color(0xFCFFFFFF),
-            isDark = false,
-            reducedMotion = reducedMotion
-        )
+    val extendedColors = remember(useDark, reducedMotion) {
+        if (useDark) {
+            BaeumExtendedColors(
+                mint = SeoulMint,
+                cherryPink = SeoulCherryPink,
+                gold = SeoulGold,
+                cardBorder = SeoulBorderDark,
+                elevatedSurface = SeoulElevated,
+                glassFillTop = Color(0xF519223B),
+                glassFillBottom = Color(0xF2121A2E),
+                glassHighlightBorder = SeoulSpecularRimDark,
+                buttonGradientStart = SeoulLavenderBright,
+                buttonGradientEnd = SeoulLavenderDim,
+                ambientGlowPrimary = Color(0x267B6BE6),
+                ambientGlowSecondary = Color(0x1867D8CB),
+                ambientGlowGold = Color(0x14F3C77B),
+                dockSurface = Color(0xF512192D),
+                isDark = true,
+                reducedMotion = reducedMotion
+            )
+        } else {
+            BaeumExtendedColors(
+                mint = MorningMint,
+                cherryPink = MorningCherryPink,
+                gold = MorningGold,
+                cardBorder = MorningBorderLight,
+                elevatedSurface = MorningSubtle,
+                glassFillTop = Color(0xFFFFFFFF),
+                glassFillBottom = Color(0xFFFBFBFF),
+                glassHighlightBorder = MorningSpecularRimLight,
+                buttonGradientStart = MorningPrimary,
+                buttonGradientEnd = MorningPrimaryDeep,
+                ambientGlowPrimary = Color(0x145B46C8),
+                ambientGlowSecondary = Color(0x0E0B7469),
+                ambientGlowGold = Color(0x0C8C5300),
+                dockSurface = Color(0xFCFFFFFF),
+                isDark = false,
+                reducedMotion = reducedMotion
+            )
+        }
     }
+    val typography = remember(fontScale) { buildBaeumTypography(fontScale) }
 
     CompositionLocalProvider(LocalBaeumColors provides extendedColors) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = buildBaeumTypography(fontScale),
+            typography = typography,
             shapes = BaeumShapes,
             content = content
         )

@@ -91,11 +91,21 @@ fun HangulWritingScreen(
     val onSecondaryColor = MaterialTheme.colorScheme.onSecondary
     val userInkColor = MaterialTheme.colorScheme.onSurface
     val gridColor = extended.cardBorder.copy(alpha = 0.45f)
-    val badgeTextStyle = TextStyle(
-        color = onSecondaryColor,
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Bold
-    )
+    val badgeTextStyle = remember(onSecondaryColor) {
+        TextStyle(
+            color = onSecondaryColor,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+    val measuredBadges = remember(currentChar.glyph, badgeTextStyle) {
+        List(currentChar.guideStrokes.size) { idx ->
+            textMeasurer.measure(text = "${idx + 1}", style = badgeTextStyle)
+        }
+    }
+    val dashEffect = remember { PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f) }
+    val guideStrokeStyle = remember { Stroke(width = 18f, cap = StrokeCap.Round, join = StrokeJoin.Round) }
+    val userInkStrokeStyle = remember { Stroke(width = 16f, cap = StrokeCap.Round, join = StrokeJoin.Round) }
 
     fun clearCanvas() {
         strokes.clear()
@@ -105,8 +115,12 @@ fun HangulWritingScreen(
 
     fun triggerDemonstration() {
         scope.launch {
-            demoProgress.snapTo(0f)
-            demoProgress.animateTo(1f, animationSpec = tween(durationMillis = 1200))
+            if (extended.reducedMotion) {
+                demoProgress.snapTo(1f)
+            } else {
+                demoProgress.snapTo(0f)
+                demoProgress.animateTo(1f, animationSpec = tween(durationMillis = 1200))
+            }
         }
     }
 
@@ -165,13 +179,14 @@ fun HangulWritingScreen(
             Spacer(modifier = Modifier.height(14.dp))
 
             // Interactive Drawing Grid Canvas (scroll-locked while actively drawing)
+            val canvasShape = remember { RoundedCornerShape(24.dp) }
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .clip(RoundedCornerShape(24.dp))
+                    .clip(canvasShape)
                     .onSizeChanged { canvasWidthPx = it.width.toFloat() },
-                shape = RoundedCornerShape(24.dp),
+                shape = canvasShape,
                 color = MaterialTheme.colorScheme.surface,
                 border = BorderStroke(1.dp, extended.cardBorder)
             ) {
@@ -225,7 +240,6 @@ fun HangulWritingScreen(
                         val h = size.height
 
                         // 4x4 subtle guide grid
-                        val dash = PathEffect.dashPathEffect(floatArrayOf(10f, 10f), 0f)
                         for (i in 1..3) {
                             val x = w * (i / 4f)
                             val y = h * (i / 4f)
@@ -234,14 +248,14 @@ fun HangulWritingScreen(
                                 start = Offset(x, 0f),
                                 end = Offset(x, h),
                                 strokeWidth = if (i == 2) 2f else 1f,
-                                pathEffect = if (i == 2) dash else null
+                                pathEffect = if (i == 2) dashEffect else null
                             )
                             drawLine(
                                 color = gridColor,
                                 start = Offset(0f, y),
                                 end = Offset(w, y),
                                 strokeWidth = if (i == 2) 2f else 1f,
-                                pathEffect = if (i == 2) dash else null
+                                pathEffect = if (i == 2) dashEffect else null
                             )
                         }
 
@@ -249,26 +263,24 @@ fun HangulWritingScreen(
                         if (!isFreeWriting) {
                             val totalStrokes = currentChar.guideStrokes.size.coerceAtLeast(1)
                             val activeFloat = demoProgress.value * totalStrokes
+                            val guideColor = primaryColor.copy(alpha = 0.42f)
+                            val badgeRadius = 14.dp.toPx().coerceAtMost(24f)
                             currentChar.guideStrokes.forEachIndexed { idx, guide ->
                                 val strokeFraction = (activeFloat - idx).coerceIn(0f, 1f)
                                 if (strokeFraction > 0f && guide.size >= 2) {
                                     val path = buildPartialPath(guide, w, h, strokeFraction)
                                     drawPath(
                                         path = path,
-                                        color = primaryColor.copy(alpha = 0.42f),
-                                        style = Stroke(width = 18f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                                        color = guideColor,
+                                        style = guideStrokeStyle
                                     )
                                     val startPt = Offset(guide.first().x * w, guide.first().y * h)
-                                    val badgeRadius = 14.dp.toPx().coerceAtMost(24f)
                                     drawCircle(
                                         color = extended.mint,
                                         radius = badgeRadius,
                                         center = startPt
                                     )
-                                    val measured = textMeasurer.measure(
-                                        text = "${idx + 1}",
-                                        style = badgeTextStyle
-                                    )
+                                    val measured = measuredBadges[idx]
                                     drawText(
                                         textLayoutResult = measured,
                                         topLeft = Offset(
@@ -280,20 +292,26 @@ fun HangulWritingScreen(
                             }
                         }
 
-                        // User Drawn Strokes
-                        (strokes + listOf(currentStroke)).forEach { pts ->
-                            if (pts.size >= 2) {
-                                val p = Path().apply {
-                                    moveTo(pts.first().x, pts.first().y)
-                                    pts.drop(1).forEach { lineTo(it.x, it.y) }
+                        // User Drawn Strokes (smooth quadratic Bezier midpoint curve for natural brush ink)
+                        fun drawInkStroke(pts: List<Offset>) {
+                            if (pts.size < 2) return
+                            val p = Path().apply {
+                                moveTo(pts[0].x, pts[0].y)
+                                for (i in 1 until pts.lastIndex) {
+                                    val midX = (pts[i].x + pts[i + 1].x) * 0.5f
+                                    val midY = (pts[i].y + pts[i + 1].y) * 0.5f
+                                    quadraticTo(pts[i].x, pts[i].y, midX, midY)
                                 }
-                                drawPath(
-                                    path = p,
-                                    color = userInkColor,
-                                    style = Stroke(width = 16f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-                                )
+                                lineTo(pts.last().x, pts.last().y)
                             }
+                            drawPath(
+                                path = p,
+                                color = userInkColor,
+                                style = userInkStrokeStyle
+                            )
                         }
+                        for (s in strokes) drawInkStroke(s)
+                        if (currentStroke.size >= 2) drawInkStroke(currentStroke)
                     }
                 }
             }

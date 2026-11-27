@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -21,17 +22,24 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,6 +54,7 @@ import com.example.ui.components.BaeumGlassStyle
 import com.example.ui.components.CircularGoalRing
 import com.example.ui.components.ProgressBarSlim
 import com.example.ui.components.SeoulCard
+import com.example.ui.theme.BaeumMotion
 import com.example.ui.theme.LocalBaeumColors
 import com.example.ui.theme.StaggeredEntrance
 import com.example.ui.theme.bText
@@ -94,7 +103,7 @@ fun AnalyticsScreen(
         val map = dailyStats.associateBy { it.dayKey }
         val cal = Calendar.getInstance()
         cal.add(Calendar.DAY_OF_YEAR, -27)
-        (0 until 28).map {
+        FloatArray(28) {
             val key = BaeumRepository.localDayKey(cal.timeInMillis)
             cal.add(Calendar.DAY_OF_YEAR, 1)
             val stat = map[key]
@@ -109,11 +118,24 @@ fun AnalyticsScreen(
         }
     }
 
+    // Single-pass O(N) aggregation over 6,600+ vocab items (zero intermediate lists)
     val curriculumStats = remember(allVocab) {
-        allVocab.groupBy { it.curriculum }.mapValues { (_, list) ->
-            list.count { it.reps > 0 } to list.size
+        val counts = HashMap<String, IntArray>(6)
+        for (item in allVocab) {
+            val pair = counts.getOrPut(item.curriculum) { IntArray(2) }
+            pair[1]++
+            if (item.reps > 0) pair[0]++
         }
+        counts.mapValues { (_, arr) -> arr[0] to arr[1] }
     }
+
+    var chartRevealed by remember { mutableStateOf(extended.reducedMotion) }
+    LaunchedEffect(Unit) { chartRevealed = true }
+    val chartRevealState = animateFloatAsState(
+        targetValue = if (chartRevealed) 1f else 0f,
+        animationSpec = if (extended.reducedMotion) tween(0) else tween(680, easing = BaeumMotion.SilkEasing),
+        label = "analytics_curve_reveal"
+    )
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -229,7 +251,7 @@ fun AnalyticsScreen(
             }
         }
 
-        // Smooth Silk Bezier Vocabulary Growth Chart (honest empty state when <2 data points)
+        // Smooth Silk Bezier Vocabulary Growth Chart (cached Path + Brush with silk reveal)
         StaggeredEntrance(index = 3) {
             BaeumGlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -252,61 +274,62 @@ fun AnalyticsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
-                    val maxVal = growthSeries.max().coerceAtLeast(1)
+                    val maxVal = remember(growthSeries) { growthSeries.max().coerceAtLeast(1) }
                     val mint = extended.mint
-                    Canvas(
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(104.dp)
-                    ) {
-                        val padY = 12f
-                        val usableH = size.height - padY * 2f
-                        val stepX = size.width / (growthSeries.size - 1).coerceAtLeast(1)
-                        val pts = growthSeries.mapIndexed { idx, value ->
-                            Offset(
-                                x = idx * stepX,
-                                y = size.height - padY - ((value.toFloat() / maxVal) * usableH)
-                            )
-                        }
+                            .drawWithCache {
+                                val padY = 12f
+                                val usableH = size.height - padY * 2f
+                                val stepX = size.width / (growthSeries.size - 1).coerceAtLeast(1)
+                                val pts = growthSeries.mapIndexed { idx, value ->
+                                    Offset(
+                                        x = idx * stepX,
+                                        y = size.height - padY - ((value.toFloat() / maxVal) * usableH)
+                                    )
+                                }
+                                val linePath = Path().apply {
+                                    moveTo(pts.first().x, pts.first().y)
+                                    for (i in 0 until pts.lastIndex) {
+                                        val p0 = pts[i]
+                                        val p1 = pts[i + 1]
+                                        val midX = (p0.x + p1.x) / 2f
+                                        cubicTo(midX, p0.y, midX, p1.y, p1.x, p1.y)
+                                    }
+                                }
+                                val fillPath = Path().apply {
+                                    addPath(linePath)
+                                    lineTo(pts.last().x, size.height)
+                                    lineTo(pts.first().x, size.height)
+                                    close()
+                                }
+                                val fillBrush = Brush.verticalGradient(
+                                    colors = listOf(primary.copy(alpha = 0.28f), Color.Transparent)
+                                )
+                                val lineBrush = Brush.horizontalGradient(listOf(primary, mint))
+                                val lineStroke = Stroke(width = 5.5f, cap = StrokeCap.Round)
+                                val haloColor = primary.copy(alpha = 0.28f)
 
-                        val linePath = Path().apply {
-                            moveTo(pts.first().x, pts.first().y)
-                            for (i in 0 until pts.lastIndex) {
-                                val p0 = pts[i]
-                                val p1 = pts[i + 1]
-                                val midX = (p0.x + p1.x) / 2f
-                                cubicTo(midX, p0.y, midX, p1.y, p1.x, p1.y)
+                                onDrawBehind {
+                                    val revealW = size.width * chartRevealState.value
+                                    clipRect(right = revealW) {
+                                        drawPath(path = fillPath, brush = fillBrush)
+                                        drawPath(path = linePath, brush = lineBrush, style = lineStroke)
+                                        for (p in pts) {
+                                            drawCircle(color = haloColor, radius = 10f, center = p)
+                                            drawCircle(color = mint, radius = 5f, center = p)
+                                        }
+                                    }
+                                }
                             }
-                        }
-
-                        val fillPath = Path().apply {
-                            addPath(linePath)
-                            lineTo(pts.last().x, size.height)
-                            lineTo(pts.first().x, size.height)
-                            close()
-                        }
-
-                        drawPath(
-                            path = fillPath,
-                            brush = Brush.verticalGradient(
-                                colors = listOf(primary.copy(alpha = 0.28f), Color.Transparent)
-                            )
-                        )
-                        drawPath(
-                            path = linePath,
-                            brush = Brush.horizontalGradient(listOf(primary, mint)),
-                            style = Stroke(width = 5.5f, cap = StrokeCap.Round)
-                        )
-                        pts.forEach { p ->
-                            drawCircle(color = primary.copy(alpha = 0.28f), radius = 10f, center = p)
-                            drawCircle(color = mint, radius = 5f, center = p)
-                        }
-                    }
+                    )
                 }
             }
         }
 
-        // 28-Day Learning Activity Heatmap
+        // 28-Day Learning Activity Heatmap (single GPU-cached Canvas replacing 28 layout Boxes)
         StaggeredEntrance(index = 4) {
             BaeumGlassCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -330,38 +353,57 @@ fun AnalyticsScreen(
                     )
                 }
                 Spacer(modifier = Modifier.height(14.dp))
-                val rows = heatmapLevels.chunked(7)
-                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    rows.forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(7.dp), modifier = Modifier.fillMaxWidth()) {
-                            row.forEach { intensity ->
-                                val cellShape = RoundedCornerShape(8.dp)
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(24.dp)
-                                        .clip(cellShape)
-                                        .background(
-                                            if (intensity == 0f) {
-                                                Brush.verticalGradient(
-                                                    listOf(extended.elevatedSurface.copy(alpha = 0.85f), extended.elevatedSurface.copy(alpha = 0.5f))
-                                                )
-                                            } else {
-                                                Brush.verticalGradient(
-                                                    listOf(primary.copy(alpha = intensity), extended.mint.copy(alpha = intensity * 0.72f))
-                                                )
-                                            }
+                val mintColor = extended.mint
+                val emptyBase = extended.elevatedSurface
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(117.dp) // 4 rows * 24dp + 3 gaps * 7dp
+                        .drawWithCache {
+                            val cols = 7
+                            val rows = 4
+                            val gapPx = 7.dp.toPx()
+                            val cellW = (size.width - gapPx * (cols - 1)) / cols
+                            val cellH = (size.height - gapPx * (rows - 1)) / rows
+                            val corner = CornerRadius(8.dp.toPx(), 8.dp.toPx())
+                            val rimStroke = Stroke(width = 0.75.dp.toPx())
+                            val emptyBrush = Brush.verticalGradient(
+                                listOf(emptyBase.copy(alpha = 0.85f), emptyBase.copy(alpha = 0.50f))
+                            )
+                            val levelBrushes = mapOf(
+                                0.25f to Brush.verticalGradient(listOf(primary.copy(alpha = 0.25f), mintColor.copy(alpha = 0.18f))),
+                                0.45f to Brush.verticalGradient(listOf(primary.copy(alpha = 0.45f), mintColor.copy(alpha = 0.32f))),
+                                0.72f to Brush.verticalGradient(listOf(primary.copy(alpha = 0.72f), mintColor.copy(alpha = 0.52f))),
+                                1.0f to Brush.verticalGradient(listOf(primary, mintColor.copy(alpha = 0.72f)))
+                            )
+
+                            onDrawBehind {
+                                for (idx in 0 until 28) {
+                                    val r = idx / cols
+                                    val c = idx % cols
+                                    val left = c * (cellW + gapPx)
+                                    val top = r * (cellH + gapPx)
+                                    val intensity = heatmapLevels[idx]
+                                    val brush = if (intensity <= 0f) emptyBrush else (levelBrushes[intensity] ?: emptyBrush)
+                                    drawRoundRect(
+                                        brush = brush,
+                                        topLeft = Offset(left, top),
+                                        size = Size(cellW, cellH),
+                                        cornerRadius = corner
+                                    )
+                                    if (intensity > 0f) {
+                                        drawRoundRect(
+                                            color = Color.White.copy(alpha = 0.22f * intensity),
+                                            topLeft = Offset(left, top),
+                                            size = Size(cellW, cellH),
+                                            cornerRadius = corner,
+                                            style = rimStroke
                                         )
-                                        .then(
-                                            if (intensity > 0f) {
-                                                Modifier.border(0.75.dp, Color.White.copy(alpha = 0.22f * intensity), cellShape)
-                                            } else Modifier
-                                        )
-                                )
+                                    }
+                                }
                             }
                         }
-                    }
-                }
+                )
             }
         }
 

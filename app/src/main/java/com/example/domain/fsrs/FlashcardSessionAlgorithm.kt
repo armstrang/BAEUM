@@ -34,8 +34,12 @@ object FlashcardSessionAlgorithm {
      * Higher score = higher immediate priority in the study queue.
      */
     fun computeReviewUrgency(card: VocabEntity, nowEpochMs: Long = System.currentTimeMillis()): Double {
-        val snap = card.toFsrsSnapshot()
-        val r = FsrsScheduler.currentRetrievability(snap, nowEpochMs)
+        val r = FsrsScheduler.currentRetrievability(
+            reps = card.reps,
+            stability = card.stability,
+            lastReviewEpochMs = card.lastReviewEpochMs,
+            nowEpochMs = nowEpochMs
+        )
         val forgettingRisk = (1.0 - r).coerceIn(0.0, 1.0) // Highest when R approaches 0
 
         val elapsedDays = if (card.lastReviewEpochMs > 0L) {
@@ -53,6 +57,8 @@ object FlashcardSessionAlgorithm {
 
     /**
      * Builds an adaptive, interleaved flashcard queue from the filtered vocabulary pool.
+     * Uses Schwartzian urgency caching and progression-bucket frontier selection so
+     * 6,600+ card banks resolve in O(N) without full sorting of untouched NEW cards.
      */
     fun buildAdaptiveDeck(
         pool: List<VocabEntity>,
@@ -66,50 +72,85 @@ object FlashcardSessionAlgorithm {
 
         val endOfToday = nowEpochMs + HALF_DAY_MS
         val targetSize = if (dueOnly) maxSessionSize.coerceAtLeast(25) else maxSessionSize.coerceIn(10, dailyGoal.coerceIn(15, 25))
+        val learningStageName = CardMemoryStage.LEARNING.name
 
-        // 1. Due or learning cards sorted by highest forgetting urgency
-        val dueReviews = pool
-            .filter { it.reps > 0 && (it.dueEpochMs in 1..endOfToday || it.stage == CardMemoryStage.LEARNING.name) }
-            .sortedByDescending { computeReviewUrgency(it, nowEpochMs) }
+        // Single-pass partition into due reviews, quiz-weak reviews, and progression-bucketed new cards
+        val dueScored = ArrayList<Pair<VocabEntity, Double>>()
+        val weakScored = ArrayList<Pair<VocabEntity, Double>>()
+        val newBuckets = if (dueOnly) null else HashMap<Int, ArrayList<VocabEntity>>(12)
 
-        if (dueOnly) {
-            return dueReviews.take(targetSize)
+        for (card in pool) {
+            val isDueOrLearning = card.reps > 0 && (card.dueEpochMs in 1..endOfToday || card.stage == learningStageName)
+            if (isDueOrLearning) {
+                dueScored.add(card to computeReviewUrgency(card, nowEpochMs))
+            } else if (!dueOnly) {
+                val isQuizWeak = card.quizWrongCount > card.quizCorrectCount || card.lapses >= 2
+                if (isQuizWeak) {
+                    weakScored.add(card to computeReviewUrgency(card, nowEpochMs))
+                } else if (card.reps == 0) {
+                    val orderKey = LEVEL_PROGRESSION_ORDER[card.subCategory] ?: 100
+                    newBuckets!!.getOrPut(orderKey) { ArrayList() }.add(card)
+                }
+            }
         }
 
-        // 2. Weak cards missed in quizzes even if not strictly due yet
-        val dueIds = dueReviews.map { it.id }.toHashSet()
-        val quizWeakCards = pool
-            .filter { it.id !in dueIds && (it.quizWrongCount > it.quizCorrectCount || it.lapses >= 2) }
-            .sortedByDescending { computeReviewUrgency(it, nowEpochMs) }
+        // Precomputed urgency sort (O(k log k) on due cards only, zero comparator recomputation)
+        dueScored.sortByDescending { it.second }
 
-        val reviewBucket = (dueReviews + quizWeakCards).distinctBy { it.id }
+        if (dueOnly) {
+            val limit = minOf(targetSize, dueScored.size)
+            return List(limit) { dueScored[it].first }
+        }
 
-        // 3. New cards ordered along the curriculum frontier (1급 -> 6급) with light local shuffling
-        // so consecutive sessions explore diverse words rather than always repeating alphabetically.
-        val newAll = pool
-            .filter { it.reps == 0 && it.id !in dueIds }
-            .sortedWith(
-                compareBy<VocabEntity> { LEVEL_PROGRESSION_ORDER[it.subCategory] ?: 100 }
-                    .thenByDescending { if (it.isBookmarked) 1 else 0 }
-                    .thenBy { it.id }
-            )
+        weakScored.sortByDescending { it.second }
 
-        // Take a frontier window of up to 4x needed new cards and shuffle within that frontier
-        val reviewQuota = if (reviewBucket.isNotEmpty()) {
-            minOf(reviewBucket.size, (targetSize * 0.70).toInt().coerceAtLeast(1))
+        val reviewBucketSize = dueScored.size + weakScored.size
+        val reviewQuota = if (reviewBucketSize > 0) {
+            minOf(reviewBucketSize, (targetSize * 0.70).toInt().coerceAtLeast(1))
         } else 0
         val newQuota = (targetSize - reviewQuota).coerceAtLeast(0)
 
-        val chosenReviews = reviewBucket.take(reviewQuota)
-        val frontierWindow = newAll.take((newQuota * 4).coerceAtLeast(24)).shuffled(rng)
-        val chosenNew = frontierWindow.take(newQuota)
+        val chosenReviews = ArrayList<VocabEntity>(reviewQuota)
+        val seenIds = HashSet<String>(reviewQuota * 2 + 1)
+        for (pair in dueScored) {
+            if (chosenReviews.size >= reviewQuota) break
+            if (seenIds.add(pair.first.id)) chosenReviews.add(pair.first)
+        }
+        for (pair in weakScored) {
+            if (chosenReviews.size >= reviewQuota) break
+            if (seenIds.add(pair.first.id)) chosenReviews.add(pair.first)
+        }
 
-        // 4. Interleave new cards smoothly among review cards (ratio ~2 review : 1 new)
+        // Pull only the lowest curriculum frontier buckets needed to populate the shuffle window
+        val frontierTarget = (newQuota * 4).coerceAtLeast(24)
+        val frontierWindow = ArrayList<VocabEntity>(frontierTarget)
+        if (newQuota > 0 && !newBuckets.isNullOrEmpty()) {
+            val sortedOrders = newBuckets.keys.sorted()
+            val comparator = compareByDescending<VocabEntity> { if (it.isBookmarked) 1 else 0 }
+                .thenBy { it.id }
+            for (order in sortedOrders) {
+                if (frontierWindow.size >= frontierTarget) break
+                val bucket = newBuckets[order] ?: continue
+                bucket.sortWith(comparator)
+                val remaining = frontierTarget - frontierWindow.size
+                val takeCount = minOf(remaining, bucket.size)
+                for (i in 0 until takeCount) {
+                    frontierWindow.add(bucket[i])
+                }
+            }
+        }
+        frontierWindow.shuffle(rng)
+        val chosenNew = if (newQuota > 0) frontierWindow.take(newQuota) else emptyList()
+
+        // Interleave new cards smoothly among review cards (ratio ~2 review : 1 new)
         val interleaved = interleave(chosenReviews, chosenNew)
 
         // Fallback if pool has only future-scheduled cards
         if (interleaved.isEmpty()) {
-            return pool.sortedByDescending { computeReviewUrgency(it, nowEpochMs) }.take(targetSize)
+            val scoredFallback = pool.map { it to computeReviewUrgency(it, nowEpochMs) }
+                .sortedByDescending { it.second }
+            val limit = minOf(targetSize, scoredFallback.size)
+            return List(limit) { scoredFallback[it].first }
         }
 
         return interleaved

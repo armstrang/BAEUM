@@ -241,6 +241,14 @@ fun HomeDashboardScreen(
     val skyPillBorder by animateColorAsState(targetPalette.skyPillBorder, tween(colorMs), label = "hero_sky_pill_border")
     val skyPillContent by animateColorAsState(targetPalette.skyPillContent, tween(colorMs), label = "hero_sky_pill_content")
 
+    val heroShape = remember { RoundedCornerShape(26.dp) }
+    val heroBorderBrush = remember(activeSky) { Brush.linearGradient(targetPalette.borderColors) }
+    val heroScrimBrush = remember(activeSky) { Brush.horizontalGradient(colors = targetPalette.scrimColors) }
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter
+    ) {
     Column(
         modifier = Modifier
             .widthIn(max = 680.dp)
@@ -260,7 +268,6 @@ fun HomeDashboardScreen(
 
         // Bespoke Living Seoul Sky Hero Card (Morning / Day / Night) with smooth Crossfade & Parallax
         StaggeredEntrance(index = 1) {
-            val heroShape = RoundedCornerShape(26.dp)
             val heroShadow = when {
                 activeSky == SeoulSkyAtmosphere.NIGHT -> Color(0x80000000)
                 extended.isDark -> Color(0x55000000)
@@ -274,7 +281,7 @@ fun HomeDashboardScreen(
                     .tactileClickable(pressedScale = 0.985f, onClick = onReviewDue)
                     .border(
                         width = 1.dp,
-                        brush = Brush.linearGradient(targetPalette.borderColors),
+                        brush = heroBorderBrush,
                         shape = heroShape
                     )
             ) {
@@ -305,7 +312,7 @@ fun HomeDashboardScreen(
                 Box(
                     modifier = Modifier
                         .matchParentSize()
-                        .background(Brush.horizontalGradient(colors = targetPalette.scrimColors))
+                        .background(heroScrimBrush)
                 )
 
                 Column(
@@ -679,11 +686,15 @@ fun HomeDashboardScreen(
                         AnimatedContent(
                             targetState = pt,
                             transitionSpec = {
-                                (fadeIn(tween(220, easing = BaeumMotion.SilkEasing)) +
-                                    slideInVertically(tween(220, easing = BaeumMotion.SilkEasing)) { it / 4 })
-                                    .togetherWith(
-                                        fadeOut(tween(150)) + slideOutVertically(tween(150)) { -it / 4 }
-                                    )
+                                if (extended.reducedMotion) {
+                                    fadeIn(tween(0)) togetherWith fadeOut(tween(0))
+                                } else {
+                                    (fadeIn(tween(220, easing = BaeumMotion.SilkEasing)) +
+                                        slideInVertically(tween(220, easing = BaeumMotion.SilkEasing)) { it / 4 })
+                                        .togetherWith(
+                                            fadeOut(tween(150)) + slideOutVertically(tween(150)) { -it / 4 }
+                                        )
+                                }
                             },
                             label = "home_forecast_day_detail"
                         ) { activeDay ->
@@ -731,6 +742,7 @@ fun HomeDashboardScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
     }
+    }
 }
 
 @Composable
@@ -742,6 +754,9 @@ private fun QuickStudioPebble(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val iconBgBrush = remember(accent) {
+        Brush.verticalGradient(listOf(accent.copy(alpha = 0.24f), accent.copy(alpha = 0.10f)))
+    }
     BaeumGlassCard(
         modifier = modifier.testTag(testTag),
         style = BaeumGlassStyle.SUBTLE,
@@ -763,14 +778,7 @@ private fun QuickStudioPebble(
                         spotColor = accent.copy(alpha = 0.35f)
                     )
                     .clip(CircleShape)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                accent.copy(alpha = 0.24f),
-                                accent.copy(alpha = 0.10f)
-                            )
-                        )
-                    )
+                    .background(iconBgBrush)
                     .border(1.dp, accent.copy(alpha = 0.42f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {

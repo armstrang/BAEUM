@@ -47,6 +47,27 @@ data class QuizQuestion(
 
 object AdaptiveQuizEngine {
 
+    private val WHITESPACE_REGEX = Regex("\\s+")
+
+    private val BATCHIM_SOUNDS = mapOf(
+        'ㄱ' to "[ㄱ / -k]", 'ㅋ' to "[ㄱ / -k]", 'ㄲ' to "[ㄱ / -k]",
+        'ㄴ' to "[ㄴ / -n]",
+        'ㄷ' to "[ㄷ / -t]", 'ㅅ' to "[ㄷ / -t]", 'ㅆ' to "[ㄷ / -t]",
+        'ㅈ' to "[ㄷ / -t]", 'ㅊ' to "[ㄷ / -t]", 'ㅌ' to "[ㄷ / -t]", 'ㅎ' to "[ㄷ / -t]",
+        'ㄹ' to "[ㄹ / -l]",
+        'ㅁ' to "[ㅁ / -m]",
+        'ㅂ' to "[ㅂ / -p]", 'ㅍ' to "[ㅂ / -p]",
+        'ㅇ' to "[ㅇ / -ng]"
+    )
+    private val ALL_BATCHIM_SOUND_LABELS = listOf("[ㄱ / -k]", "[ㄴ / -n]", "[ㄷ / -t]", "[ㄹ / -l]", "[ㅁ / -m]", "[ㅂ / -p]", "[ㅇ / -ng]")
+    private val COMPLEX_BATCHIM_CHARS = setOf('ㅋ', 'ㄲ', 'ㅅ', 'ㅆ', 'ㅈ', 'ㅊ', 'ㅌ', 'ㅎ', 'ㅍ')
+
+    private class ScoredCandidate(
+        val item: VocabEntity,
+        val priority: Int,
+        val tieBreak: Int
+    )
+
     /**
      * Generates non-duplicated, difficulty-scaffolded questions prioritizing weak vocabulary
      * (high quizWrongCount, FSRS lapses, low current Retrievability, or due reviews),
@@ -63,38 +84,22 @@ object AdaptiveQuizEngine {
         rng: Random = Random.Default
     ): List<QuizQuestion> {
         if (mode == QuizMode.GRAMMAR) {
-            return buildGrammarQuestions(maxCount, focusGrammarId, translationLang)
+            return buildGrammarQuestions(maxCount, focusGrammarId, translationLang, rng)
         }
         if (allVocab.size < 4) return emptyList()
 
         val now = System.currentTimeMillis()
-
-        // Rank by composite adaptive priority: quiz errors + lapses + FSRS forgetting risk + pathway fit
-        val prioritized = allVocab
-            .map { item ->
-                val snap = item.toFsrsSnapshot()
-                val forgettingRisk = if (item.reps > 0) {
-                    ((1.0 - FsrsScheduler.currentRetrievability(snap, now)) * 4.0).toInt()
-                } else 0
-                val weakness = item.quizWrongCount * 4 + item.lapses * 3 + forgettingRisk
-                val isDue = if (item.dueEpochMs in 1..now) 3 else 0
-                val pathwayBoost = if (activeCurriculum != null && item.curriculum == activeCurriculum) 1 else 0
-                val priorityScore = weakness + isDue + pathwayBoost
-                Triple(item, priorityScore, rng.nextInt())
-            }
-            .sortedWith(
-                compareByDescending<Triple<VocabEntity, Int, Int>> { it.second }
-                    .thenBy { it.first.reps }
-                    .thenBy { it.third }
-            )
-            .map { it.first }
-
-        val pool = if (weakOnly) {
-            val weak = prioritized.filter { it.quizWrongCount > 0 || it.lapses > 0 || it.dueEpochMs in 1..now }
-            if (weak.size >= 4) weak else prioritized
-        } else {
-            prioritized
-        }
+        // For huge 6,600+ banks, retain only the top adaptive candidates via bounded selection
+        // instead of allocating and sorting 6,600+ FsrsCardSnapshots & Triples.
+        val candidateCap = maxOf(maxCount * 32, 256)
+        val pool = selectPrioritizedCandidates(
+            allVocab = allVocab,
+            nowEpochMs = now,
+            weakOnly = weakOnly,
+            activeCurriculum = activeCurriculum,
+            limit = candidateCap,
+            rng = rng
+        )
 
         val rawQuestions = when (mode) {
             QuizMode.RECALL -> buildRecallQuestions(pool, allVocab, translationLang, maxCount, rng)
@@ -102,7 +107,7 @@ object AdaptiveQuizEngine {
             QuizMode.LISTENING -> buildListeningQuestions(pool, allVocab, translationLang, maxCount, rng)
             QuizMode.BATCHIM -> buildBatchimQuestions(pool, translationLang, maxCount, rng)
             QuizMode.SENTENCE -> buildSentenceQuestions(pool, allVocab, translationLang, maxCount, rng)
-            QuizMode.GRAMMAR -> buildGrammarQuestions(maxCount, focusGrammarId, translationLang)
+            QuizMode.GRAMMAR -> buildGrammarQuestions(maxCount, focusGrammarId, translationLang, rng)
             QuizMode.WRITING -> buildWritingQuestions(pool, translationLang, maxCount)
             QuizMode.CONJUGATION -> buildConjugationQuestions(pool, allVocab, translationLang, maxCount, rng)
             QuizMode.MIXED -> {
@@ -113,7 +118,7 @@ object AdaptiveQuizEngine {
                 combined += buildListeningQuestions(offsetPool.drop(3), allVocab, translationLang, 1, rng)
                 combined += buildBatchimQuestions(offsetPool.drop(4), translationLang, 1, rng)
                 combined += buildSentenceQuestions(offsetPool.drop(5), allVocab, translationLang, 1, rng)
-                combined += buildGrammarQuestions(1, null, translationLang)
+                combined += buildGrammarQuestions(1, null, translationLang, rng)
                 combined += buildConjugationQuestions(offsetPool.drop(6), allVocab, translationLang, 1, rng)
                 combined.distinctBy { it.stimulusText }.take(maxCount)
             }
@@ -121,6 +126,68 @@ object AdaptiveQuizEngine {
 
         // Smooth difficulty scaffolding: warm-up (tier 1) -> core (tier 2) -> challenge (tier 3)
         return rawQuestions.sortedBy { it.difficultyLevel }
+    }
+
+    private fun selectPrioritizedCandidates(
+        allVocab: List<VocabEntity>,
+        nowEpochMs: Long,
+        weakOnly: Boolean,
+        activeCurriculum: String?,
+        limit: Int,
+        rng: Random
+    ): List<VocabEntity> {
+        fun priorityOf(item: VocabEntity): Int {
+            val forgettingRisk = if (item.reps > 0) {
+                val r = FsrsScheduler.currentRetrievability(item.reps, item.stability, item.lastReviewEpochMs, nowEpochMs)
+                ((1.0 - r) * 4.0).toInt()
+            } else 0
+            val weakness = item.quizWrongCount * 4 + item.lapses * 3 + forgettingRisk
+            val isDue = if (item.dueEpochMs in 1..nowEpochMs) 3 else 0
+            val pathwayBoost = if (activeCurriculum != null && item.curriculum == activeCurriculum) 1 else 0
+            return weakness + isDue + pathwayBoost
+        }
+
+        val source = if (weakOnly) {
+            val weak = allVocab.filter { it.quizWrongCount > 0 || it.lapses > 0 || it.dueEpochMs in 1..nowEpochMs }
+            if (weak.size >= 4) weak else allVocab
+        } else {
+            allVocab
+        }
+
+        val comparator = Comparator<ScoredCandidate> { a, b ->
+            val pCmp = b.priority.compareTo(a.priority)
+            if (pCmp != 0) return@Comparator pCmp
+            val rCmp = a.item.reps.compareTo(b.item.reps)
+            if (rCmp != 0) return@Comparator rCmp
+            a.tieBreak.compareTo(b.tieBreak)
+        }
+
+        if (source.size <= limit * 2) {
+            val scored = ArrayList<ScoredCandidate>(source.size)
+            for (item in source) {
+                scored.add(ScoredCandidate(item, priorityOf(item), rng.nextInt()))
+            }
+            scored.sortWith(comparator)
+            return List(minOf(limit, scored.size)) { scored[it].item }
+        }
+
+        // Bounded min-heap (inverted comparator keeps worst element at head for O(N log K) top-K)
+        val minHeap = java.util.PriorityQueue<ScoredCandidate>(limit + 1) { a, b -> comparator.compare(b, a) }
+        for (item in source) {
+            val cand = ScoredCandidate(item, priorityOf(item), rng.nextInt())
+            if (minHeap.size < limit) {
+                minHeap.add(cand)
+            } else {
+                val worst = minHeap.peek()
+                if (worst != null && comparator.compare(cand, worst) < 0) {
+                    minHeap.poll()
+                    minHeap.add(cand)
+                }
+            }
+        }
+        val top = ArrayList<ScoredCandidate>(minHeap)
+        top.sortWith(comparator)
+        return List(top.size) { top[it].item }
     }
 
     /**
@@ -131,7 +198,7 @@ object AdaptiveQuizEngine {
             question.isTypingMode -> LearningScoringEngine.evaluateKoreanTypingAnswer(userAnswer, question.correctAnswer)
             question.isArrangementMode -> {
                 val expectedTokens = question.arrangedTokens
-                val actualTokens = userAnswer.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+                val actualTokens = userAnswer.trim().split(WHITESPACE_REGEX).filter { it.isNotBlank() }
                 val normalizedCorrect = expectedTokens.joinToString(" ").trim()
                 val normalizedActual = actualTokens.joinToString(" ").trim()
                 val isExact = normalizedActual == normalizedCorrect
@@ -380,7 +447,7 @@ object AdaptiveQuizEngine {
             val cleanSentence = vocab.exampleKo.trim()
             if (cleanSentence.isBlank() || cleanSentence in seenSentences) continue
             val rawTokens = cleanSentence
-                .split(Regex("\\s+"))
+                .split(WHITESPACE_REGEX)
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
             if (rawTokens.size !in 3..7) continue
@@ -470,17 +537,8 @@ object AdaptiveQuizEngine {
         rng: Random
     ): List<QuizQuestion> {
         val isId = lang.equals("ID", ignoreCase = true)
-        val batchimSounds = mapOf(
-            'ㄱ' to "[ㄱ / -k]", 'ㅋ' to "[ㄱ / -k]", 'ㄲ' to "[ㄱ / -k]",
-            'ㄴ' to "[ㄴ / -n]",
-            'ㄷ' to "[ㄷ / -t]", 'ㅅ' to "[ㄷ / -t]", 'ㅆ' to "[ㄷ / -t]",
-            'ㅈ' to "[ㄷ / -t]", 'ㅊ' to "[ㄷ / -t]", 'ㅌ' to "[ㄷ / -t]", 'ㅎ' to "[ㄷ / -t]",
-            'ㄹ' to "[ㄹ / -l]",
-            'ㅁ' to "[ㅁ / -m]",
-            'ㅂ' to "[ㅂ / -p]", 'ㅍ' to "[ㅂ / -p]",
-            'ㅇ' to "[ㅇ / -ng]"
-        )
-        val allSoundLabels = listOf("[ㄱ / -k]", "[ㄴ / -n]", "[ㄷ / -t]", "[ㄹ / -l]", "[ㅁ / -m]", "[ㅂ / -p]", "[ㅇ / -ng]")
+        val batchimSounds = BATCHIM_SOUNDS
+        val allSoundLabels = ALL_BATCHIM_SOUND_LABELS
 
         val candidates = ArrayList<Pair<VocabEntity, Char>>(maxCount)
         val usedSyllables = HashSet<Char>()
@@ -524,7 +582,7 @@ object AdaptiveQuizEngine {
             val correctSound = batchimSounds[batchimChar]!!
             val distractors = allSoundLabels.filter { it != correctSound }.shuffled(rng).take(3)
             val options = (distractors + correctSound).shuffled(rng)
-            val diff = if (batchimChar in setOf('ㅋ', 'ㄲ', 'ㅅ', 'ㅆ', 'ㅈ', 'ㅊ', 'ㅌ', 'ㅎ', 'ㅍ')) 2 else 1
+            val diff = if (batchimChar in COMPLEX_BATCHIM_CHARS) 2 else 1
             QuizQuestion(
                 id = "bat_${vocab.id}_$idx",
                 vocabId = vocab.id,
@@ -563,7 +621,7 @@ object AdaptiveQuizEngine {
             if (stem.length < 2 || !target.exampleKo.contains(stem)) continue
 
             val tokenInSentence = target.exampleKo
-                .split(Regex("\\s+"))
+                .split(WHITESPACE_REGEX)
                 .firstOrNull { it.contains(stem) }
                 ?.trimEnd('.', '?', '!', ',')
                 ?: continue
@@ -606,17 +664,22 @@ object AdaptiveQuizEngine {
         return questions
     }
 
-    private fun buildGrammarQuestions(maxCount: Int, focusGrammarId: String?, lang: String = "EN"): List<QuizQuestion> {
+    private fun buildGrammarQuestions(
+        maxCount: Int,
+        focusGrammarId: String?,
+        lang: String = "EN",
+        rng: Random = Random.Default
+    ): List<QuizQuestion> {
         val isId = lang.equals("ID", ignoreCase = true)
         val ordered = if (focusGrammarId != null) {
             val focused = KoreanGrammarSeed.allPatterns.filter { it.id == focusGrammarId }
-            val others = KoreanGrammarSeed.allPatterns.filter { it.id != focusGrammarId }.shuffled()
+            val others = KoreanGrammarSeed.allPatterns.filter { it.id != focusGrammarId }.shuffled(rng)
             focused + others
         } else {
-            KoreanGrammarSeed.allPatterns.shuffled()
+            KoreanGrammarSeed.allPatterns.shuffled(rng)
         }
         return ordered.take(maxCount).map { g ->
-            val options = (g.quizDistractors + g.quizCorrectOption).distinct().shuffled()
+            val options = (g.quizDistractors + g.quizCorrectOption).distinct().shuffled(rng)
             val badge = g.levelBadge.uppercase()
             val diff = when {
                 badge.contains("ADVANCED") -> 3
@@ -677,10 +740,20 @@ object AdaptiveQuizEngine {
     ): List<QuizQuestion> {
         val isId = lang.equals("ID", ignoreCase = true)
         val verbsWithForms = ArrayList<VocabEntity>(maxCount)
+        val seenIds = HashSet<String>(maxCount * 2)
         for (v in pool) {
-            if (v.conjugationsSerialized.isNotBlank() && v.parsedConjugations().size >= 2) {
+            if (v.conjugationsSerialized.isNotBlank() && v.parsedConjugations().size >= 2 && seenIds.add(v.id)) {
                 verbsWithForms.add(v)
                 if (verbsWithForms.size >= maxCount) break
+            }
+        }
+        // Fallback scan if top-K slice had fewer conjugated verbs than requested
+        if (verbsWithForms.size < maxCount && pool.size < allVocab.size) {
+            for (v in allVocab) {
+                if (v.conjugationsSerialized.isNotBlank() && v.parsedConjugations().size >= 2 && seenIds.add(v.id)) {
+                    verbsWithForms.add(v)
+                    if (verbsWithForms.size >= maxCount) break
+                }
             }
         }
         if (verbsWithForms.isEmpty()) return emptyList()
@@ -697,13 +770,17 @@ object AdaptiveQuizEngine {
         return verbsWithForms.mapIndexed { idx, verb ->
             val (diff, pts) = difficultyForVocab(verb)
             val parsedForms = verb.parsedConjugations()
-            val generatedForms = KoreanLinguisticsEngine.buildConjugationsSerialized(verb.hangul, verb.partOfSpeech)
-                .split("||")
-                .mapNotNull { entry ->
-                    val parts = entry.split("::")
-                    if (parts.size == 2) parts[0].trim() to parts[1].trim() else null
-                }
-            val allVerbForms = (parsedForms + generatedForms).distinctBy { it.first }
+            val allVerbForms = if (parsedForms.size >= 4) {
+                parsedForms
+            } else {
+                val generatedForms = KoreanLinguisticsEngine.buildConjugationsSerialized(verb.hangul, verb.partOfSpeech)
+                    .split("||")
+                    .mapNotNull { entry ->
+                        val parts = entry.split("::")
+                        if (parts.size == 2) parts[0].trim() to parts[1].trim() else null
+                    }
+                (parsedForms + generatedForms).distinctBy { it.first }
+            }
             val chosen = parsedForms[idx % parsedForms.size]
             val targetForm = chosen.first
             val targetLabel = chosen.second

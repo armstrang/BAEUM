@@ -82,16 +82,20 @@ fun VocabularyLibraryScreen(
     var activeSubCat by rememberSaveable { mutableStateOf(initialSubCategory) }
 
     val isId = isIndonesian()
-    val statusTabs = listOf(
-        "All" to if (isId) "Semua" else "All",
-        "New" to if (isId) "Baru" else "New",
-        "Learning" to if (isId) "Belajar" else "Learning",
-        "Mastered" to if (isId) "Dikuasai" else "Mastered",
-        "Saved" to if (isId) "Tersimpan" else "Saved"
-    )
+    val statusTabs = remember(isId) {
+        listOf(
+            "All" to if (isId) "Semua" else "All",
+            "New" to if (isId) "Baru" else "New",
+            "Learning" to if (isId) "Belajar" else "Learning",
+            "Mastered" to if (isId) "Dikuasai" else "Mastered",
+            "Saved" to if (isId) "Tersimpan" else "Saved"
+        )
+    }
     val showRom = romanizationMode == RomanizationMode.ALWAYS
 
-    val filtered = remember(allVocab, searchQuery, selectedStatus, activeCurriculum, activeSubCat, translationLang) {
+    val filtered = remember(allVocab, searchQuery, selectedStatus, activeCurriculum, activeSubCat) {
+        val q = searchQuery.trim()
+        val hasQuery = q.isNotEmpty()
         allVocab.filter { word ->
             val matchCur = activeCurriculum == null || word.curriculum == activeCurriculum
             val matchSub = activeSubCat == null || word.subCategory == activeSubCat
@@ -102,8 +106,7 @@ fun VocabularyLibraryScreen(
                 "Saved" -> word.isBookmarked
                 else -> true
             }
-            val q = searchQuery.trim()
-            val matchQuery = q.isEmpty() ||
+            val matchQuery = !hasQuery ||
                 word.hangul.contains(q, ignoreCase = true) ||
                 word.romanization.contains(q, ignoreCase = true) ||
                 word.meaningEn.contains(q, ignoreCase = true) ||
@@ -192,7 +195,7 @@ fun VocabularyLibraryScreen(
             }
 
             if (activeCurriculum == null || activeCurriculum == CurriculumPathway.TOPIK) {
-                val topikLevels = listOf("1급", "2급", "3급", "4급", "5급", "6급")
+                val topikLevels = remember { listOf("1급", "2급", "3급", "4급", "5급", "6급") }
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(
                     modifier = Modifier
@@ -282,14 +285,18 @@ fun VocabularyLibraryScreen(
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                item {
+                item(key = "vocab_study_cta", contentType = "cta") {
                     BaeumSecondaryButton(
                         text = bText("Study these ${filtered.size} words as Flashcards", "Pelajari ${filtered.size} kata ini di Flashcard"),
                         onClick = { onStudyFilteredCards(activeCurriculum, activeSubCat) },
                         testTag = "vocab_study_flashcards_button"
                     )
                 }
-                items(filtered, key = { it.id }) { word ->
+                items(
+                    items = filtered,
+                    key = { it.id },
+                    contentType = { "vocab_card" }
+                ) { word ->
                     SeoulCard(
                         modifier = Modifier
                             .fillMaxWidth()

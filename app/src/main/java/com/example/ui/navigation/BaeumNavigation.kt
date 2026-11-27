@@ -3,7 +3,6 @@ package com.example.ui.navigation
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -867,6 +866,9 @@ private fun BaeumMainShell(
  * with hairline beveled border, spring-gliding active capsule using draw-phase `graphicsLayer`,
  * and guaranteed >= 54dp touch targets.
  */
+private val DockOuterShape = RoundedCornerShape(28.dp)
+private val DockPillShape = RoundedCornerShape(22.dp)
+
 @Composable
 private fun SeoulFloatingGlassDock(
     tabs: List<TopLevelTab>,
@@ -875,10 +877,56 @@ private fun SeoulFloatingGlassDock(
     onSelectTab: (TopLevelTab) -> Unit
 ) {
     val extended = LocalBaeumColors.current
+    val primary = MaterialTheme.colorScheme.primary
     val density = LocalDensity.current
-    val dockShape = RoundedCornerShape(28.dp)
     val shadowTint = if (extended.isDark) Color(0x88000000) else Color(0x28192138)
     val selectedIndex = tabs.indexOfFirst { isSelected(it) || currentDestinationRoute == it.route }.coerceAtLeast(0)
+
+    val dockFillBrush = remember(extended.isDark, extended.dockSurface, extended.glassFillBottom) {
+        Brush.verticalGradient(
+            if (extended.isDark) {
+                listOf(extended.dockSurface, extended.glassFillBottom.copy(alpha = 0.98f))
+            } else {
+                listOf(Color(0xFFFFFFFF), Color(0xFFF8F7FD))
+            }
+        )
+    }
+    val dockBorderBrush = remember(extended.isDark, extended.glassHighlightBorder, extended.cardBorder, primary) {
+        Brush.linearGradient(
+            if (extended.isDark) {
+                listOf(
+                    extended.glassHighlightBorder,
+                    extended.cardBorder.copy(alpha = 0.60f),
+                    extended.glassHighlightBorder.copy(alpha = 0.25f)
+                )
+            } else {
+                listOf(
+                    extended.cardBorder,
+                    extended.cardBorder.copy(alpha = 0.85f),
+                    primary.copy(alpha = 0.25f)
+                )
+            }
+        )
+    }
+    val pillFillBrush = remember(extended.isDark, primary, extended.mint) {
+        Brush.verticalGradient(
+            listOf(
+                primary.copy(alpha = if (extended.isDark) 0.22f else 0.14f),
+                extended.mint.copy(alpha = if (extended.isDark) 0.08f else 0.07f)
+            )
+        )
+    }
+    val pillBorderBrush = remember(extended.isDark, primary, extended.mint) {
+        Brush.linearGradient(
+            listOf(
+                primary.copy(alpha = if (extended.isDark) 0.42f else 0.35f),
+                extended.mint.copy(alpha = if (extended.isDark) 0.18f else 0.20f)
+            )
+        )
+    }
+    val pillAccentBarBrush = remember(primary, extended.mint) {
+        Brush.horizontalGradient(listOf(primary, extended.mint))
+    }
 
     Box(
         modifier = Modifier
@@ -892,45 +940,13 @@ private fun SeoulFloatingGlassDock(
                 .fillMaxWidth()
                 .shadow(
                     elevation = if (extended.isDark) 16.dp else 12.dp,
-                    shape = dockShape,
+                    shape = DockOuterShape,
                     ambientColor = shadowTint,
                     spotColor = shadowTint
                 )
-                .clip(dockShape)
-                .background(
-                    Brush.verticalGradient(
-                        if (extended.isDark) {
-                            listOf(
-                                extended.dockSurface,
-                                extended.glassFillBottom.copy(alpha = 0.98f)
-                            )
-                        } else {
-                            listOf(
-                                Color(0xFFFFFFFF),
-                                Color(0xFFF8F7FD)
-                            )
-                        }
-                    )
-                )
-                .border(
-                    width = 1.dp,
-                    brush = Brush.linearGradient(
-                        if (extended.isDark) {
-                            listOf(
-                                extended.glassHighlightBorder,
-                                extended.cardBorder.copy(alpha = 0.60f),
-                                extended.glassHighlightBorder.copy(alpha = 0.25f)
-                            )
-                        } else {
-                            listOf(
-                                extended.cardBorder,
-                                extended.cardBorder.copy(alpha = 0.85f),
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
-                            )
-                        }
-                    ),
-                    shape = dockShape
-                )
+                .clip(DockOuterShape)
+                .background(dockFillBrush)
+                .border(width = 1.dp, brush = dockBorderBrush, shape = DockOuterShape)
         ) {
             BoxWithConstraints(
                 modifier = Modifier
@@ -944,7 +960,6 @@ private fun SeoulFloatingGlassDock(
                     animationSpec = if (extended.reducedMotion) tween(0) else BaeumMotion.liquidSpring(),
                     label = "dock_liquid_pill_offset"
                 )
-                val pillShape = RoundedCornerShape(22.dp)
 
                 // Gliding active indicator pill (draw-phase translationX for zero relayout)
                 Box(
@@ -954,25 +969,9 @@ private fun SeoulFloatingGlassDock(
                         }
                         .width(tabWidth)
                         .height(54.dp)
-                        .clip(pillShape)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = if (extended.isDark) 0.22f else 0.14f),
-                                    extended.mint.copy(alpha = if (extended.isDark) 0.08f else 0.07f)
-                                )
-                            )
-                        )
-                        .border(
-                            width = 1.dp,
-                            brush = Brush.linearGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = if (extended.isDark) 0.42f else 0.35f),
-                                    extended.mint.copy(alpha = if (extended.isDark) 0.18f else 0.20f)
-                                )
-                            ),
-                            shape = pillShape
-                        ),
+                        .clip(DockPillShape)
+                        .background(pillFillBrush)
+                        .border(width = 1.dp, brush = pillBorderBrush, shape = DockPillShape),
                     contentAlignment = Alignment.TopCenter
                 ) {
                     Box(
@@ -981,11 +980,7 @@ private fun SeoulFloatingGlassDock(
                             .width(20.dp)
                             .height(2.5.dp)
                             .clip(CircleShape)
-                            .background(
-                                Brush.horizontalGradient(
-                                    listOf(MaterialTheme.colorScheme.primary, extended.mint)
-                                )
-                            )
+                            .background(pillAccentBarBrush)
                     )
                 }
 
@@ -998,19 +993,14 @@ private fun SeoulFloatingGlassDock(
                     tabs.forEachIndexed { idx, tab ->
                         val selected = idx == selectedIndex
                         val tabLabel = bText(tab.labelEn, tab.labelId)
-                        val iconScaleState = animateFloatAsState(
-                            targetValue = if (selected && !extended.reducedMotion) 1.10f else 1.0f,
-                            animationSpec = BaeumMotion.playfulSpring(),
-                            label = "dock_icon_scale_${tab.tagKey}"
-                        )
-                        val iconLiftState = animateDpAsState(
-                            targetValue = if (selected && !extended.reducedMotion) (-1.5).dp else 0.dp,
-                            animationSpec = BaeumMotion.playfulSpring(),
-                            label = "dock_icon_lift_${tab.tagKey}"
+                        val focusProgressState = animateFloatAsState(
+                            targetValue = if (selected) 1f else 0f,
+                            animationSpec = if (extended.reducedMotion) tween(0) else BaeumMotion.playfulSpring(),
+                            label = "dock_icon_focus_${tab.tagKey}"
                         )
                         val contentTint by animateColorAsState(
-                            targetValue = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            animationSpec = tween(200),
+                            targetValue = if (selected) primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            animationSpec = tween(if (extended.reducedMotion) 0 else 200),
                             label = "dock_tint_${tab.tagKey}"
                         )
 
@@ -1018,7 +1008,7 @@ private fun SeoulFloatingGlassDock(
                             modifier = Modifier
                                 .weight(1f)
                                 .defaultMinSize(minHeight = 54.dp)
-                                .clip(pillShape)
+                                .clip(DockPillShape)
                                 .tactileClickable(pressedScale = 0.93f) { onSelectTab(tab) }
                                 .testTag("nav_tab_${tab.tagKey}"),
                             contentAlignment = Alignment.Center
@@ -1035,10 +1025,13 @@ private fun SeoulFloatingGlassDock(
                                     modifier = Modifier
                                         .size(22.dp)
                                         .graphicsLayer {
-                                            val s = iconScaleState.value
-                                            scaleX = s
-                                            scaleY = s
-                                            translationY = iconLiftState.value.toPx()
+                                            if (!extended.reducedMotion) {
+                                                val p = focusProgressState.value
+                                                val s = 1f + 0.10f * p
+                                                scaleX = s
+                                                scaleY = s
+                                                translationY = (-1.5f * p).dp.toPx()
+                                            }
                                         }
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))

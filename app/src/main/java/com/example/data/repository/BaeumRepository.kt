@@ -276,10 +276,23 @@ class BaeumRepository(
     }
 
     /**
-     * Restores a [VocabEntity] back to its pre-rating FSRS snapshot (used for Undo Last Rating).
+     * Atomically restores a [VocabEntity] back to its pre-rating FSRS snapshot (Undo Last Rating),
+     * removing the undone review log entry and decrementing today's reviewed-word count if applicable.
      */
     suspend fun restoreVocabState(previousVocab: VocabEntity) = withContext(Dispatchers.IO) {
-        db.vocabDao().updateVocab(previousVocab)
+        val todayKey = localDayKey()
+        db.withTransaction {
+            db.vocabDao().updateVocab(previousVocab)
+            val deletedLogs = db.reviewLogDao().deleteLatestForVocabOnDay(previousVocab.id, todayKey)
+            if (deletedLogs > 0) {
+                val existing = db.dailyStudyDao().getByDay(todayKey)
+                if (existing != null && existing.wordsReviewed > 0) {
+                    db.dailyStudyDao().upsert(
+                        existing.copy(wordsReviewed = (existing.wordsReviewed - 1).coerceAtLeast(0))
+                    )
+                }
+            }
+        }
     }
 
     suspend fun recordQuizAnswerTelemetry(vocabId: String?, isCorrect: Boolean) = withContext(Dispatchers.IO) {
@@ -637,12 +650,25 @@ class BaeumRepository(
         fun parseBackupJson(json: String): BaeumBackupPayload? =
             backupMoshi.adapter(BaeumBackupPayload::class.java).fromJson(json)
 
-        fun localDayKey(epochMs: Long = System.currentTimeMillis()): String {
-            val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-            return fmt.format(Date(epochMs))
+        private val DAY_KEY_FORMAT: ThreadLocal<SimpleDateFormat> = object : ThreadLocal<SimpleDateFormat>() {
+            override fun initialValue(): SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         }
 
+        private val SHORT_DAY_FORMAT: ThreadLocal<SimpleDateFormat> = object : ThreadLocal<SimpleDateFormat>() {
+            override fun initialValue(): SimpleDateFormat = SimpleDateFormat("EEE", Locale.US)
+        }
+
+        fun localDayKey(epochMs: Long = System.currentTimeMillis()): String {
+            return DAY_KEY_FORMAT.get()!!.format(Date(epochMs))
+        }
+
+        /**
+         * Single-pass O(N) 7-day FSRS forecast builder (replaces 7 repeated full scans over 6,600+ cards).
+         */
         fun buildSevenDayForecast(vocab: List<VocabEntity>, nowEpochMs: Long = System.currentTimeMillis()): List<DayForecastPoint> {
+            val boundaries = LongArray(8)
+            val labels = arrayOfNulls<String>(7)
+            val dateKeys = arrayOfNulls<String>(7)
             val cal = Calendar.getInstance().apply {
                 timeInMillis = nowEpochMs
                 set(Calendar.HOUR_OF_DAY, 0)
@@ -650,34 +676,185 @@ class BaeumRepository(
                 set(Calendar.SECOND, 0)
                 set(Calendar.MILLISECOND, 0)
             }
-            val dayFmt = SimpleDateFormat("EEE", Locale.US)
+            val dayFmt = SHORT_DAY_FORMAT.get()!!
+            val keyFmt = DAY_KEY_FORMAT.get()!!
 
-            val scheduledCards = vocab.filter { it.reps > 0 && it.dueEpochMs > 0L }
-            return (0 until 7).map { offset ->
-                val dayStart = cal.timeInMillis
+            boundaries[0] = cal.timeInMillis
+            for (offset in 0 until 7) {
+                val dayStart = boundaries[offset]
+                val d = Date(dayStart)
+                labels[offset] = if (offset == 0) "Today" else dayFmt.format(d)
+                dateKeys[offset] = keyFmt.format(d)
                 cal.add(Calendar.DAY_OF_YEAR, 1)
-                val dayEnd = cal.timeInMillis
-                val count = if (offset == 0) {
+                boundaries[offset + 1] = cal.timeInMillis
+            }
+
+            val counts = IntArray(7)
+            val day1End = boundaries[1]
+            val weekEnd = boundaries[7]
+            for (card in vocab) {
+                if (card.reps <= 0) continue
+                val due = card.dueEpochMs
+                if (due <= 0L || due >= weekEnd) continue
+                if (due < day1End) {
                     // Today includes due today + overdue (counted once, never double-counted)
-                    scheduledCards.count { it.dueEpochMs < dayEnd }
+                    counts[0]++
                 } else {
-                    scheduledCards.count { it.dueEpochMs in dayStart until dayEnd }
+                    for (offset in 1 until 7) {
+                        if (due < boundaries[offset + 1]) {
+                            counts[offset]++
+                            break
+                        }
+                    }
                 }
-                val label = if (offset == 0) "Today" else dayFmt.format(Date(dayStart))
+            }
+
+            return List(7) { offset ->
                 DayForecastPoint(
                     dayOffset = offset,
-                    shortLabel = label,
-                    dateKey = localDayKey(dayStart),
-                    dueCount = count
+                    shortLabel = labels[offset]!!,
+                    dateKey = dateKeys[offset]!!,
+                    dueCount = counts[offset]
                 )
             }
         }
 
+        /**
+         * Single-pass O(N) aggregator computing all dashboard, planner, and FSRS deck overview metrics
+         * in one linear traversal with zero intermediate collections and zero FsrsCardSnapshot allocations.
+         */
+        fun computeVocabAggregate(
+            vocab: List<VocabEntity>,
+            activePathway: String? = null,
+            nowEpochMs: Long = System.currentTimeMillis(),
+            includeRetrievability: Boolean = false
+        ): VocabAggregateSnapshot {
+            val boundaries = LongArray(8)
+            val labels = arrayOfNulls<String>(7)
+            val dateKeys = arrayOfNulls<String>(7)
+            val cal = Calendar.getInstance().apply {
+                timeInMillis = nowEpochMs
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val dayFmt = SHORT_DAY_FORMAT.get()!!
+            val keyFmt = DAY_KEY_FORMAT.get()!!
+
+            boundaries[0] = cal.timeInMillis
+            for (offset in 0 until 7) {
+                val dayStart = boundaries[offset]
+                val d = Date(dayStart)
+                labels[offset] = if (offset == 0) "Today" else dayFmt.format(d)
+                dateKeys[offset] = keyFmt.format(d)
+                cal.add(Calendar.DAY_OF_YEAR, 1)
+                boundaries[offset + 1] = cal.timeInMillis
+            }
+
+            val startOfToday = boundaries[0]
+            val endOfToday = boundaries[1]
+            val weekEnd = boundaries[7]
+            val forecastCounts = IntArray(7)
+
+            var dueToday = 0
+            var overdue = 0
+            var newCount = 0
+            var learningCount = 0
+            var reviewCount = 0
+            var masteredCount = 0
+            var reviewedCount = 0
+            var leechCount = 0
+            var weakQuizCount = 0
+            var activeTotal = 0
+            var activeLearned = 0
+            var retrievabilitySum = 0.0
+            var retrievabilitySamples = 0
+
+            val newName = CardMemoryStage.NEW.name
+            val learningName = CardMemoryStage.LEARNING.name
+            val reviewName = CardMemoryStage.REVIEW.name
+            val masteredName = CardMemoryStage.MASTERED.name
+
+            for (card in vocab) {
+                when (card.stage) {
+                    newName -> newCount++
+                    learningName -> learningCount++
+                    reviewName -> reviewCount++
+                    masteredName -> masteredCount++
+                }
+                if (card.reps > 0) {
+                    reviewedCount++
+                    val due = card.dueEpochMs
+                    if (due in 1L until endOfToday) {
+                        dueToday++
+                        forecastCounts[0]++
+                        if (due < startOfToday) overdue++
+                    } else if (due in endOfToday until weekEnd) {
+                        for (offset in 1 until 7) {
+                            if (due < boundaries[offset + 1]) {
+                                forecastCounts[offset]++
+                                break
+                            }
+                        }
+                    }
+                    if (includeRetrievability && card.stability > 0.0) {
+                        retrievabilitySum += FsrsScheduler.currentRetrievability(
+                            reps = card.reps,
+                            stability = card.stability,
+                            lastReviewEpochMs = card.lastReviewEpochMs,
+                            nowEpochMs = nowEpochMs
+                        )
+                        retrievabilitySamples++
+                    }
+                }
+                if (FsrsScheduler.isLeech(card.lapses)) leechCount++
+                if (card.quizWrongCount > card.quizCorrectCount) weakQuizCount++
+                if (activePathway != null && card.curriculum == activePathway) {
+                    activeTotal++
+                    if (card.reps > 0) activeLearned++
+                }
+            }
+
+            val forecast = List(7) { offset ->
+                DayForecastPoint(
+                    dayOffset = offset,
+                    shortLabel = labels[offset]!!,
+                    dateKey = dateKeys[offset]!!,
+                    dueCount = forecastCounts[offset]
+                )
+            }
+            val avgR = if (includeRetrievability && retrievabilitySamples > 0) {
+                kotlin.math.round((retrievabilitySum / retrievabilitySamples) * 100.0).toInt().coerceIn(0, 100)
+            } else {
+                null
+            }
+
+            return VocabAggregateSnapshot(
+                totalCount = vocab.size,
+                dueTodayCount = dueToday,
+                overdueCount = overdue,
+                sevenDayForecast = forecast,
+                newCount = newCount,
+                learningCount = learningCount,
+                reviewCount = reviewCount,
+                masteredCount = masteredCount,
+                reviewedCount = reviewedCount,
+                leechCount = leechCount,
+                weakQuizCount = weakQuizCount,
+                activePathwayTotal = activeTotal,
+                activePathwayLearned = activeLearned,
+                averageRetrievabilityPercent = avgR
+            )
+        }
+
         fun computeStudyStreak(stats: List<DailyStudyEntity>, nowEpochMs: Long = System.currentTimeMillis()): Int {
-            val activeDays = stats
-                .filter { it.wordsReviewed > 0 || it.quizzesCompleted > 0 || it.speakingSessions > 0 || it.examsCompleted > 0 }
-                .map { it.dayKey }
-                .toSet()
+            val activeDays = HashSet<String>(stats.size)
+            for (s in stats) {
+                if (s.wordsReviewed > 0 || s.quizzesCompleted > 0 || s.speakingSessions > 0 || s.examsCompleted > 0) {
+                    activeDays.add(s.dayKey)
+                }
+            }
             if (activeDays.isEmpty()) return 0
 
             val cal = Calendar.getInstance().apply { timeInMillis = nowEpochMs }
@@ -724,3 +901,20 @@ class BaeumRepository(
             vocab.count { it.stage == stage.name }
     }
 }
+
+data class VocabAggregateSnapshot(
+    val totalCount: Int = 0,
+    val dueTodayCount: Int = 0,
+    val overdueCount: Int = 0,
+    val sevenDayForecast: List<DayForecastPoint> = emptyList(),
+    val newCount: Int = 0,
+    val learningCount: Int = 0,
+    val reviewCount: Int = 0,
+    val masteredCount: Int = 0,
+    val reviewedCount: Int = 0,
+    val leechCount: Int = 0,
+    val weakQuizCount: Int = 0,
+    val activePathwayTotal: Int = 0,
+    val activePathwayLearned: Int = 0,
+    val averageRetrievabilityPercent: Int? = null
+)

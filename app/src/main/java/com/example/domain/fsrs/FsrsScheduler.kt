@@ -74,6 +74,7 @@ object FsrsScheduler {
     // FSRS-5 short-term same-day review stability parameters
     private const val W17_SHORT_TERM = 0.51655
     private const val W18_SHORT_TERM = 0.6621
+    private val D0_GOOD: Double = (w[4] - exp(w[5] * (FsrsRating.GOOD.value - 1)) + 1.0).coerceIn(1.0, 10.0)
 
     fun retrievability(elapsedDays: Double, stability: Double): Double {
         if (!elapsedDays.isFinite() || !stability.isFinite() || stability <= 0.0) return 0.0
@@ -82,18 +83,30 @@ object FsrsScheduler {
             .coerceIn(0.0, 1.0)
     }
 
+    /**
+     * Zero-allocation overload for bulk scans over thousands of vocabulary entities.
+     */
+    fun currentRetrievability(
+        reps: Int,
+        stability: Double,
+        lastReviewEpochMs: Long,
+        nowEpochMs: Long = System.currentTimeMillis()
+    ): Double {
+        if (reps <= 0 || !stability.isFinite() || stability <= 0.0) return 0.0
+        val elapsed = if (lastReviewEpochMs > 0L) {
+            max(0.0, (nowEpochMs - lastReviewEpochMs).toDouble() / DAY_MS)
+        } else 0.0
+        return retrievability(elapsed, stability)
+    }
+
     fun currentRetrievability(
         card: FsrsCardSnapshot,
         nowEpochMs: Long = System.currentTimeMillis()
-    ): Double {
-        if (card.reps <= 0 || !card.stability.isFinite() || card.stability <= 0.0) return 0.0
-        val elapsed = if (card.lastReviewEpochMs > 0L) {
-            max(0.0, (nowEpochMs - card.lastReviewEpochMs).toDouble() / DAY_MS)
-        } else 0.0
-        return retrievability(elapsed, card.stability)
-    }
+    ): Double = currentRetrievability(card.reps, card.stability, card.lastReviewEpochMs, nowEpochMs)
 
-    fun isLeech(card: FsrsCardSnapshot): Boolean = card.lapses >= LEECH_LAPSE_THRESHOLD
+    fun isLeech(lapses: Int): Boolean = lapses >= LEECH_LAPSE_THRESHOLD
+
+    fun isLeech(card: FsrsCardSnapshot): Boolean = isLeech(card.lapses)
 
     fun previewAll(
         card: FsrsCardSnapshot,
@@ -234,9 +247,8 @@ object FsrsScheduler {
 
     private fun nextDifficulty(currentD: Double, rating: FsrsRating): Double {
         val nextD = currentD - w[6] * (rating.value - 3)
-        // Mean reversion toward initial Good difficulty
-        val d0 = initDifficulty(FsrsRating.GOOD)
-        return (w[7] * d0 + (1.0 - w[7]) * nextD).coerceIn(1.0, 10.0)
+        // Mean reversion toward precomputed initial Good difficulty
+        return (w[7] * D0_GOOD + (1.0 - w[7]) * nextD).coerceIn(1.0, 10.0)
     }
 
     private fun nextRecallStability(

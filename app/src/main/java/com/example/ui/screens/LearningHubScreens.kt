@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -47,10 +48,14 @@ import com.example.ui.components.BaeumSecondaryButton
 import com.example.ui.components.BaeumTopBar
 import com.example.ui.components.ProgressBarSlim
 import com.example.ui.components.SeoulCard
+import com.example.ui.theme.BaeumMotion
 import com.example.ui.theme.LocalBaeumColors
 import com.example.ui.theme.StaggeredEntrance
 import com.example.ui.theme.bText
 import com.example.ui.theme.isIndonesian
+
+private val PathwayEmblemShape = RoundedCornerShape(18.dp)
+private val TopikLevelOrder = listOf("1급", "2급", "3급", "4급", "5급", "6급")
 
 // SCREEN 04 / 24 — Learning Hub (Four independent pathways)
 @Composable
@@ -65,10 +70,15 @@ fun LearningHubScreen(
     onOpenQuizCenter: () -> Unit
 ) {
     val extended = LocalBaeumColors.current
+    // Single-pass O(N) progress calculation without intermediate 6,600-element lists
     val progressByPathway = remember(allVocab) {
-        allVocab.groupBy { it.curriculum }.mapValues { (_, list) ->
-            if (list.isEmpty()) 0f else list.count { it.reps > 0 }.toFloat() / list.size
+        val counts = HashMap<String, IntArray>(6)
+        for (item in allVocab) {
+            val arr = counts.getOrPut(item.curriculum) { IntArray(2) }
+            arr[1]++
+            if (item.reps > 0) arr[0]++
         }
+        counts.mapValues { (_, arr) -> if (arr[1] == 0) 0f else arr[0].toFloat() / arr[1] }
     }
 
     Box(
@@ -186,7 +196,9 @@ private fun PathwayCard(
     testTag: String
 ) {
     val pct = (progress * 100).toInt()
-    val emblemShape = RoundedCornerShape(18.dp)
+    val emblemBrush = remember(accent) {
+        Brush.verticalGradient(listOf(accent.copy(alpha = 0.24f), accent.copy(alpha = 0.08f)))
+    }
     BaeumGlassCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -202,13 +214,9 @@ private fun PathwayCard(
             Box(
                 modifier = Modifier
                     .size(50.dp)
-                    .clip(emblemShape)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(accent.copy(alpha = 0.24f), accent.copy(alpha = 0.08f))
-                        )
-                    )
-                    .border(1.dp, accent.copy(alpha = 0.45f), emblemShape),
+                    .clip(PathwayEmblemShape)
+                    .background(emblemBrush)
+                    .border(1.dp, accent.copy(alpha = 0.45f), PathwayEmblemShape),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -258,31 +266,45 @@ fun TopikCenterScreen(
     onOpenGrammar: () -> Unit,
     onOpenExam: () -> Unit
 ) {
-    val topikVocab = remember(allVocab) { allVocab.filter { it.curriculum == CurriculumPathway.TOPIK } }
-    val levelOrder = listOf("1급", "2급", "3급", "4급", "5급", "6급")
-    val byLevel = remember(topikVocab) { topikVocab.groupBy { it.subCategory } }
-    val cumulativeCounts = remember(byLevel) {
-        var running = 0
-        levelOrder.associateWith { lvl ->
-            running += byLevel[lvl]?.size ?: 0
-            running
+    // Single-pass O(N) level statistics computation
+    val topikStats = remember(allVocab) {
+        val counts = HashMap<String, IntArray>(8)
+        var total = 0
+        for (item in allVocab) {
+            if (item.curriculum == CurriculumPathway.TOPIK) {
+                total++
+                val arr = counts.getOrPut(item.subCategory) { IntArray(2) }
+                arr[0]++ // size
+                if (item.reps > 0) arr[1]++ // learned
+            }
         }
+        var running = 0
+        val cumulative = HashMap<String, Int>(8)
+        for (lvl in TopikLevelOrder) {
+            running += counts[lvl]?.get(0) ?: 0
+            cumulative[lvl] = running
+        }
+        Triple(total, counts, cumulative)
     }
+    val topikTotal = topikStats.first
+    val countsByLevel = topikStats.second
+    val cumulativeCounts = topikStats.third
 
     val isId = isIndonesian()
     fun levelStatus(level: String): String {
-        val list = byLevel[level].orEmpty()
-        if (list.isEmpty()) return if (isId) "Kurikulum siap" else "Curriculum ready"
-        val learned = list.count { it.reps > 0 }
-        val cumul = cumulativeCounts[level] ?: list.size
+        val arr = countsByLevel[level]
+        val size = arr?.get(0) ?: 0
+        if (size == 0) return if (isId) "Kurikulum siap" else "Curriculum ready"
+        val learned = arr?.get(1) ?: 0
+        val cumul = cumulativeCounts[level] ?: size
         return if (learned == 0) {
             if (level == "1급") {
-                if (isId) "${list.size} kata" else "${list.size} words"
+                if (isId) "$size kata" else "$size words"
             } else {
-                "+${list.size} • $cumul total"
+                "+$size • $cumul total"
             }
         } else {
-            "${(learned * 100) / list.size}% • $learned/${list.size}"
+            "${(learned * 100) / size}% • $learned/$size"
         }
     }
 
@@ -295,7 +317,7 @@ fun TopikCenterScreen(
     ) {
         BaeumTopBar(
             title = bText("TOPIK Center", "Pusat TOPIK"),
-            subtitle = bText("Korean proficiency • ${topikVocab.size} words", "Kemahiran Korea • ${topikVocab.size} kata"),
+            subtitle = bText("Korean proficiency • $topikTotal words", "Kemahiran Korea • $topikTotal kata"),
             onBack = onBack
         )
 
@@ -318,7 +340,7 @@ fun TopikCenterScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "TOPIK • ${topikVocab.size}",
+                        text = "TOPIK • $topikTotal",
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -414,15 +436,25 @@ fun EpsTopikCenterScreen(
     onOpenEpsExam: () -> Unit
 ) {
     val isId = isIndonesian()
-    val epsCategories = listOf(
-        Triple("Daily communication", "Komunikasi harian", "일상생활"),
-        Triple("Manufacturing", "Manufaktur", "제조업"),
-        Triple("Workplace safety", "Keselamatan kerja", "산업안전"),
-        Triple("Agriculture", "Pertanian", "농업"),
-        Triple("Fisheries", "Perikanan", "어업"),
-        Triple("Workplace culture", "Budaya kerja", "직장문화")
-    )
-    val epsVocab = remember(allVocab) { allVocab.filter { it.curriculum == CurriculumPathway.EPS_TOPIK } }
+    val epsCategories = remember {
+        listOf(
+            Triple("Daily communication", "Komunikasi harian", "일상생활"),
+            Triple("Manufacturing", "Manufaktur", "제조업"),
+            Triple("Workplace safety", "Keselamatan kerja", "산업안전"),
+            Triple("Agriculture", "Pertanian", "농업"),
+            Triple("Fisheries", "Perikanan", "어업"),
+            Triple("Workplace culture", "Budaya kerja", "직장문화")
+        )
+    }
+    val epsCountsBySubCat = remember(allVocab) {
+        val map = HashMap<String, Int>(8)
+        for (item in allVocab) {
+            if (item.curriculum == CurriculumPathway.EPS_TOPIK) {
+                map[item.subCategory] = (map[item.subCategory] ?: 0) + 1
+            }
+        }
+        map
+    }
 
     Column(
         modifier = Modifier
@@ -473,7 +505,7 @@ fun EpsTopikCenterScreen(
             }
 
             epsCategories.forEach { (eng, idLabel, kor) ->
-                val count = epsVocab.count { it.subCategory == eng }
+                val count = epsCountsBySubCat[eng] ?: 0
                 SeoulCard(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -534,22 +566,35 @@ fun EverydayKoreanScreen(
     onStartConversation: () -> Unit
 ) {
     val isId = isIndonesian()
+    val extended = LocalBaeumColors.current
     var selectedSituation by remember { mutableIntStateOf(0) }
-    val speechComparisons = listOf(
-        Triple(if (isId) "Sapaan" else "Greeting", "안녕? 잘 지냈어?", "안녕하세요? 잘 지내셨어요?  |  안녕하십니까?"),
-        Triple(if (isId) "Makan" else "Eating", "밥 먹었어?", if (isId) "밥 먹었어요?  |  진지 드셨습니까? (Honorifik)" else "밥 먹었어요?  |  진지 드셨습니까? (Honorific)"),
-        Triple(if (isId) "Terima kasih" else "Thanking", "고마워!", "고마워요.  |  정말 감사합니다."),
-        Triple(if (isId) "Maaf" else "Apologizing", "미안해.", "죄송해요.  |  대단히 죄송합니다.")
-    )
-    val categories = listOf(
-        Triple("Cafe & Dining", "Kafe & Makan", "카페 • 식당"),
-        Triple("Shopping", "Belanja", "쇼핑 • 계산"),
-        Triple("Transportation", "Transportasi", "지하철 • 택시"),
-        Triple("Travel", "Perjalanan", "여행 • 예약"),
-        Triple("Interviews", "Wawancara Kerja", "면접 • 직장"),
-        Triple("Social & Honorifics", "Sosial & Honorifik", "높임말 • 예절")
-    )
-    val everydayVocab = remember(allVocab) { allVocab.filter { it.curriculum == CurriculumPathway.EVERYDAY } }
+    val speechComparisons = remember(isId) {
+        listOf(
+            Triple(if (isId) "Sapaan" else "Greeting", "안녕? 잘 지냈어?", "안녕하세요? 잘 지내셨어요?  |  안녕하십니까?"),
+            Triple(if (isId) "Makan" else "Eating", "밥 먹었어?", if (isId) "밥 먹었어요?  |  진지 드셨습니까? (Honorifik)" else "밥 먹었어요?  |  진지 드셨습니까? (Honorific)"),
+            Triple(if (isId) "Terima kasih" else "Thanking", "고마워!", "고마워요.  |  정말 감사합니다."),
+            Triple(if (isId) "Maaf" else "Apologizing", "미안해.", "죄송해요.  |  대단히 죄송합니다.")
+        )
+    }
+    val categories = remember {
+        listOf(
+            Triple("Cafe & Dining", "Kafe & Makan", "카페 • 식당"),
+            Triple("Shopping", "Belanja", "쇼핑 • 계산"),
+            Triple("Transportation", "Transportasi", "지하철 • 택시"),
+            Triple("Travel", "Perjalanan", "여행 • 예약"),
+            Triple("Interviews", "Wawancara Kerja", "면접 • 직장"),
+            Triple("Social & Honorifics", "Sosial & Honorifik", "높임말 • 예절")
+        )
+    }
+    val everydayCountsBySubCat = remember(allVocab) {
+        val map = HashMap<String, Int>(8)
+        for (item in allVocab) {
+            if (item.curriculum == CurriculumPathway.EVERYDAY) {
+                map[item.subCategory] = (map[item.subCategory] ?: 0) + 1
+            }
+        }
+        map
+    }
 
     Column(
         modifier = Modifier
@@ -596,7 +641,7 @@ fun EverydayKoreanScreen(
                                 .weight(1f)
                                 .defaultMinSize(minHeight = 48.dp),
                             cornerRadius = 14.dp,
-                            containerColor = if (active) MaterialTheme.colorScheme.primary else LocalBaeumColors.current.elevatedSurface,
+                            containerColor = if (active) MaterialTheme.colorScheme.primary else extended.elevatedSurface,
                             contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp, horizontal = 6.dp),
                             onClick = { selectedSituation = idx }
                         ) {
@@ -613,31 +658,38 @@ fun EverydayKoreanScreen(
                     }
                 }
                 Spacer(modifier = Modifier.height(12.dp))
-                val (_, casual, formal) = speechComparisons[selectedSituation]
-                SeoulCard(
-                    containerColor = LocalBaeumColors.current.elevatedSurface,
-                    cornerRadius = 14.dp,
-                    onClick = { onSpeakKorean(casual) }
-                ) {
-                    Text(
-                        bText("반말 (Close friends / younger)", "반말 (Teman akrab / lebih muda)"),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = LocalBaeumColors.current.gold
-                    )
-                    Text(casual, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                SeoulCard(
-                    containerColor = LocalBaeumColors.current.elevatedSurface,
-                    cornerRadius = 14.dp,
-                    onClick = { onSpeakKorean(formal.substringBefore("|").trim()) }
-                ) {
-                    Text(
-                        bText("해요체 / 합니다체 (Polite & Honorific)", "해요체 / 합니다체 (Sopan & Honorifik)"),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = LocalBaeumColors.current.mint
-                    )
-                    Text(formal, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                AnimatedContent(
+                    targetState = selectedSituation,
+                    transitionSpec = { BaeumMotion.subtleCrossfadeTransform(extended.reducedMotion) },
+                    label = "everyday_speech_level"
+                ) { sitIdx ->
+                    val (_, casual, formal) = speechComparisons[sitIdx]
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SeoulCard(
+                            containerColor = extended.elevatedSurface,
+                            cornerRadius = 14.dp,
+                            onClick = { onSpeakKorean(casual) }
+                        ) {
+                            Text(
+                                bText("반말 (Close friends / younger)", "반말 (Teman akrab / lebih muda)"),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = extended.gold
+                            )
+                            Text(casual, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                        SeoulCard(
+                            containerColor = extended.elevatedSurface,
+                            cornerRadius = 14.dp,
+                            onClick = { onSpeakKorean(formal.substringBefore("|").trim()) }
+                        ) {
+                            Text(
+                                bText("해요체 / 합니다체 (Polite & Honorific)", "해요체 / 합니다체 (Sopan & Honorifik)"),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = extended.mint
+                            )
+                            Text(formal, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
                 }
             }
 
@@ -647,7 +699,7 @@ fun EverydayKoreanScreen(
                 color = MaterialTheme.colorScheme.onBackground
             )
             categories.forEach { (cat, idLabel, ko) ->
-                val count = everydayVocab.count { it.subCategory == cat }
+                val count = everydayCountsBySubCat[cat] ?: 0
                 SeoulCard(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { onOpenCategoryVocab(cat) }
