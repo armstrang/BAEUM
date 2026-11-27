@@ -1773,7 +1773,9 @@ fun BeginnerLessonScreen(
             }
         }
 
-        LuxuryConfettiOverlay(visible = phase == BeginnerLessonPhase.COMPLETE)
+        LuxuryConfettiOverlay(
+            triggerKey = if (phase == BeginnerLessonPhase.COMPLETE) 1 else 0
+        )
     }
 }
 
