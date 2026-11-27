@@ -278,7 +278,8 @@ class BaeumViewModel(
             blitzGamesPlayed = eng.blitzGamesPlayed,
             bestComboEver = eng.bestComboEver,
             unlockedStampIds = eng.unlockedStampIds,
-            soundEffectsEnabled = eng.soundEffectsEnabled
+            soundEffectsEnabled = eng.soundEffectsEnabled,
+            completedBeginnerLessonIds = eng.completedBeginnerLessonIds
         )
     }
         .conflate()
@@ -678,6 +679,62 @@ class BaeumViewModel(
                         subtitleId = "+${BaeumHabitEngine.DAILY_SEAL_BONUS_XP} Bonus XP & +1 Perisai Runtutan diperoleh!",
                         badgeKo = "도장",
                         xpDelta = BaeumHabitEngine.DAILY_SEAL_BONUS_XP,
+                        showConfetti = true
+                    )
+                )
+            }
+        }
+    }
+
+    fun playBeginnerCheckSound(isCorrect: Boolean, step: Int = 1) {
+        if (isCorrect) {
+            soundEffects.playCorrect(step.coerceAtLeast(1))
+        } else {
+            soundEffects.playGentleMiss()
+        }
+    }
+
+    fun completeBeginnerLesson(lessonId: String) {
+        val lesson = com.example.domain.curriculum.BeginnerSyllabusCatalog.lessonById(lessonId) ?: return
+        val prevDone = settings.value.engagement.completedBeginnerLessonIds
+        val wasGraduated = com.example.domain.curriculum.BeginnerSyllabusCatalog.isGraduated(prevDone)
+        val todayKey = BaeumRepository.localDayKey()
+        soundEffects.playStampUnlock()
+
+        viewModelScope.launch {
+            val newlyCompleted = userPreferencesRepository.recordBeginnerLessonCompleted(
+                lessonId = lesson.id,
+                xpReward = lesson.xpReward
+            )
+            repository.recordStudySeconds(lesson.estimatedMinutes * 45)
+            userPreferencesRepository.recordStudyActivity(todayKey)
+
+            val nowDone = prevDone + lesson.id
+            val justGraduated = !wasGraduated && com.example.domain.curriculum.BeginnerSyllabusCatalog.isGraduated(nowDone)
+            if (justGraduated) {
+                soundEffects.playLevelUp()
+                emitCelebration(
+                    CelebrationBannerEvent(
+                        kind = CelebrationKind.DAILY_SEAL,
+                        titleEn = "Zero-to-Seoul Syllabus Graduated!",
+                        titleId = "Lulus Silabus Pemula dari Nol!",
+                        subtitleEn = "All 12 lessons complete • +${lesson.xpReward + com.example.domain.curriculum.BeginnerSyllabusCatalog.GRADUATION_BONUS_XP} XP! Ready for TOPIK 1급.",
+                        subtitleId = "Semua 12 pelajaran selesai • +${lesson.xpReward + com.example.domain.curriculum.BeginnerSyllabusCatalog.GRADUATION_BONUS_XP} XP! Siap ke TOPIK 1급.",
+                        badgeKo = "수료",
+                        xpDelta = lesson.xpReward + com.example.domain.curriculum.BeginnerSyllabusCatalog.GRADUATION_BONUS_XP,
+                        showConfetti = true
+                    )
+                )
+            } else if (newlyCompleted) {
+                emitCelebration(
+                    CelebrationBannerEvent(
+                        kind = CelebrationKind.DAILY_SPARK,
+                        titleEn = "Lesson ${lesson.number} Complete · +${lesson.xpReward} XP!",
+                        titleId = "Pelajaran ${lesson.number} Selesai · +${lesson.xpReward} XP!",
+                        subtitleEn = lesson.titleEn,
+                        subtitleId = lesson.titleId,
+                        badgeKo = lesson.emblemKo,
+                        xpDelta = lesson.xpReward,
                         showConfetti = true
                     )
                 )

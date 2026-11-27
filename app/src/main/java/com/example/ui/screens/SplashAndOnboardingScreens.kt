@@ -215,8 +215,8 @@ fun OnboardingScreen(
 ) {
     val extended = LocalBaeumColors.current
     var step by rememberSaveable { mutableIntStateOf(1) }
-    var selectedGoal by rememberSaveable { mutableStateOf(CurriculumPathway.TOPIK) }
-    var selectedLevel by rememberSaveable { mutableStateOf("Beginner") }
+    var selectedGoal by rememberSaveable { mutableStateOf(CurriculumPathway.HANGUL) }
+    var selectedLevel by rememberSaveable { mutableStateOf("Zero") }
     var selectedDailyGoal by rememberSaveable { mutableIntStateOf(20) }
 
     BackHandler(enabled = step > 1) {
@@ -226,8 +226,8 @@ fun OnboardingScreen(
     val goals = listOf(
         Triple(
             CurriculumPathway.HANGUL,
-            bText("Learn Korean from zero", "Belajar bahasa Korea dari nol"),
-            bText("Hangul alphabet, batchim & fundamentals", "Huruf Hangul, konsonan akhir (batchim) & dasar")
+            bText("Start from zero (Beginner Syllabus)", "Mulai dari nol (Silabus Pemula 12 Pelajaran)"),
+            bText("Step-by-step Hangul, batchim, greetings & Seoul basics", "Panduan bertahap Hangul, batchim, sapaan & dasar Seoul")
         ),
         Triple(
             CurriculumPathway.TOPIK,
@@ -247,7 +247,7 @@ fun OnboardingScreen(
     )
 
     val levels = listOf(
-        Triple("Zero", bText("Complete beginner", "Pemula dari nol"), bText("I cannot read Hangul yet", "Saya belum bisa membaca Hangul")),
+        Triple("Zero", bText("Complete beginner (Zero)", "Pemula total (dari nol)"), bText("I cannot read Hangul yet · Guided 12-lesson path", "Belum bisa baca Hangul · Silabus terpandu 12 pelajaran")),
         Triple("Beginner", bText("Basic Hangul & phrases", "Hangul dasar & frasa"), bText("TOPIK I (1–2급) foundation", "Dasar TOPIK I (1–2급)")),
         Triple("Intermediate", bText("Everyday communication", "Komunikasi sehari-hari"), bText("TOPIK II (3–4급) fluency", "Kelancaran TOPIK II (3–4급)")),
         Triple("Advanced", bText("Professional & academic", "Profesional & akademis"), bText("TOPIK II (5–6급) & formal discourse", "TOPIK II (5–6급) & ragam formal"))

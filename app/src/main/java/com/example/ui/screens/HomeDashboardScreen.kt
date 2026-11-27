@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.NightsStay
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.WbSunny
@@ -73,6 +74,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.repository.DayForecastPoint
+import com.example.domain.curriculum.BeginnerSyllabusCatalog
 import com.example.domain.engagement.DailyAtelierQuest
 import com.example.domain.engagement.DailySeoulSpark
 import com.example.domain.engagement.HabitDashboardSnapshot
@@ -148,7 +150,9 @@ fun HomeDashboardScreen(
     onCompleteDailySpark: (Boolean) -> Unit = {},
     onClaimDailySeal: () -> Unit = {},
     onSpeakKorean: (String) -> Unit = {},
-    onQuestAction: (String) -> Unit = {}
+    onQuestAction: (String) -> Unit = {},
+    onOpenBeginnerSyllabus: () -> Unit = {},
+    onStartNextBeginnerLesson: (String) -> Unit = {}
 ) {
     val extended = LocalBaeumColors.current
     val scrollState = rememberScrollState()
@@ -548,6 +552,18 @@ fun HomeDashboardScreen(
                     testTag = "shortcut_grammar",
                     onClick = onOpenGrammarStudio,
                     modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        // Complete Beginner Guided 12-Lesson Syllabus Card (prominent until all 12 lessons graduated)
+        if (!BeginnerSyllabusCatalog.isGraduated(habitSnapshot.completedBeginnerLessonIds)) {
+            Spacer(modifier = Modifier.height(18.dp))
+            StaggeredEntrance(index = 3) {
+                BeginnerSyllabusHomeCard(
+                    completedIds = habitSnapshot.completedBeginnerLessonIds,
+                    onOpenSyllabus = onOpenBeginnerSyllabus,
+                    onStartNextLesson = onStartNextBeginnerLesson
                 )
             }
         }
@@ -1451,4 +1467,130 @@ private fun DailyAtelierQuestsCard(
         }
     }
 }
+
+@Composable
+private fun BeginnerSyllabusHomeCard(
+    completedIds: Set<String>,
+    onOpenSyllabus: () -> Unit,
+    onStartNextLesson: (String) -> Unit
+) {
+    val extended = LocalBaeumColors.current
+    val doneCount = remember(completedIds) { BeginnerSyllabusCatalog.completionCount(completedIds) }
+    val totalLessons = BeginnerSyllabusCatalog.lessons.size
+    val progress = remember(completedIds) { BeginnerSyllabusCatalog.completionFraction(completedIds) }
+    val nextLesson = remember(completedIds) { BeginnerSyllabusCatalog.nextRecommendedLesson(completedIds) }
+
+    BaeumGlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("home_beginner_syllabus_card"),
+        style = BaeumGlassStyle.STANDARD,
+        accentGlowColor = extended.mint,
+        borderColor = extended.mint.copy(alpha = 0.45f)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.School,
+                    contentDescription = null,
+                    tint = extended.mint,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = bText("BEGINNER SYLLABUS · START HERE", "SILABUS PEMULA NOL · MULAI SINI"),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        letterSpacing = 1.0.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    ),
+                    color = extended.mint,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
+                    .clip(HabitPillShape)
+                    .tactileClickable(pressedScale = 0.94f, onClick = onOpenSyllabus),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Row(
+                    modifier = Modifier
+                        .clip(HabitPillShape)
+                        .background(extended.mint.copy(alpha = 0.14f))
+                        .border(1.dp, extended.mint.copy(alpha = 0.36f), HabitPillShape)
+                        .padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "$doneCount/$totalLessons",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                        color = extended.mint
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = bText("View full syllabus", "Lihat seluruh silabus"),
+                        tint = extended.mint,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text = bText(
+                "Lesson ${nextLesson.number}: ${nextLesson.titleEn}",
+                "Pelajaran ${nextLesson.number}: ${nextLesson.titleId}"
+            ),
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = bText(
+                "${nextLesson.goalEn} (~${nextLesson.estimatedMinutes} min)",
+                "${nextLesson.goalId} (~${nextLesson.estimatedMinutes} mnt)"
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+        ProgressBarSlim(progress = progress, color = extended.mint, height = 5.dp)
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            BaeumPrimaryButton(
+                text = if (doneCount == 0) {
+                    bText("Start Lesson 1", "Mulai Pelajaran 1")
+                } else {
+                    bText("Continue L${nextLesson.number}", "Lanjut P${nextLesson.number}")
+                },
+                onClick = { onStartNextLesson(nextLesson.id) },
+                modifier = Modifier.weight(1.25f),
+                testTag = "home_beginner_start_next_btn"
+            )
+            BaeumSecondaryButton(
+                text = bText("12 Lessons", "Lihat Silabus"),
+                onClick = onOpenSyllabus,
+                modifier = Modifier.weight(1f),
+                testTag = "home_beginner_view_all_btn"
+            )
+        }
+    }
+}
+
 

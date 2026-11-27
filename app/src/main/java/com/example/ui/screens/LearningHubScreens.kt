@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.local.CurriculumPathway
 import com.example.data.local.VocabEntity
+import com.example.domain.curriculum.BeginnerSyllabusCatalog
 import com.example.ui.components.BaeumBrandHeader
 import com.example.ui.components.BaeumGlassCard
 import com.example.ui.components.BaeumGlassStyle
@@ -57,11 +58,13 @@ import com.example.ui.theme.isIndonesian
 private val PathwayEmblemShape = RoundedCornerShape(18.dp)
 private val TopikLevelOrder = listOf("1급", "2급", "3급", "4급", "5급", "6급")
 
-// SCREEN 04 / 24 — Learning Hub (Four independent pathways)
+// SCREEN 04 / 24 — Learning Hub (Complete Beginner Syllabus + Four Core Pathways)
 @Composable
 fun LearningHubScreen(
     allVocab: List<VocabEntity>,
+    completedBeginnerLessons: Set<String> = emptySet(),
     onOpenSettings: () -> Unit,
+    onOpenBeginnerSyllabus: () -> Unit = {},
     onSelectHangul: () -> Unit,
     onSelectTopik: () -> Unit,
     onSelectEpsTopik: () -> Unit,
@@ -79,6 +82,15 @@ fun LearningHubScreen(
             if (item.reps > 0) arr[0]++
         }
         counts.mapValues { (_, arr) -> if (arr[1] == 0) 0f else arr[0].toFloat() / arr[1] }
+    }
+    val beginnerDoneCount = remember(completedBeginnerLessons) {
+        BeginnerSyllabusCatalog.completionCount(completedBeginnerLessons)
+    }
+    val beginnerProgress = remember(completedBeginnerLessons) {
+        BeginnerSyllabusCatalog.completionFraction(completedBeginnerLessons)
+    }
+    val nextBeginnerLesson = remember(completedBeginnerLessons) {
+        BeginnerSyllabusCatalog.nextRecommendedLesson(completedBeginnerLessons)
     }
 
     Box(
@@ -103,7 +115,33 @@ fun LearningHubScreen(
 
             Spacer(modifier = Modifier.height(2.dp))
 
+            // #1 Featured Complete Beginner Guided Syllabus (Zero-to-Seoul 12 Lessons)
             StaggeredEntrance(index = 1) {
+                PathwayCard(
+                    emblem = "입",
+                    title = bText(
+                        "Start from Zero · 12-Lesson Syllabus",
+                        "Mulai dari Nol · Silabus Pemula (12 Pelajaran)"
+                    ),
+                    subtitle = if (beginnerDoneCount >= BeginnerSyllabusCatalog.lessons.size) {
+                        bText(
+                            "Graduated 12/12! Hangul, Batchim, Greetings, Numbers & Seoul Survival",
+                            "Lulus 12/12! Hangul, Batchim, Sapaan, Angka & Praktik Seoul"
+                        )
+                    } else {
+                        bText(
+                            "$beginnerDoneCount/12 done • Next: L${nextBeginnerLesson.number} ${nextBeginnerLesson.titleEn}",
+                            "$beginnerDoneCount/12 selesai • Lanjut: P${nextBeginnerLesson.number} ${nextBeginnerLesson.titleId}"
+                        )
+                    },
+                    progress = beginnerProgress,
+                    accent = extended.mint,
+                    onClick = onOpenBeginnerSyllabus,
+                    testTag = "pathway_beginner_syllabus"
+                )
+            }
+
+            StaggeredEntrance(index = 2) {
                 PathwayCard(
                     emblem = "한",
                     title = bText("Hangul Fundamentals", "Dasar Hangul"),

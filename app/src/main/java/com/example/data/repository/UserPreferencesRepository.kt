@@ -119,6 +119,10 @@ interface UserPreferencesRepository {
     suspend fun recordBlitzResult(score: Int, maxCombo: Int): Pair<Boolean, Int>
     suspend fun recordBestCombo(combo: Int)
     suspend fun unlockStamps(stampIds: Set<String>): Set<String>
+    suspend fun recordBeginnerLessonCompleted(
+        lessonId: String,
+        xpReward: Int = com.example.domain.curriculum.BeginnerSyllabusCatalog.LESSON_XP_REWARD
+    ): Boolean
 
     suspend fun clearAllPreferences()
 }
@@ -158,7 +162,7 @@ class DataStoreUserPreferencesRepository(
         val DAILY_REMINDER_HOUR = intPreferencesKey("daily_reminder_hour")
         val DAILY_REMINDER_MINUTE = intPreferencesKey("daily_reminder_minute")
 
-        // Engagement, XP, Streak Shield, Daily Spark/Seal, Blitz & Dojang Stamps
+        // Engagement, XP, Streak Shield, Daily Spark/Seal, Blitz, Dojang Stamps & Beginner Syllabus
         val TOTAL_XP = intPreferencesKey("engagement_total_xp")
         val STREAK_SHIELDS = intPreferencesKey("engagement_streak_shields")
         val LAST_SHIELD_USED_DAY_KEY = stringPreferencesKey("engagement_last_shield_used_day")
@@ -169,6 +173,7 @@ class DataStoreUserPreferencesRepository(
         val DAILY_SEAL_CLAIMED_DAY_KEY = stringPreferencesKey("engagement_daily_seal_day")
         val UNLOCKED_STAMP_IDS = stringPreferencesKey("engagement_unlocked_stamps")
         val SOUND_EFFECTS_ENABLED = booleanPreferencesKey("engagement_sound_effects_enabled")
+        val COMPLETED_BEGINNER_LESSONS = stringPreferencesKey("engagement_completed_beginner_lessons")
     }
 
     private val safePreferencesFlow: Flow<Preferences> = dataStore.data
@@ -542,6 +547,31 @@ class DataStoreUserPreferencesRepository(
         return newlyUnlocked
     }
 
+    override suspend fun recordBeginnerLessonCompleted(lessonId: String, xpReward: Int): Boolean {
+        val cleanId = lessonId.trim()
+        if (cleanId.isBlank()) return false
+        var newlyCompleted = false
+        dataStore.edit { prefs ->
+            val existing = parseStampIds(prefs[Keys.COMPLETED_BEGINNER_LESSONS])
+            if (cleanId !in existing) {
+                newlyCompleted = true
+                val updated = existing + cleanId
+                prefs[Keys.COMPLETED_BEGINNER_LESSONS] = updated.sorted().joinToString(",")
+                val curXp = (prefs[Keys.TOTAL_XP] ?: 0).coerceAtLeast(0)
+                val graduatedBonus = if (
+                    com.example.domain.curriculum.BeginnerSyllabusCatalog.isGraduated(updated) &&
+                    !com.example.domain.curriculum.BeginnerSyllabusCatalog.isGraduated(existing)
+                ) {
+                    com.example.domain.curriculum.BeginnerSyllabusCatalog.GRADUATION_BONUS_XP
+                } else {
+                    0
+                }
+                prefs[Keys.TOTAL_XP] = curXp + xpReward.coerceAtLeast(0) + graduatedBonus
+            }
+        }
+        return newlyCompleted
+    }
+
     override suspend fun clearAllPreferences() {
         dataStore.edit { it.clear() }
     }
@@ -581,7 +611,8 @@ class DataStoreUserPreferencesRepository(
         dailySparkCompletedDayKey = prefs[Keys.DAILY_SPARK_COMPLETED_DAY_KEY] ?: "",
         dailySealClaimedDayKey = prefs[Keys.DAILY_SEAL_CLAIMED_DAY_KEY] ?: "",
         unlockedStampIds = parseStampIds(prefs[Keys.UNLOCKED_STAMP_IDS]),
-        soundEffectsEnabled = prefs[Keys.SOUND_EFFECTS_ENABLED] ?: true
+        soundEffectsEnabled = prefs[Keys.SOUND_EFFECTS_ENABLED] ?: true,
+        completedBeginnerLessonIds = parseStampIds(prefs[Keys.COMPLETED_BEGINNER_LESSONS])
     )
 
     private fun parseStampIds(raw: String?): Set<String> {

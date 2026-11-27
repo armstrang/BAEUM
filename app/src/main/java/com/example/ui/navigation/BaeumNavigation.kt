@@ -80,6 +80,8 @@ import com.example.data.local.CurriculumPathway
 import com.example.data.local.RomanizationMode
 import com.example.data.seed.ExamType
 import com.example.data.seed.SpeakingDifficulty
+import com.example.domain.curriculum.BeginnerPracticeAction
+import com.example.domain.curriculum.BeginnerSyllabusCatalog
 import com.example.domain.exam.ExamSessionMode
 import com.example.domain.fsrs.FsrsRating
 import com.example.domain.quiz.QuizMode
@@ -87,6 +89,8 @@ import com.example.ui.components.GlobalCelebrationToast
 import com.example.ui.screens.ActiveExamScreen
 import com.example.ui.screens.ActiveQuizScreen
 import com.example.ui.screens.AnalyticsScreen
+import com.example.ui.screens.BeginnerLessonScreen
+import com.example.ui.screens.BeginnerSyllabusScreen
 import com.example.ui.screens.DifficultySelectionScreen
 import com.example.ui.screens.EpsTopikCenterScreen
 import com.example.ui.screens.EverydayKoreanScreen
@@ -128,6 +132,8 @@ object BaeumRoutes {
     const val EXAM = "exam_center"
     const val PROGRESS = "learning_analytics"
 
+    const val BEGINNER_SYLLABUS = "beginner_syllabus"
+    const val BEGINNER_LESSON = "beginner_lesson/{lessonId}"
     const val HANGUL_STUDIO = "hangul_studio"
     const val HANGUL_WRITING = "hangul_writing"
     const val TOPIK_CENTER = "topik_center"
@@ -149,6 +155,8 @@ object BaeumRoutes {
     const val ACTIVE_EXAM = "active_exam"
     const val EXAM_REPORT = "exam_report"
     const val SETTINGS = "settings"
+
+    fun beginnerLessonRoute(lessonId: String): String = "beginner_lesson/${Uri.encode(lessonId)}"
 
     fun vocabularyRoute(curriculum: String? = null, sub: String? = null): String {
         val c = Uri.encode(curriculum.orEmpty())
@@ -367,15 +375,22 @@ private fun BaeumMainShell(
                                         BaeumRoutes.SPEAK -> navigateTopTab(BaeumRoutes.SPEAK)
                                         else -> navController.navigate(BaeumRoutes.QUIZ_CENTER)
                                     }
+                                },
+                                onOpenBeginnerSyllabus = { navController.navigate(BaeumRoutes.BEGINNER_SYLLABUS) },
+                                onStartNextBeginnerLesson = { lessonId ->
+                                    navController.navigate(BaeumRoutes.beginnerLessonRoute(lessonId))
                                 }
                             )
                         }
 
                         composable(BaeumRoutes.LEARN) {
                             val allVocab by viewModel.allVocab.collectAsStateWithLifecycle()
+                            val habitSnapshot by viewModel.habitSnapshot.collectAsStateWithLifecycle()
                             LearningHubScreen(
                                 allVocab = allVocab,
+                                completedBeginnerLessons = habitSnapshot.completedBeginnerLessonIds,
                                 onOpenSettings = { navController.navigate(BaeumRoutes.SETTINGS) },
+                                onOpenBeginnerSyllabus = { navController.navigate(BaeumRoutes.BEGINNER_SYLLABUS) },
                                 onSelectHangul = {
                                     viewModel.setActivePathway(CurriculumPathway.HANGUL)
                                     navController.navigate(BaeumRoutes.HANGUL_STUDIO)
@@ -451,6 +466,55 @@ private fun BaeumMainShell(
                                         navController.navigate(BaeumRoutes.FLASHCARD)
                                     } else {
                                         navController.navigate(BaeumRoutes.QUIZ_CENTER)
+                                    }
+                                }
+                            )
+                        }
+
+                        // ==================== COMPLETE BEGINNER SYLLABUS ====================
+                        composable(BaeumRoutes.BEGINNER_SYLLABUS) {
+                            val habitSnapshot by viewModel.habitSnapshot.collectAsStateWithLifecycle()
+                            BeginnerSyllabusScreen(
+                                completedLessonIds = habitSnapshot.completedBeginnerLessonIds,
+                                onBack = { navController.popBackStack() },
+                                onOpenLesson = { lessonId ->
+                                    navController.navigate(BaeumRoutes.beginnerLessonRoute(lessonId))
+                                }
+                            )
+                        }
+
+                        composable(
+                            route = BaeumRoutes.BEGINNER_LESSON,
+                            arguments = listOf(navArgument("lessonId") { type = NavType.StringType })
+                        ) { entry ->
+                            val habitSnapshot by viewModel.habitSnapshot.collectAsStateWithLifecycle()
+                            val lessonId = entry.arguments?.getString("lessonId").orEmpty()
+                            val lesson = remember(lessonId) { BeginnerSyllabusCatalog.lessonById(lessonId) }
+                            BeginnerLessonScreen(
+                                lesson = lesson,
+                                isAlreadyCompleted = lessonId in habitSnapshot.completedBeginnerLessonIds,
+                                onBack = { navController.popBackStack() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onCheckSound = { ok, step -> viewModel.playBeginnerCheckSound(ok, step) },
+                                onLessonCompleted = { id -> viewModel.completeBeginnerLesson(id) },
+                                onOpenNextLesson = { nextId ->
+                                    navController.navigate(BaeumRoutes.beginnerLessonRoute(nextId)) {
+                                        popUpTo(BaeumRoutes.BEGINNER_LESSON) { inclusive = true }
+                                    }
+                                },
+                                onOpenPracticeAction = { action ->
+                                    when (action) {
+                                        BeginnerPracticeAction.HANGUL_WRITING -> navController.navigate(BaeumRoutes.HANGUL_WRITING)
+                                        BeginnerPracticeAction.HANGUL_STUDIO -> navController.navigate(BaeumRoutes.HANGUL_STUDIO)
+                                        BeginnerPracticeAction.BEGINNER_FLASHCARDS -> {
+                                            flashcardViewModel.startSession(curriculumFilter = CurriculumPathway.TOPIK, subCategoryFilter = "1급", dueOnly = false)
+                                            navController.navigate(BaeumRoutes.FLASHCARD)
+                                        }
+                                        BeginnerPracticeAction.GRAMMAR_STUDIO -> navController.navigate(BaeumRoutes.GRAMMAR_STUDIO)
+                                        BeginnerPracticeAction.EVERYDAY_SPEAKING -> {
+                                            viewModel.startAutoConversation(SpeakingDifficulty.BEGINNER)
+                                            navController.navigate(BaeumRoutes.LIVE_CONVERSATION)
+                                        }
                                     }
                                 }
                             )
