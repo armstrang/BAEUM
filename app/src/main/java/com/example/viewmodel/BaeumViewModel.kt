@@ -22,6 +22,7 @@ import com.example.data.repository.DayForecastPoint
 import com.example.data.repository.LearningStreakState
 import com.example.data.repository.ThemePreferences
 import com.example.data.repository.UserPreferencesRepository
+import com.example.data.seed.ExamPaperLength
 import com.example.data.seed.ExamType
 import com.example.data.seed.SpeakingDifficulty
 import com.example.data.seed.SpeakingScenario
@@ -275,7 +276,20 @@ class BaeumViewModel(
         }
         viewModelScope.launch {
             audioController.captureState.collect { cap ->
-                if (_liveConversation.value == null) return@collect
+                if (_liveConversation.value == null) {
+                    val activeExamSession = _activeExam.value
+                    val activeExamQ = activeExamSession?.currentQuestion
+                    if (activeExamSession != null && !activeExamSession.isSubmitted &&
+                        activeExamQ != null && activeExamQ.section == "Speaking" &&
+                        cap is SpeechCaptureState.Captured && cap.transcript.isNotBlank()
+                    ) {
+                        val existing = activeExamSession.openResponses[activeExamQ.id].orEmpty().trim()
+                        val merged = if (existing.isBlank()) cap.transcript.trim() else "$existing ${cap.transcript.trim()}"
+                        updateExamOpenResponse(activeExamQ.id, merged)
+                        audioController.resetCapture()
+                    }
+                    return@collect
+                }
                 val isId = settings.value.translationLanguage.equals("ID", ignoreCase = true)
                 when (cap) {
                     is SpeechCaptureState.Listening -> {
@@ -752,20 +766,95 @@ class BaeumViewModel(
     }
 
     // ==================== EXAMINATION ENGINE ====================
-    fun startExam(examType: ExamType, mode: ExamSessionMode) {
+    fun startExam(
+        examType: ExamType,
+        mode: ExamSessionMode,
+        paperLength: ExamPaperLength = ExamPaperLength.STANDARD
+    ) {
+        audioController.stopSpeaking()
+        audioController.resetCapture()
+        _liveConversation.value = null
         _activeExam.value = ExamEngine.startExam(
             examType = examType,
             mode = mode,
             allVocab = allVocab.value,
-            translationLang = settings.value.translationLanguage
+            translationLang = settings.value.translationLanguage,
+            paperLength = paperLength
         )
         _lastExamReport.value = null
+    }
+
+    fun playExamAudio(questionId: String) {
+        val session = _activeExam.value ?: return
+        if (session.isSubmitted) return
+        val q = session.questions.firstOrNull { it.id == questionId } ?: return
+        val script = q.audioTranscriptKo ?: return
+        if (!session.canPlayAudio(q)) return
+
+        val key = session.audioQuotaKey(q)
+        val nextCount = (session.audioPlayCounts[key] ?: 0) + 1
+        _activeExam.update { cur ->
+            if (cur == null || cur.isSubmitted) cur
+            else cur.copy(audioPlayCounts = cur.audioPlayCounts + (key to nextCount))
+        }
+        audioController.speakKorean(script)
+    }
+
+    fun stopExamAudio() {
+        audioController.stopSpeaking()
+    }
+
+    fun startExamVoiceAnswer() {
+        val session = _activeExam.value ?: return
+        if (session.isSubmitted || session.currentQuestion?.section != "Speaking") return
+        audioController.stopSpeaking()
+        audioController.startKoreanListening()
+    }
+
+    fun stopExamVoiceAnswer() {
+        audioController.stopListening()
     }
 
     fun selectExamOption(questionId: String, optionIndex: Int) {
         _activeExam.update { session ->
             if (session == null || session.isSubmitted) session
-            else session.copy(selectedOptions = session.selectedOptions + (questionId to optionIndex))
+            else {
+                val updatedElims = session.eliminatedOptions[questionId]?.minus(optionIndex)
+                val nextElimMap = if (updatedElims.isNullOrEmpty()) {
+                    session.eliminatedOptions - questionId
+                } else {
+                    session.eliminatedOptions + (questionId to updatedElims)
+                }
+                session.copy(
+                    selectedOptions = session.selectedOptions + (questionId to optionIndex),
+                    eliminatedOptions = nextElimMap
+                )
+            }
+        }
+    }
+
+    fun toggleEliminateExamOption(questionId: String, optionIndex: Int) {
+        _activeExam.update { session ->
+            if (session == null || session.isSubmitted) session
+            else {
+                val curSet = session.eliminatedOptions[questionId].orEmpty().toMutableSet()
+                val added = curSet.add(optionIndex)
+                if (!added) curSet.remove(optionIndex)
+                val nextElimMap = if (curSet.isEmpty()) {
+                    session.eliminatedOptions - questionId
+                } else {
+                    session.eliminatedOptions + (questionId to curSet)
+                }
+                val nextSelected = if (added && session.selectedOptions[questionId] == optionIndex) {
+                    session.selectedOptions - questionId
+                } else {
+                    session.selectedOptions
+                }
+                session.copy(
+                    selectedOptions = nextSelected,
+                    eliminatedOptions = nextElimMap
+                )
+            }
         }
     }
 
@@ -773,6 +862,22 @@ class BaeumViewModel(
         _activeExam.update { session ->
             if (session == null || session.isSubmitted) session
             else session.copy(openResponses = session.openResponses + (questionId to text))
+        }
+    }
+
+    fun updateExamDualBlankResponse(questionId: String, blankG: String, blankN: String) {
+        val formatted = ExamEngine.formatDualBlankResponse(blankG, blankN)
+        updateExamOpenResponse(questionId, formatted)
+    }
+
+    fun toggleExamPracticeCheck(questionId: String) {
+        _activeExam.update { session ->
+            if (session == null || session.isSubmitted || session.mode != ExamSessionMode.PRACTICE) session
+            else {
+                val next = session.practiceCheckedIds.toMutableSet()
+                if (!next.add(questionId)) next.remove(questionId)
+                session.copy(practiceCheckedIds = next)
+            }
         }
     }
 
@@ -788,21 +893,49 @@ class BaeumViewModel(
     }
 
     fun jumpToExamQuestion(index: Int) {
+        audioController.stopSpeaking()
+        audioController.resetCapture()
         _activeExam.update { session ->
             if (session == null) null
+            else if (!session.isQuestionAccessible(index)) session
             else session.copy(currentIndex = index.coerceIn(0, session.questions.lastIndex.coerceAtLeast(0)))
         }
+    }
+
+    fun enterExamPeriodTransition() {
+        audioController.stopSpeaking()
+        audioController.resetCapture()
+        _activeExam.update { session ->
+            if (session == null) null else ExamEngine.enterPeriodTransition(session)
+        }
+    }
+
+    fun startNextExamPeriod() {
+        audioController.stopSpeaking()
+        audioController.resetCapture()
+        _activeExam.update { session ->
+            if (session == null) null else ExamEngine.startNextPeriod(session)
+        }
+    }
+
+    fun abandonActiveExam() {
+        audioController.stopSpeaking()
+        audioController.resetCapture()
+        _activeExam.value = null
     }
 
     fun submitActiveExam(): ExamReport? {
         val session = _activeExam.value ?: return null
         if (session.isSubmitted) return _lastExamReport.value
 
+        audioController.stopSpeaking()
+        audioController.resetCapture()
+
         val report = ExamEngine.gradeSession(
             session = session,
             translationLang = settings.value.translationLanguage
         )
-        _activeExam.value = session.copy(isSubmitted = true)
+        _activeExam.value = session.copy(isSubmitted = true, awaitingPeriodTransition = false)
         _lastExamReport.value = report
 
         viewModelScope.launch {

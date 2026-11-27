@@ -44,7 +44,8 @@ data class OpenResponseRubricScore(
     val registerScore: Int,       // 0..100
     val hangulCharCount: Int,
     val keywordMatches: Int,
-    val feedback: String
+    val feedback: String,
+    val totalCharCountWithSpaces: Int = hangulCharCount
 )
 
 data class JamoAnswerEvaluation(
@@ -135,22 +136,31 @@ data class LearnerReadinessProfile(
 object LearningScoringEngine {
 
     /**
-     * 4-Axis Korean Open-Response Rubric used by TOPIK II Writing and TOPIK Speaking exams:
+     * 4-Axis Korean Open-Response Rubric used by TOPIK II Writing (51–54번) and TOPIK Speaking exams:
      * - Relevance & Keyword Coverage (35%)
-     * - Completeness & Substantive Hangul Length (25%)
+     * - Completeness & Substantive Length (25%)
      * - Grammar, Particles & Discourse Cohesion (25%)
      * - Speech Register & Style Consistency (15%)
      *
-     * Guards against non-Korean input and repeated-character spam.
+     * Guards against non-Korean input, space-padding, and repeated-character spam.
      */
     fun evaluateKoreanOpenResponse(
         text: String,
         expectedKeywords: List<String>,
         targetMinHangul: Int = 35,
-        expectedRegister: KoreanRegisterTarget = KoreanRegisterTarget.FORMAL_WRITTEN
+        expectedRegister: KoreanRegisterTarget = KoreanRegisterTarget.FORMAL_WRITTEN,
+        targetMaxChars: Int = 0,
+        isShortDualBlank: Boolean = false,
+        isIndonesian: Boolean = false
     ): OpenResponseRubricScore {
-        val cleaned = text.trim()
-        if (cleaned.isBlank() || !HangulUnicodeEngine.containsHangul(cleaned)) {
+        val rawCleaned = text.trim()
+        val strippedForEval = if (isShortDualBlank) {
+            rawCleaned.replace(Regex("\\(\\s*[ㄱㄴ]\\s*\\)"), "").trim()
+        } else {
+            rawCleaned
+        }
+
+        if (strippedForEval.isBlank() || !HangulUnicodeEngine.containsHangul(strippedForEval)) {
             return OpenResponseRubricScore(
                 totalRatio = 0.0,
                 relevanceScore = 0,
@@ -159,12 +169,18 @@ object LearningScoringEngine {
                 registerScore = 0,
                 hangulCharCount = 0,
                 keywordMatches = 0,
-                feedback = "No Korean Hangul response detected. Write a complete Korean answer using target keywords."
+                totalCharCountWithSpaces = 0,
+                feedback = if (isIndonesian) {
+                    "Tidak terdeteksi jawaban Hangul Korea. Tulis jawaban Korea lengkap sesuai kata kunci topik."
+                } else {
+                    "No Korean Hangul response detected. Write a complete Korean answer using target keywords."
+                }
             )
         }
 
-        val hangulChars = cleaned.filter { it.code in 0xAC00..0xD7A3 }
+        val hangulChars = strippedForEval.filter { it.code in 0xAC00..0xD7A3 }
         val hangulCount = hangulChars.length
+        val totalCharsWithSpaces = strippedForEval.replace(Regex("\\s+"), " ").length
         val uniqueHangulRatio = if (hangulCount > 0) {
             hangulChars.toSet().size.toDouble() / hangulCount.coerceAtMost(40).toDouble()
         } else 0.0
@@ -173,39 +189,72 @@ object LearningScoringEngine {
         val spamPenalty = if (hangulCount >= 8 && uniqueHangulRatio < 0.28) 0.35 else 1.0
 
         // 1. Relevance & Keyword Coverage (0..100)
-        val kwHits = expectedKeywords.count { kw -> kw.isNotBlank() && cleaned.contains(kw) }
-        val kwTarget = expectedKeywords.size.coerceIn(1, 4)
+        val kwHits = expectedKeywords.count { kw -> kw.isNotBlank() && strippedForEval.contains(kw) }
+        val kwTarget = if (isShortDualBlank) {
+            expectedKeywords.size.coerceIn(1, 3)
+        } else {
+            expectedKeywords.size.coerceIn(1, 4)
+        }
         val relevanceRaw = if (expectedKeywords.isEmpty()) {
             ((hangulCount.toDouble() / targetMinHangul.coerceAtLeast(10)) * 85.0).coerceIn(20.0, 95.0)
         } else {
             val hitRatio = (kwHits.toDouble() / kwTarget.toDouble()).coerceIn(0.0, 1.0)
-            val baseContext = if (hangulCount >= 12) 20.0 else 10.0
+            val baseContext = if (hangulCount >= (if (isShortDualBlank) 8 else 12)) 20.0 else 10.0
             (baseContext + hitRatio * 80.0).coerceIn(0.0, 100.0)
         }
         val relevanceScore = (relevanceRaw * spamPenalty).roundToInt().coerceIn(0, 100)
 
         // 2. Completeness & Length (0..100)
-        val wordTokens = cleaned.split(Regex("\\s+")).filter { it.isNotBlank() }
-        val lengthRatio = (hangulCount.toDouble() / targetMinHangul.coerceAtLeast(15)).coerceIn(0.0, 1.15)
-        val sentenceCount = cleaned.split(Regex("[.?!。]+")).count { it.trim().length >= 3 }
-        val completenessRaw = (min(1.0, lengthRatio) * 75.0 +
-            min(1.0, wordTokens.size / 6.0) * 15.0 +
-            min(1.0, sentenceCount / 2.0) * 10.0)
+        val wordTokens = strippedForEval.split(Regex("\\s+")).filter { it.isNotBlank() }
+        val sentenceCount = strippedForEval.split(Regex("[.?!。\n]+")).count { it.trim().length >= 3 }
+        val usesOfficialCharCount = !isShortDualBlank && targetMinHangul >= 150
+        val effectiveLength = if (usesOfficialCharCount) {
+            // Prevent whitespace padding from gaming 원고지 character count
+            min(totalCharsWithSpaces, (hangulCount * 1.45).roundToInt() + 12)
+        } else {
+            hangulCount
+        }
+
+        val completenessRaw = if (isShortDualBlank) {
+            val lines = rawCleaned.lines().map { it.replace(Regex("\\(\\s*[ㄱㄴ]\\s*\\)"), "").trim() }
+                .filter { HangulUnicodeEngine.containsHangul(it) }
+            val bothFilledBonus = if (lines.size >= 2) 45.0 else 15.0
+            val lenRatio = (hangulCount.toDouble() / targetMinHangul.coerceAtLeast(10)).coerceIn(0.0, 1.0)
+            bothFilledBonus + lenRatio * 55.0
+        } else {
+            val lengthRatio = (effectiveLength.toDouble() / targetMinHangul.coerceAtLeast(15)).coerceIn(0.0, 1.15)
+            val overLengthPenalty = if (targetMaxChars > 0 && totalCharsWithSpaces > (targetMaxChars * 1.25).roundToInt()) {
+                0.88
+            } else 1.0
+            val targetWords = if (targetMinHangul >= 400) 45.0 else if (targetMinHangul >= 150) 20.0 else 6.0
+            val targetSentences = if (targetMinHangul >= 400) 6.0 else if (targetMinHangul >= 150) 3.0 else 2.0
+            (min(1.0, lengthRatio) * 75.0 +
+                min(1.0, wordTokens.size / targetWords) * 15.0 +
+                min(1.0, sentenceCount / targetSentences) * 10.0) * overLengthPenalty
+        }
         val completenessScore = (completenessRaw * spamPenalty).roundToInt().coerceIn(0, 100)
 
         // 3. Grammar, Particles & Cohesion (0..100) — token-boundary & batchim-verified
-        val particleHits = KoreanLinguisticsEngine.countWordFinalParticles(cleaned)
-        val connectorHits = KoreanLinguisticsEngine.countDiscourseConnectors(cleaned)
-        val grammarRaw = (
+        val particleHits = KoreanLinguisticsEngine.countWordFinalParticles(strippedForEval)
+        val connectorHits = KoreanLinguisticsEngine.countDiscourseConnectors(strippedForEval)
+        val hasAnyNaturalEnding = KoreanLinguisticsEngine.hasWrittenPlainEnding(strippedForEval) ||
+            KoreanLinguisticsEngine.hasFormalPoliteEnding(strippedForEval) ||
+            KoreanLinguisticsEngine.hasPoliteHaeyoEnding(strippedForEval)
+
+        val grammarRaw = if (isShortDualBlank) {
+            val endingPart = if (hasAnyNaturalEnding) 55.0 else 15.0
+            val clausePart = min(1.0, (particleHits + connectorHits) / 2.0) * 45.0
+            endingPart + clausePart
+        } else {
             min(1.0, particleHits / 3.0) * 55.0 +
-            min(1.0, connectorHits / 2.0) * 45.0
-        )
+                min(1.0, connectorHits / 2.0) * 45.0
+        }
         val grammarScore = (grammarRaw * spamPenalty).roundToInt().coerceIn(0, 100)
 
         // 4. Register & Style Appropriateness (0..100) — Unicode Jamo ending recognition
-        val hasWrittenPlain = KoreanLinguisticsEngine.hasWrittenPlainEnding(cleaned)
-        val hasFormalPolite = KoreanLinguisticsEngine.hasFormalPoliteEnding(cleaned)
-        val hasPolite = KoreanLinguisticsEngine.hasPoliteHaeyoEnding(cleaned)
+        val hasWrittenPlain = KoreanLinguisticsEngine.hasWrittenPlainEnding(strippedForEval)
+        val hasFormalPolite = KoreanLinguisticsEngine.hasFormalPoliteEnding(strippedForEval)
+        val hasPolite = KoreanLinguisticsEngine.hasPoliteHaeyoEnding(strippedForEval)
 
         val registerRaw = when (expectedRegister) {
             KoreanRegisterTarget.FORMAL_WRITTEN -> when {
@@ -216,7 +265,7 @@ object LearningScoringEngine {
             }
             KoreanRegisterTarget.FORMAL_POLITE -> when {
                 hasFormalPolite -> 100.0
-                hasPolite -> 80.0
+                hasPolite -> 84.0
                 else -> 45.0
             }
             KoreanRegisterTarget.POLITE_EVERYDAY -> when {
@@ -236,25 +285,67 @@ object LearningScoringEngine {
 
         val feedbackParts = mutableListOf<String>()
         if (kwHits == 0 && expectedKeywords.isNotEmpty()) {
-            feedbackParts += "Include topic keywords (${expectedKeywords.take(3).joinToString(", ")})."
+            feedbackParts += if (isIndonesian) {
+                "Sertakan kata kunci topik (${expectedKeywords.take(3).joinToString(", ")})."
+            } else {
+                "Include topic keywords (${expectedKeywords.take(3).joinToString(", ")})."
+            }
         } else if (kwHits >= kwTarget) {
-            feedbackParts += "Strong topic keyword coverage ($kwHits/$kwTarget)."
+            feedbackParts += if (isIndonesian) {
+                "Cakupan kata kunci topik sangat baik ($kwHits/$kwTarget)."
+            } else {
+                "Strong topic keyword coverage ($kwHits/$kwTarget)."
+            }
         }
-        if (hangulCount < targetMinHangul) {
-            feedbackParts += "Expand response length ($hangulCount/$targetMinHangul Hangul syllables target)."
+
+        if (isShortDualBlank && completenessScore < 70) {
+            feedbackParts += if (isIndonesian) {
+                "Pastikan kedua bagian (ㄱ) dan (ㄴ) terisi lengkap dalam bahasa Korea."
+            } else {
+                "Make sure both blanks (ㄱ) and (ㄴ) are completed in Korean."
+            }
+        } else if (!isShortDualBlank && effectiveLength < targetMinHangul) {
+            feedbackParts += if (isIndonesian) {
+                if (usesOfficialCharCount) {
+                    "Tambah panjang tulisan ($totalCharsWithSpaces/$targetMinHangul karakter termasuk spasi)."
+                } else {
+                    "Perluas panjang jawaban ($hangulCount/$targetMinHangul suku kata Hangul)."
+                }
+            } else {
+                if (usesOfficialCharCount) {
+                    "Expand essay length ($totalCharsWithSpaces/$targetMinHangul chars including spaces)."
+                } else {
+                    "Expand response length ($hangulCount/$targetMinHangul Hangul syllables target)."
+                }
+            }
         }
-        if (connectorHits == 0) {
-            feedbackParts += "Add Korean connectors (-지만, -기 때문에, -아/어서, 따라서) for cohesion."
+
+        if (!isShortDualBlank && connectorHits == 0) {
+            feedbackParts += if (isIndonesian) {
+                "Tambahkan konjungsi Korea (-지만, -기 때문에, -아/어서, 따라서) agar kohesif."
+            } else {
+                "Add Korean connectors (-지만, -기 때문에, -아/어서, 따라서) for cohesion."
+            }
         }
         if (registerScore < 75) {
             feedbackParts += when (expectedRegister) {
-                KoreanRegisterTarget.FORMAL_WRITTEN -> "Use formal written endings (-는다/ㄴ다 or -ㅂ/습니다) for TOPIK II writing."
-                KoreanRegisterTarget.FORMAL_POLITE -> "Use formal polite endings (-ㅂ/습니다)."
-                KoreanRegisterTarget.POLITE_EVERYDAY -> "Use polite endings (-아요/어요 or -ㅂ/습니다)."
+                KoreanRegisterTarget.FORMAL_WRITTEN ->
+                    if (isIndonesian) "Gunakan akhiran ragam tulis formal (-는다/ㄴ다) untuk Menulis TOPIK II."
+                    else "Use formal written endings (-는다/ㄴ다 or -ㅂ/습니다) for TOPIK II writing."
+                KoreanRegisterTarget.FORMAL_POLITE ->
+                    if (isIndonesian) "Gunakan akhiran sopan formal (-ㅂ/습니다 / -아/어 주십시오)."
+                    else "Use formal polite endings (-ㅂ/습니다)."
+                KoreanRegisterTarget.POLITE_EVERYDAY ->
+                    if (isIndonesian) "Gunakan akhiran sopan (-아요/어요 atau -ㅂ/습니다)."
+                    else "Use polite endings (-아요/어요 or -ㅂ/습니다)."
             }
         }
         if (feedbackParts.isEmpty()) {
-            feedbackParts += "Well-structured Korean response with balanced vocabulary, grammar, and register."
+            feedbackParts += if (isIndonesian) {
+                "Jawaban bahasa Korea terstruktur dengan baik dengan kosakata, tata bahasa, dan ragam bahasa yang seimbang."
+            } else {
+                "Well-structured Korean response with balanced vocabulary, grammar, and register."
+            }
         }
 
         return OpenResponseRubricScore(
@@ -265,6 +356,7 @@ object LearningScoringEngine {
             registerScore = registerScore,
             hangulCharCount = hangulCount,
             keywordMatches = kwHits,
+            totalCharCountWithSpaces = totalCharsWithSpaces,
             feedback = feedbackParts.joinToString(" ")
         )
     }

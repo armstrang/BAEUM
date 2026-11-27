@@ -395,8 +395,8 @@ private fun BaeumMainShell(
                             ExamCenterScreen(
                                 attempts = examAttempts,
                                 onOpenSettings = { navController.navigate(BaeumRoutes.SETTINGS) },
-                                onStartExam = { type, mode ->
-                                    viewModel.startExam(type, mode)
+                                onStartExam = { type, mode, length ->
+                                    viewModel.startExam(type, mode, length)
                                     navController.navigate(BaeumRoutes.ACTIVE_EXAM)
                                 }
                             )
@@ -718,14 +718,29 @@ private fun BaeumMainShell(
                         // ==================== EXAM SUB-SCREENS ====================
                         composable(BaeumRoutes.ACTIVE_EXAM) {
                             val activeExam by viewModel.activeExam.collectAsStateWithLifecycle()
+                            val ttsStatus by viewModel.ttsStatus.collectAsStateWithLifecycle()
+                            val speechCaptureState by viewModel.speechCaptureState.collectAsStateWithLifecycle()
                             ActiveExamScreen(
                                 session = activeExam,
-                                onBack = { navController.popBackStack() },
-                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                ttsStatus = ttsStatus,
+                                speechCaptureState = speechCaptureState,
+                                onAbandonExam = {
+                                    viewModel.abandonActiveExam()
+                                    navController.popBackStack()
+                                },
+                                onPlayExamAudio = { qId -> viewModel.playExamAudio(qId) },
+                                onStopExamAudio = { viewModel.stopExamAudio() },
+                                onStartVoiceAnswer = { viewModel.startExamVoiceAnswer() },
+                                onStopVoiceAnswer = { viewModel.stopExamVoiceAnswer() },
                                 onSelectOption = { qId, idx -> viewModel.selectExamOption(qId, idx) },
+                                onToggleEliminateOption = { qId, idx -> viewModel.toggleEliminateExamOption(qId, idx) },
                                 onOpenResponseChange = { qId, txt -> viewModel.updateExamOpenResponse(qId, txt) },
+                                onDualBlankResponseChange = { qId, g, n -> viewModel.updateExamDualBlankResponse(qId, g, n) },
+                                onTogglePracticeCheck = { qId -> viewModel.toggleExamPracticeCheck(qId) },
                                 onToggleFlag = { qId -> viewModel.toggleExamFlag(qId) },
                                 onJumpToQuestion = { idx -> viewModel.jumpToExamQuestion(idx) },
+                                onEnterPeriodTransition = { viewModel.enterExamPeriodTransition() },
+                                onStartNextPeriod = { viewModel.startNextExamPeriod() },
                                 onSubmitExam = {
                                     viewModel.submitActiveExam()
                                     navController.navigate(BaeumRoutes.EXAM_REPORT) {
@@ -739,7 +754,14 @@ private fun BaeumMainShell(
                             val lastExamReport by viewModel.lastExamReport.collectAsStateWithLifecycle()
                             ExamReportScreen(
                                 report = lastExamReport,
-                                onBack = { navController.popBackStack() }
+                                onBack = { navController.popBackStack() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onRetakeExam = { type, mode, length ->
+                                    viewModel.startExam(type, mode, length)
+                                    navController.navigate(BaeumRoutes.ACTIVE_EXAM) {
+                                        popUpTo(BaeumRoutes.EXAM_REPORT) { inclusive = true }
+                                    }
+                                }
                             )
                         }
 

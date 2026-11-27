@@ -79,9 +79,9 @@ fun QuizMode.localizedBadge(): String = if (isIndonesian()) {
 fun ExamType.localizedSubtitle(): String = if (isIndonesian()) {
     when (this) {
         ExamType.TOPIK_I -> "Menyimak + Membaca • Level 1–2급"
-        ExamType.TOPIK_II -> "Menyimak + Membaca + Menulis • Level 3–6급"
-        ExamType.EPS_TOPIK -> "Menyimak + Membaca • Keselamatan & Dunia Kerja"
-        ExamType.TOPIK_SPEAKING -> "Tugas Berbicara Terstruktur • Respons Lisan"
+        ExamType.TOPIK_II -> "1교시 Menyimak · Menulis • 2교시 Membaca (3–6급)"
+        ExamType.EPS_TOPIK -> "Membaca + Menyimak • Keselamatan & Dunia Kerja"
+        ExamType.TOPIK_SPEAKING -> "6 Tugas Resmi IBT • Respons Lisan Korea"
     }
 } else subtitle
 
@@ -89,7 +89,7 @@ fun ExamType.localizedSubtitle(): String = if (isIndonesian()) {
 fun ExamSessionMode.localizedLabel(): String = if (isIndonesian()) {
     when (this) {
         ExamSessionMode.PRACTICE -> "Mode latihan"
-        ExamSessionMode.MOCK -> "Ujian simulasi"
+        ExamSessionMode.MOCK -> "Simulasi TOPIK"
     }
 } else label
 
