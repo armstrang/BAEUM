@@ -525,13 +525,29 @@ fun SettingsScreen(
                     onClick = onReplayOnboarding
                 )
                 HorizontalDivider(color = extended.cardBorder.copy(alpha = 0.5f))
+                val versionName = com.example.BuildConfig.VERSION_NAME
+                val versionCode = com.example.BuildConfig.VERSION_CODE
+                val isPreRelease = versionName.contains("beta", ignoreCase = true) ||
+                    versionName.contains("alpha", ignoreCase = true) ||
+                    versionName.contains("rc", ignoreCase = true)
+                SettingsCycleRow(
+                    title = bText("App version", "Versi aplikasi"),
+                    value = if (isPreRelease) {
+                        "v$versionName (#$versionCode · Beta)"
+                    } else {
+                        "v$versionName (#$versionCode)"
+                    },
+                    testTag = "settings_version_row",
+                    onClick = {}
+                )
+                HorizontalDivider(color = extended.cardBorder.copy(alpha = 0.5f))
                 Column(modifier = Modifier.padding(top = 10.dp)) {
                     Text(bText("Privacy & Independence", "Privasi & Kemandirian"), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = bText(
-                            "Baeum stores all study history, FSRS intervals, and exam logs locally on your device. No mandatory account, no cloud tracking, and temporary voice recordings are cleared automatically after each turn.",
-                            "Baeum menyimpan seluruh riwayat belajar, jadwal FSRS, dan catatan ujian secara lokal di perangkatmu. Tanpa akun wajib, tanpa pelacakan cloud, dan rekaman suara sementara dihapus otomatis setelah setiap giliran."
+                            "Baeum stores all study history, FSRS intervals, 3-track syllabus progress, and exam logs locally on your device. No mandatory account, no cloud tracking, and temporary voice recordings are cleared automatically after each turn.",
+                            "Baeum menyimpan seluruh riwayat belajar, jadwal FSRS, progres 3 jalur silabus, dan catatan ujian secara lokal di perangkatmu. Tanpa akun wajib, tanpa pelacakan cloud, dan rekaman suara sementara dihapus otomatis setelah setiap giliran."
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant

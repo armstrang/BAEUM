@@ -215,4 +215,81 @@ class BaeumBeginnerSyllabusTest {
                     SyllabusTrack.TOPIK_II.graduationBonusXp
             assertEquals(expectedTotalXp, afterAll.totalXp)
         }
+
+    @Test
+    fun engagementBackupRoundTripAndRestorePreservesAllSyllabusAndBossProgress() =
+        runTest(UnconfinedTestDispatcher()) {
+            val repo = createPrefsRepo(this, "backup_restore_engagement_prefs")
+            val original = com.example.domain.engagement.EngagementProfileState(
+                totalXp = 2450,
+                streakShields = 2,
+                lastShieldUsedDayKey = "2026-11-26",
+                blitzBestScore = 640,
+                blitzGamesPlayed = 7,
+                bestComboEver = 14,
+                dailySparkCompletedDayKey = "2026-11-27",
+                dailySealClaimedDayKey = "2026-11-27",
+                unlockedStampIds = setOf("stamp_first_step", "stamp_streak_7"),
+                soundEffectsEnabled = false,
+                completedBeginnerLessonIds = setOf("beg_01_basic_vowels", "t1_08_irregular_verbs", "t1_09_noun_modifiers"),
+                perfectSyllabusLessonIds = setOf("beg_01_basic_vowels", "t1_08_irregular_verbs"),
+                defeatedStageBossNumbers = setOf(1, 2, 6),
+                mistakeVaultKeys = setOf("t1_09_noun_modifiers::build::1")
+            )
+
+            // Verify Moshi serialization/deserialization keeps schemaVersion == 2 and all engagement fields intact
+            val payload = com.example.data.repository.BaeumBackupPayload(
+                schemaVersion = com.example.data.repository.BaeumRepository.CURRENT_BACKUP_SCHEMA_VERSION,
+                exportedAtEpochMs = 1_795_760_000_000L,
+                vocabStates = emptyList(),
+                dailyStats = emptyList(),
+                quizRecords = emptyList(),
+                speakingSessions = emptyList(),
+                examAttempts = emptyList(),
+                engagement = com.example.data.repository.EngagementBackup(
+                    totalXp = original.totalXp,
+                    streakShields = original.streakShields,
+                    lastShieldUsedDayKey = original.lastShieldUsedDayKey,
+                    blitzBestScore = original.blitzBestScore,
+                    blitzGamesPlayed = original.blitzGamesPlayed,
+                    bestComboEver = original.bestComboEver,
+                    dailySparkCompletedDayKey = original.dailySparkCompletedDayKey,
+                    dailySealClaimedDayKey = original.dailySealClaimedDayKey,
+                    unlockedStampIds = original.unlockedStampIds.sorted(),
+                    soundEffectsEnabled = original.soundEffectsEnabled,
+                    completedSyllabusLessonIds = original.completedBeginnerLessonIds.sorted(),
+                    perfectSyllabusLessonIds = original.perfectSyllabusLessonIds.sorted(),
+                    defeatedStageBossNumbers = original.defeatedStageBossNumbers.sorted(),
+                    mistakeVaultKeys = original.mistakeVaultKeys.sorted()
+                )
+            )
+            val json = com.example.data.repository.BaeumRepository.serializeBackupPayload(payload)
+            val parsed = com.example.data.repository.BaeumRepository.parseBackupJson(json)
+            assertNotNull(parsed)
+            assertNotNull(parsed!!.engagement)
+            assertEquals(2, parsed.schemaVersion)
+
+            // Restore into fresh DataStore repo and assert 100% equality
+            val eb = parsed.engagement!!
+            repo.restoreEngagementProfile(
+                com.example.domain.engagement.EngagementProfileState(
+                    totalXp = eb.totalXp,
+                    streakShields = eb.streakShields,
+                    lastShieldUsedDayKey = eb.lastShieldUsedDayKey,
+                    blitzBestScore = eb.blitzBestScore,
+                    blitzGamesPlayed = eb.blitzGamesPlayed,
+                    bestComboEver = eb.bestComboEver,
+                    dailySparkCompletedDayKey = eb.dailySparkCompletedDayKey,
+                    dailySealClaimedDayKey = eb.dailySealClaimedDayKey,
+                    unlockedStampIds = eb.unlockedStampIds.toSet(),
+                    soundEffectsEnabled = eb.soundEffectsEnabled,
+                    completedBeginnerLessonIds = eb.completedSyllabusLessonIds.toSet(),
+                    perfectSyllabusLessonIds = eb.perfectSyllabusLessonIds.toSet(),
+                    defeatedStageBossNumbers = eb.defeatedStageBossNumbers.toSet(),
+                    mistakeVaultKeys = eb.mistakeVaultKeys.toSet()
+                )
+            )
+            val restored = repo.engagementProfileFlow.first()
+            assertEquals(original, restored)
+        }
 }

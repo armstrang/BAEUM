@@ -133,6 +133,7 @@ interface UserPreferencesRepository {
         mistakeKey: String,
         bonusXp: Int = com.example.domain.curriculum.BeginnerSyllabusCatalog.REDEMPTION_BONUS_XP
     ): Boolean
+    suspend fun restoreEngagementProfile(profile: EngagementProfileState)
 
     suspend fun clearAllPreferences()
 }
@@ -644,6 +645,25 @@ class DataStoreUserPreferencesRepository(
             }
         }
         return resolved
+    }
+
+    override suspend fun restoreEngagementProfile(profile: EngagementProfileState) {
+        dataStore.edit { prefs ->
+            prefs[Keys.TOTAL_XP] = profile.totalXp.coerceAtLeast(0)
+            prefs[Keys.STREAK_SHIELDS] = profile.streakShields.coerceIn(0, BaeumHabitEngine.MAX_STREAK_SHIELDS)
+            prefs[Keys.LAST_SHIELD_USED_DAY_KEY] = profile.lastShieldUsedDayKey.trim()
+            prefs[Keys.BLITZ_BEST_SCORE] = profile.blitzBestScore.coerceAtLeast(0)
+            prefs[Keys.BLITZ_GAMES_PLAYED] = profile.blitzGamesPlayed.coerceAtLeast(0)
+            prefs[Keys.BEST_COMBO_EVER] = profile.bestComboEver.coerceAtLeast(0)
+            prefs[Keys.DAILY_SPARK_COMPLETED_DAY_KEY] = profile.dailySparkCompletedDayKey.trim()
+            prefs[Keys.DAILY_SEAL_CLAIMED_DAY_KEY] = profile.dailySealClaimedDayKey.trim()
+            prefs[Keys.UNLOCKED_STAMP_IDS] = profile.unlockedStampIds.map { it.trim() }.filter { it.isNotBlank() }.sorted().joinToString(",")
+            prefs[Keys.SOUND_EFFECTS_ENABLED] = profile.soundEffectsEnabled
+            prefs[Keys.COMPLETED_BEGINNER_LESSONS] = profile.completedBeginnerLessonIds.map { it.trim() }.filter { it.isNotBlank() }.sorted().joinToString(",")
+            prefs[Keys.PERFECT_SYLLABUS_LESSONS] = profile.perfectSyllabusLessonIds.map { it.trim() }.filter { it.isNotBlank() }.sorted().joinToString(",")
+            prefs[Keys.DEFEATED_STAGE_BOSSES] = profile.defeatedStageBossNumbers.filter { it > 0 }.sorted().joinToString(",")
+            prefs[Keys.SYLLABUS_MISTAKE_VAULT] = profile.mistakeVaultKeys.map { it.trim() }.filter { it.isNotBlank() }.sorted().takeLast(24).joinToString(",")
+        }
     }
 
     override suspend fun clearAllPreferences() {

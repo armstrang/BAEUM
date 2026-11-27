@@ -4,12 +4,12 @@
 
 **Atelier Belajar Bahasa Korea Modern — Dari Nol Hangul Hingga TOPIK II & EPS-TOPIK**
 
-[![Version](https://img.shields.io/badge/version-v0.1--beta--1-a99bff?style=for-the-badge)](https://github.com/armstrang/BAEUM/releases)
+[![Version](https://img.shields.io/badge/version-v0.1--beta--2-a99bff?style=for-the-badge)](https://github.com/armstrang/BAEUM/releases)
 [![Android](https://img.shields.io/badge/Android-7.0%2B%20(API%2024--36)-3DDC84?style=for-the-badge&logo=android&logoColor=white)](https://github.com/armstrang/BAEUM/releases)
 [![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose%20M3-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![Build Android APK](https://github.com/armstrang/BAEUM/actions/workflows/build-apk.yml/badge.svg)](https://github.com/armstrang/BAEUM/actions/workflows/build-apk.yml)
 
-[📥 Unduh APK Beta Terbaru (`v0.1-beta-1`)](https://github.com/armstrang/BAEUM/releases/tag/v0.1-beta-1) · [🗺️ Kurikulum 3 Jalur](#-3-jalur-silabus-terpandu) · [📝 Simulasi TOPIK](#-simulasi-ujian-topik--eps-topik-autentik) · [🧭 Roadmap Rilis](#-skema-versi--roadmap-menuju-play-store)
+[📥 Unduh APK Beta Terbaru (`v0.1-beta-2`)](https://github.com/armstrang/BAEUM/releases/tag/v0.1-beta-2) · [🗺️ Kurikulum 3 Jalur](#-3-jalur-silabus-terpandu) · [📝 Simulasi TOPIK](#-simulasi-ujian-topik--eps-topik-autentik) · [🔒 Kebijakan Privasi](PRIVACY_POLICY.md)
 
 </div>
 
@@ -42,7 +42,7 @@ BAEUM memisahkan arah belajar menjadi **3 silabus berbeda** yang saling menyambu
    - Kosakata pelajaran yang lulus otomatis disuntikkan ke antrean ulasan harian **FSRS-4.5**.
    - Setiap jawaban yang sempat salah otomatis masuk ke **Brankas Balas Dendam Kesalahan (*Redemption Drill*)** — taklukkan kembali untuk **+20 XP Bonus**!
 5. **⚔️ Tantangan Bos Tahap (*Stage Boss 60–90 Detik*)**:
-   - Di akhir setiap tahap (8 tahap total), hadapi gauntlet campuran cepat (*Audio + Susun Kalimat + Kilat*) untuk membuka **Stempel Dojang Bos Eksklusif** & bonus **+120 XP**.
+   - Di akhir setiap tahap (8 tahap total), hadapi gauntlet campuran cepat (*Audio + Susun Kalimat + Cepat Tepat*) untuk membuka **Stempel Dojang Bos Eksklusif** & bonus **+120 XP**.
 
 ---
 
@@ -58,16 +58,16 @@ Dirancang menyerupai psikologi dan format ujian resmi NIIED:
 ## 🔥 Seoul Atelier Habit & Flow Engine
 
 - **6.600+ Kosakata Terkurasi** (Hangul, TOPIK `1–6급`, EPS-TOPIK, Korea Sehari-hari) ditenagai **FSRS-4.5** (*Free Spaced Repetition Scheduler*) + fitur *Undo* atomik.
-- **10 Peringkat Budaya Korea** (`새싹` hingga `세종 대가`), **Perisai Streak Otomatis** (*Streak Shield*), **Pita Ritme 7 Hari**, **Daily Seoul Spark** (tantangan 1-ketuk di Beranda), **3 Misi Harian + Stempel Harian**, dan **12 Stempel Dojang**.
+- **10 Peringkat Budaya Korea** (`새싹` hingga `세종 대가`), **Perisai Streak Otomatis** (*Streak Shield*), **Pita Ritme 7 Hari**, **Daily Seoul Spark**, **3 Misi Harian + Stempel Harian**, dan **12 Stempel Dojang**.
 - **60 Detik Seoul Blitz**: Mode *arcade* kecepatan tinggi dengan *SEOUL FEVER* & bonus waktu `+2s` pada kombo tinggi.
-- **Kanvas Tulis Hangul** (*Bezier stroke smoothing*) & **Audio Pentatonik Korea** tanpa aset eksternal (*zero-asset PCM synthesis*).
+- **Backup & Restore JSON Penuh**: Ekspor & pulihkan FSRS, riwayat ujian, XP, progres 30 pelajaran silabus, stempel `★★★`, Bos Tahap, Brankas Kesalahan, & Stempel Dojang lintas perangkat tanpa cloud wajib.
 
 ---
 
 ## 📥 Cara Instalasi (Android Pre-Release Beta)
 
 1. Buka halaman [**GitHub Releases**](https://github.com/armstrang/BAEUM/releases).
-2. Unduh file **`BAEUM-v0.1-beta-1-debug.apk`** pada bagian **Assets** rilis terbaru.
+2. Unduh file **`BAEUM-v0.1-beta-2-debug.apk`** pada bagian **Assets** rilis terbaru.
 3. Pasang di perangkat Android (**Android 7.0 / API 24 ke atas** — izinkan *"Install unknown apps"* jika diminta).
 
 ---
@@ -78,9 +78,9 @@ BAEUM menggunakan skema **Semantic Versioning Pre-Release** hingga siap rilis pu
 
 | Versi | Tahap | Fokus Pengembangan |
 | :--- | :--- | :--- |
-| **`0.1-beta-1`** *(saat ini)* | Beta Awal | 3 Jalur Silabus (30 pelajaran, 60 Susun Kalimat, 8 Bos Tahap), Auto-Fade Romanisasi, *Listening-First*, Brankas Kesalahan, FSRS Sync, Simulasi TOPIK penilaian akhir, Fix Status Bar & Tema Daily Goal |
-| **`0.1-beta-x`** | Iterasi Beta 0.1 | Penyempurnaan UX dari umpan balik uji coba perangkat nyata, stabilitas audio TTS/STT, dan polesan performa |
-| **`0.2-beta-1`** | Beta Major Berikutnya | Penambahan fitur besar berikutnya (mis. paket latihan *Listening* panjang TOPIK II, analitik kelemahan tata bahasa, & ekspor progres) |
+| **`0.1-beta-1`** | Beta Awal | 3 Jalur Silabus (30 pelajaran, 60 Susun Kalimat, 8 Bos Tahap), Auto-Fade Romanisasi, *Listening-First*, Brankas Kesalahan, FSRS Sync, Simulasi TOPIK penilaian akhir, Fix Status Bar & Tema Daily Goal |
+| **`0.1-beta-2`** *(saat ini)* | Iterasi Beta 0.1 | Backup & Restore JSON penuh (XP, 30 pelajaran silabus, `★★★`, Bos Tahap, Brankas Kesalahan), badge versi di Pengaturan, aturan R8/ProGuard, dukungan CI `.aab` Play Store, & [`PRIVACY_POLICY.md`](PRIVACY_POLICY.md) |
+| **`0.2-beta-1`** | Beta Major Berikutnya | Paket latihan *Listening* panjang TOPIK II, analitik kelemahan tata bahasa mendalam, & polesan dari hasil uji coba perangkat nyata |
 | **`1.0.0`** | Rilis Final Play Store | Signed Android App Bundle (`.aab`), *R8 shrinking*, audit aksesibilitas & rilis resmi Google Play Store |
 
 ---
@@ -90,6 +90,7 @@ BAEUM menggunakan skema **Semantic Versioning Pre-Release** hingga siap rilis pu
 - **Bahasa & UI**: Kotlin, Jetpack Compose, Material 3, Navigation Compose
 - **Penyimpanan Lokal (*Offline-First*)**: Room Database + KSP, Jetpack Preferences DataStore
 - **Algoritma**: FSRS-4.5 Scheduler, Exam Engine, Habit & Blitz Engine, Stage Boss Engine
+- **Privasi**: 100% *offline-first* — baca selengkapnya di [`PRIVACY_POLICY.md`](PRIVACY_POLICY.md)
 - **Persyaratan Build**: JDK 21, Gradle 9.3.1, Android SDK API 36
 
 ```bash
@@ -98,6 +99,9 @@ gradle :app:testDebugUnitTest --no-daemon
 
 # Build Debug APK
 gradle :app:assembleDebug --no-daemon
+
+# Build Signed Play Store App Bundle (.aab)
+gradle :app:bundleRelease --no-daemon
 ```
 
 ---

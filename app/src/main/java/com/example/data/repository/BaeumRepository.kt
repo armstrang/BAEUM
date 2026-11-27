@@ -13,6 +13,7 @@ import com.example.data.local.UserSettings
 import com.example.data.local.VocabEntity
 import com.example.data.seed.KoreanVocabSeed
 import com.example.data.seed.VocabAssetLoader
+import com.example.domain.engagement.EngagementProfileState
 import com.example.domain.fsrs.CardMemoryStage
 import com.example.domain.fsrs.FsrsRating
 import com.example.domain.fsrs.FsrsScheduler
@@ -21,6 +22,7 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -44,7 +46,26 @@ data class BaeumBackupPayload(
     val speakingSessions: List<SpeakingSessionBackup>,
     val examAttempts: List<ExamAttemptBackup>,
     val grammarBookmarks: List<GrammarBookmarkBackup> = emptyList(),
-    val reviewLogs: List<ReviewLogBackup> = emptyList()
+    val reviewLogs: List<ReviewLogBackup> = emptyList(),
+    val engagement: EngagementBackup? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class EngagementBackup(
+    val totalXp: Int = 0,
+    val streakShields: Int = 0,
+    val lastShieldUsedDayKey: String = "",
+    val blitzBestScore: Int = 0,
+    val blitzGamesPlayed: Int = 0,
+    val bestComboEver: Int = 0,
+    val dailySparkCompletedDayKey: String = "",
+    val dailySealClaimedDayKey: String = "",
+    val unlockedStampIds: List<String> = emptyList(),
+    val soundEffectsEnabled: Boolean = true,
+    val completedSyllabusLessonIds: List<String> = emptyList(),
+    val perfectSyllabusLessonIds: List<String> = emptyList(),
+    val defeatedStageBossNumbers: List<Int> = emptyList(),
+    val mistakeVaultKeys: List<String> = emptyList()
 )
 
 @JsonClass(generateAdapter = true)
@@ -446,6 +467,7 @@ class BaeumRepository(
                     quizCorrectCount = it.quizCorrectCount, quizWrongCount = it.quizWrongCount
                 )
             }
+        val eng = userPreferences.engagementProfileFlow.first()
         val payload = BaeumBackupPayload(
             schemaVersion = CURRENT_BACKUP_SCHEMA_VERSION,
             exportedAtEpochMs = System.currentTimeMillis(),
@@ -487,7 +509,23 @@ class BaeumRepository(
                     timestampEpochMs = it.timestampEpochMs,
                     dayKey = it.dayKey
                 )
-            }
+            },
+            engagement = EngagementBackup(
+                totalXp = eng.totalXp,
+                streakShields = eng.streakShields,
+                lastShieldUsedDayKey = eng.lastShieldUsedDayKey,
+                blitzBestScore = eng.blitzBestScore,
+                blitzGamesPlayed = eng.blitzGamesPlayed,
+                bestComboEver = eng.bestComboEver,
+                dailySparkCompletedDayKey = eng.dailySparkCompletedDayKey,
+                dailySealClaimedDayKey = eng.dailySealClaimedDayKey,
+                unlockedStampIds = eng.unlockedStampIds.sorted(),
+                soundEffectsEnabled = eng.soundEffectsEnabled,
+                completedSyllabusLessonIds = eng.completedBeginnerLessonIds.sorted(),
+                perfectSyllabusLessonIds = eng.perfectSyllabusLessonIds.sorted(),
+                defeatedStageBossNumbers = eng.defeatedStageBossNumbers.sorted(),
+                mistakeVaultKeys = eng.mistakeVaultKeys.sorted()
+            )
         )
         moshi.adapter(BaeumBackupPayload::class.java).indent("  ").toJson(payload)
     }
@@ -666,7 +704,34 @@ class BaeumRepository(
                 .toSet()
             userPreferences.syncStreakFromDailyHistory(activeDays)
 
-            "Restored $restoredVocabCount vocabulary states, ${payload.grammarBookmarks.size} grammar bookmarks, ${payload.reviewLogs.size} review logs, ${payload.dailyStats.size} study days, and ${payload.examAttempts.size} exam records."
+            val engBackup = payload.engagement
+            if (engBackup != null) {
+                userPreferences.restoreEngagementProfile(
+                    EngagementProfileState(
+                        totalXp = engBackup.totalXp.coerceAtLeast(0),
+                        streakShields = engBackup.streakShields,
+                        lastShieldUsedDayKey = engBackup.lastShieldUsedDayKey,
+                        blitzBestScore = engBackup.blitzBestScore.coerceAtLeast(0),
+                        blitzGamesPlayed = engBackup.blitzGamesPlayed.coerceAtLeast(0),
+                        bestComboEver = engBackup.bestComboEver.coerceAtLeast(0),
+                        dailySparkCompletedDayKey = engBackup.dailySparkCompletedDayKey,
+                        dailySealClaimedDayKey = engBackup.dailySealClaimedDayKey,
+                        unlockedStampIds = engBackup.unlockedStampIds.toSet(),
+                        soundEffectsEnabled = engBackup.soundEffectsEnabled,
+                        completedBeginnerLessonIds = engBackup.completedSyllabusLessonIds.toSet(),
+                        perfectSyllabusLessonIds = engBackup.perfectSyllabusLessonIds.toSet(),
+                        defeatedStageBossNumbers = engBackup.defeatedStageBossNumbers.toSet(),
+                        mistakeVaultKeys = engBackup.mistakeVaultKeys.toSet()
+                    )
+                )
+            }
+
+            val syllabusSuffix = if (engBackup != null) {
+                ", ${engBackup.completedSyllabusLessonIds.size} syllabus lessons, and ${engBackup.totalXp} XP"
+            } else {
+                ""
+            }
+            "Restored $restoredVocabCount vocabulary states, ${payload.grammarBookmarks.size} grammar bookmarks, ${payload.reviewLogs.size} review logs, ${payload.dailyStats.size} study days, ${payload.examAttempts.size} exam records$syllabusSuffix."
         }
     }
 

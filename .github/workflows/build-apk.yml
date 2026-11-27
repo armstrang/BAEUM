@@ -19,6 +19,7 @@ on:
         options:
           - debug
           - release
+          - aab
 
 permissions:
   contents: write
@@ -138,10 +139,9 @@ jobs:
             - **Pemula Nol → Susun Kalimat (12 Pelajaran)**: Hangul dari nol, *Batchim*, *Liaison*, Sapaan, menyusun kalimat S-O-P, partikel inti, angka, kafe & rumus \`~아요/~어요\`.
             - **TOPIK I · 1–2급 (10 Pelajaran)**: Kala lampau/depan, negasi \`안/못\`, keinginan/harus, penghubung, jam \`부터~까지\`, arah, perbandingan, **Kata Kerja Tidak Beraturan (\`ㅂ/ㄷ/르/으/ㄹ\`)**, **Modifier Kata Benda (\`~(으)ㄴ/~는/~(으)ㄹ\`)**, serta strategi ujian TOPIK I.
             - **TOPIK II · 3–6급 (8 Pelajaran)**: Sebab formal, pengalaman, kutipan tidak langsung, kontras/pasif, gaya tulis *Haerache* (\`~는다/ㄴ다/다\`), dan Menulis #51–54.
-          - **Auto-Fade Romanisasi**: Tampil penuh di Pemula Tahap 1–2 → *Ketuk Intip* di Pemula 3–4 & TOPIK I → Tersembunyi default ala ujian asli di TOPIK II.
-          - **Mode Dengar & Susun (*Listening-First*) + Brankas Balas Dendam Kesalahan (*Redemption Drill*) + Sinkronisasi FSRS Otomatis**.
-          - **Tantangan Bos Tahap (*Stage Boss 60–90d*)**: 8 tantangan akhir tahap dengan Stempel Dojang eksklusif & bonus +120 XP.
-          - **Simulasi Ujian TOPIK I/II, EPS-TOPIK & Speaking Autentik**: Penilaian khusus di akhir ujian + rapor koreksi & penjelasan lengkap.
+          - **Auto-Fade Romanisasi**, **Mode Dengar & Susun (*Listening-First*)**, **Brankas Balas Dendam Kesalahan**, **Sinkronisasi FSRS Otomatis**, & **8 Bos Tahap (60–90d)**.
+          - **Backup & Restore JSON Penuh**: Kini ikut mencadangkan dan memulihkan XP, progres 30 pelajaran silabus, stempel emas \`★★★\`, Bos Tahap, Brankas Kesalahan, dan Stempel Dojang!
+          - **Badge Versi di Pengaturan + Kesiapan Play Store** (aturan R8/ProGuard, dukungan build \`.aab\`, dan \`PRIVACY_POLICY.md\`).
           EOF
 
           if gh release view "$TAG_NAME" >/dev/null 2>&1; then
@@ -159,7 +159,7 @@ jobs:
           fi
 
       - name: Prepare release keystore
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && (inputs.build_type == 'release' || inputs.build_type == 'aab') }}
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
@@ -176,6 +176,23 @@ jobs:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: gradle :app:assembleRelease --no-daemon
+
+      - name: Build Play Store Android App Bundle (.aab)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'aab' }}
+        env:
+          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: gradle :app:bundleRelease --no-daemon
+
+      - name: Upload Play Store AAB Artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'aab' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: baeum-${{ steps.version.outputs.version_name }}-playstore-aab
+          path: app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload Release APK Artifact
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_type == 'release' }}
