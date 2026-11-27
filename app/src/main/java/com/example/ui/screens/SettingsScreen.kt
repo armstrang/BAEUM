@@ -73,6 +73,7 @@ fun SettingsScreen(
     onFsrsRetentionChange: (Double) -> Unit,
     onSpeechRateChange: (Float) -> Unit,
     onReducedMotionChange: (Boolean) -> Unit,
+    onSoundEffectsChange: (Boolean) -> Unit = {},
     onDailyReminderChange: (Boolean, Int, Int) -> Unit,
     onSendTestReminder: () -> Unit,
     onExportBackupJson: suspend () -> String,
@@ -454,6 +455,36 @@ fun SettingsScreen(
                         onSpeechRateChange(rates[(idx + 1) % rates.size])
                     }
                 )
+                HorizontalDivider(color = extended.cardBorder.copy(alpha = 0.5f))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 52.dp)
+                        .padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = bText("Tactile chime effects", "Efek suara pentatonis"),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = bText(
+                                "Subtle Korean chimes on combos, sparks & stamps (muted during exams)",
+                                "Dentingan Korea lembut saat kombo, percikan & stempel (senyap saat ujian)"
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = settings.engagement.soundEffectsEnabled,
+                        onCheckedChange = onSoundEffectsChange,
+                        modifier = Modifier.testTag("settings_sound_effects_switch")
+                    )
+                }
                 HorizontalDivider(color = extended.cardBorder.copy(alpha = 0.5f))
                 SettingsCycleRow(
                     title = bText("Korean recognition locale", "Bahasa pengenalan suara Korea"),

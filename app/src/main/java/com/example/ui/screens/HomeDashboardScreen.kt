@@ -33,11 +33,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.NightsStay
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.filled.WbTwilight
@@ -46,6 +52,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -61,10 +68,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.repository.DayForecastPoint
+import com.example.domain.engagement.DailyAtelierQuest
+import com.example.domain.engagement.DailySeoulSpark
+import com.example.domain.engagement.HabitDashboardSnapshot
+import com.example.domain.engagement.RhythmDayBead
 import com.example.ui.components.BaeumBrandHeader
 import com.example.ui.components.BaeumGlassCard
 import com.example.ui.components.BaeumGlassStyle
@@ -77,6 +89,7 @@ import com.example.ui.theme.BaeumMotion
 import com.example.ui.theme.LocalBaeumColors
 import com.example.ui.theme.StaggeredEntrance
 import com.example.ui.theme.bText
+import com.example.ui.theme.gentleShake
 import com.example.ui.theme.rememberAnimatedInt
 import com.example.ui.theme.tactileClickable
 import com.example.viewmodel.DashboardSummary
@@ -122,6 +135,7 @@ private data class HeroSkyPalette(
 @Composable
 fun HomeDashboardScreen(
     summary: DashboardSummary,
+    habitSnapshot: HabitDashboardSnapshot = HabitDashboardSnapshot(),
     onOpenSettings: () -> Unit,
     onResumeLearning: () -> Unit,
     onReviewDue: () -> Unit,
@@ -129,7 +143,12 @@ fun HomeDashboardScreen(
     onOpenVocabulary: () -> Unit,
     onOpenFlashcards: () -> Unit,
     onOpenQuizCenter: () -> Unit,
-    onOpenGrammarStudio: () -> Unit
+    onOpenGrammarStudio: () -> Unit,
+    onStartSeoulBlitz: () -> Unit = {},
+    onCompleteDailySpark: (Boolean) -> Unit = {},
+    onClaimDailySeal: () -> Unit = {},
+    onSpeakKorean: (String) -> Unit = {},
+    onQuestAction: (String) -> Unit = {}
 ) {
     val extended = LocalBaeumColors.current
     val scrollState = rememberScrollState()
@@ -474,11 +493,23 @@ fun HomeDashboardScreen(
                             trackColor = ringTrack
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    SeoulHeroRankAndRhythmStrip(
+                        habitSnapshot = habitSnapshot,
+                        accentColor = ringAccent,
+                        textColor = countColor,
+                        subTextColor = subCountColor,
+                        pillBg = skyPillBg,
+                        pillBorder = skyPillBorder,
+                        streakTextColor = streakText
+                    )
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(22.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
         // Quick Studio Shortcut Pebbles (Words • Cards • Quiz • Grammar)
         StaggeredEntrance(index = 2) {
@@ -521,10 +552,48 @@ fun HomeDashboardScreen(
             }
         }
 
+        // Instant 1-Tap Playable "Daily Seoul Spark" (오늘의 한마디) Hook
+        habitSnapshot.dailySpark?.let { spark ->
+            Spacer(modifier = Modifier.height(18.dp))
+            StaggeredEntrance(index = 3) {
+                DailySeoulSparkCard(
+                    spark = spark,
+                    isCompleted = habitSnapshot.isDailySparkCompleted,
+                    onSpeakKorean = onSpeakKorean,
+                    onAnswerResult = onCompleteDailySpark
+                )
+            }
+        }
+
+        // High-Flow 60-Second Seoul Blitz Launch Card (Beat Your Personal Record!)
+        Spacer(modifier = Modifier.height(16.dp))
+        StaggeredEntrance(index = 4) {
+            SeoulBlitzLaunchCard(
+                bestScore = habitSnapshot.blitzBestScore,
+                bestCombo = habitSnapshot.bestComboEver,
+                onStartBlitz = onStartSeoulBlitz
+            )
+        }
+
+        // Daily Atelier Quests (3 Bite-Sized Missions + Daily Seal Stamp & Streak Shield)
+        if (habitSnapshot.dailyQuests.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(16.dp))
+            StaggeredEntrance(index = 5) {
+                DailyAtelierQuestsCard(
+                    quests = habitSnapshot.dailyQuests,
+                    completedCount = habitSnapshot.completedQuestsCount,
+                    isSealClaimed = habitSnapshot.isDailySealClaimed,
+                    canClaimSeal = habitSnapshot.canClaimDailySeal,
+                    onQuestClick = onQuestAction,
+                    onClaimSeal = onClaimDailySeal
+                )
+            }
+        }
+
         Spacer(modifier = Modifier.height(22.dp))
 
         // Active Curriculum Journey Card + Primary CTA
-        StaggeredEntrance(index = 3) {
+        StaggeredEntrance(index = 6) {
             Column {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -799,3 +868,587 @@ private fun QuickStudioPebble(
         }
     }
 }
+
+private val HabitPillShape = RoundedCornerShape(14.dp)
+private val SparkOptionShape = RoundedCornerShape(16.dp)
+
+@Composable
+private fun SeoulHeroRankAndRhythmStrip(
+    habitSnapshot: HabitDashboardSnapshot,
+    accentColor: Color,
+    textColor: Color,
+    subTextColor: Color,
+    pillBg: Color,
+    pillBorder: Color,
+    streakTextColor: Color
+) {
+    val extended = LocalBaeumColors.current
+    val rank = habitSnapshot.rankProgress.currentRank
+    val xpProgress = habitSnapshot.rankProgress
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(pillBg.copy(alpha = 0.65f))
+            .border(1.dp, pillBorder.copy(alpha = 0.72f), RoundedCornerShape(18.dp))
+            .padding(horizontal = 13.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Rank + Total XP + Streak Shield row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(accentColor.copy(alpha = 0.20f))
+                        .border(1.dp, accentColor.copy(alpha = 0.50f), RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = rank.badgeGlyph,
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.ExtraBold),
+                        color = accentColor
+                    )
+                }
+                Column {
+                    Text(
+                        text = "Lv.${rank.level} ${rank.titleKo} · ${bText(rank.titleEn, rank.titleId)}",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = textColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${xpProgress.totalXp} XP · ${xpProgress.xpIntoLevel}/${xpProgress.xpForNextLevel}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = subTextColor
+                    )
+                }
+            }
+
+            // Streak Shield Pill
+            Row(
+                modifier = Modifier
+                    .clip(HabitPillShape)
+                    .background(extended.mint.copy(alpha = 0.16f))
+                    .border(1.dp, extended.mint.copy(alpha = 0.42f), HabitPillShape)
+                    .padding(horizontal = 9.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Shield,
+                    contentDescription = bText("Streak shields", "Perisai runtutan"),
+                    tint = extended.mint,
+                    modifier = Modifier.size(13.dp)
+                )
+                Text(
+                    text = "${habitSnapshot.streakShields}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                    color = textColor
+                )
+            }
+        }
+
+        ProgressBarSlim(
+            progress = xpProgress.progressFraction,
+            color = accentColor,
+            height = 5.dp
+        )
+
+        // 7-Day Habit Flame Beads
+        if (habitSnapshot.weeklyRhythm.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                habitSnapshot.weeklyRhythm.forEach { bead ->
+                    val beadColor = when {
+                        bead.isCompleted -> extended.gold
+                        bead.isShielded -> extended.mint
+                        else -> subTextColor.copy(alpha = 0.25f)
+                    }
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(if (bead.isToday) 22.dp else 18.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (bead.isCompleted || bead.isShielded) beadColor.copy(alpha = 0.28f)
+                                    else Color.Transparent
+                                )
+                                .border(
+                                    width = if (bead.isToday) 1.5.dp else 1.dp,
+                                    color = if (bead.isToday && !bead.isCompleted) accentColor else beadColor,
+                                    shape = CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (bead.isCompleted) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(extended.gold)
+                                )
+                            } else if (bead.isShielded) {
+                                Icon(
+                                    imageVector = Icons.Filled.Shield,
+                                    contentDescription = null,
+                                    tint = extended.mint,
+                                    modifier = Modifier.size(10.dp)
+                                )
+                            }
+                        }
+                        Text(
+                            text = bText(bead.shortLabelEn, bead.shortLabelId),
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 10.sp,
+                                fontWeight = if (bead.isToday) FontWeight.ExtraBold else FontWeight.Medium
+                            ),
+                            color = if (bead.isToday) textColor else subTextColor
+                        )
+                    }
+                }
+            }
+        }
+
+        if (habitSnapshot.shieldSavedStreakRecently) {
+            Text(
+                text = bText(
+                    "Streak Shield protected your flame yesterday!",
+                    "Perisai Runtutan menyelamatkan runtutanmu kemarin!"
+                ),
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
+                color = streakTextColor
+            )
+        }
+    }
+}
+
+@Composable
+private fun DailySeoulSparkCard(
+    spark: DailySeoulSpark,
+    isCompleted: Boolean,
+    onSpeakKorean: (String) -> Unit,
+    onAnswerResult: (Boolean) -> Unit
+) {
+    val extended = LocalBaeumColors.current
+    val primary = MaterialTheme.colorScheme.primary
+    var wrongShakeSeq by remember(spark.dayKey) { mutableIntStateOf(0) }
+    var wrongOption by remember(spark.dayKey) { mutableStateOf<String?>(null) }
+
+    BaeumGlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .gentleShake(wrongShakeSeq)
+            .testTag("home_daily_spark_card"),
+        style = BaeumGlassStyle.STANDARD,
+        accentGlowColor = if (isCompleted) extended.mint else extended.gold
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.AutoAwesome,
+                    contentDescription = null,
+                    tint = if (isCompleted) extended.mint else extended.gold,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = bText("DAILY SEOUL SPARK · 오늘의 한마디", "PERCIKAN SEOUL · 오늘의 한마디"),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        letterSpacing = 1.1.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = if (isCompleted) extended.mint else extended.gold
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .clip(HabitPillShape)
+                    .background((if (isCompleted) extended.mint else extended.gold).copy(alpha = 0.16f))
+                    .border(
+                        1.dp,
+                        (if (isCompleted) extended.mint else extended.gold).copy(alpha = 0.45f),
+                        HabitPillShape
+                    )
+                    .padding(horizontal = 9.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = if (isCompleted) bText("LIT ✓", "MENYALA ✓") else "+${spark.xpReward} XP",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
+                    color = if (isCompleted) extended.mint else extended.gold
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = spark.hangul,
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.ExtraBold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                if (spark.romanization.isNotBlank()) {
+                    Text(
+                        text = "${spark.romanization}  •  ${spark.curriculumBadge}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(primary.copy(alpha = 0.14f))
+                    .border(1.dp, primary.copy(alpha = 0.35f), CircleShape)
+                    .tactileClickable(pressedScale = 0.90f) { onSpeakKorean(spark.hangul) },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                    contentDescription = bText("Listen to Daily Spark", "Dengar Percikan Harian"),
+                    tint = primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (isCompleted) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(SparkOptionShape)
+                    .background(extended.mint.copy(alpha = 0.10f))
+                    .border(1.dp, extended.mint.copy(alpha = 0.32f), SparkOptionShape)
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text(
+                    text = spark.correctMeaning,
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = extended.mint
+                )
+                if (spark.exampleKo.isNotBlank()) {
+                    Text(
+                        text = spark.exampleKo,
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                if (spark.exampleTranslation.isNotBlank()) {
+                    Text(
+                        text = spark.exampleTranslation,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        } else {
+            Text(
+                text = bText("Tap the right meaning to ignite today's momentum:", "Ketuk arti yang benar untuk menyalakan momentum hari ini:"),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                spark.options.forEachIndexed { idx, option ->
+                    val isWrongPick = wrongOption == option
+                    val borderCol = if (isWrongPick) extended.cherryPink.copy(alpha = 0.7f) else extended.glassHighlightBorder
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 48.dp)
+                            .clip(SparkOptionShape)
+                            .background(
+                                if (isWrongPick) extended.cherryPink.copy(alpha = 0.12f)
+                                else extended.elevatedSurface.copy(alpha = 0.65f)
+                            )
+                            .border(1.dp, borderCol, SparkOptionShape)
+                            .tactileClickable(pressedScale = 0.96f) {
+                                if (option == spark.correctMeaning) {
+                                    wrongOption = null
+                                    onAnswerResult(true)
+                                } else {
+                                    wrongOption = option
+                                    wrongShakeSeq += 1
+                                    onAnswerResult(false)
+                                }
+                            }
+                            .padding(horizontal = 14.dp, vertical = 11.dp)
+                            .testTag("home_daily_spark_option_$idx"),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        Text(
+                            text = option,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = if (isWrongPick) extended.cherryPink else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SeoulBlitzLaunchCard(
+    bestScore: Int,
+    bestCombo: Int,
+    onStartBlitz: () -> Unit
+) {
+    val extended = LocalBaeumColors.current
+    val gold = extended.gold
+    val iconBrush = remember(gold, extended.cherryPink) {
+        Brush.linearGradient(listOf(gold.copy(alpha = 0.28f), extended.cherryPink.copy(alpha = 0.18f)))
+    }
+
+    BaeumGlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("home_seoul_blitz_card"),
+        style = BaeumGlassStyle.STANDARD,
+        accentGlowColor = gold,
+        onClick = onStartBlitz
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(50.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(iconBrush)
+                    .border(1.dp, gold.copy(alpha = 0.55f), RoundedCornerShape(16.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Bolt,
+                    contentDescription = null,
+                    tint = gold,
+                    modifier = Modifier.size(26.dp)
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = bText("60s Seoul Blitz", "60d Seoul Blitz"),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "60초 블리츠",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = gold
+                    )
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = if (bestScore > 0) {
+                        bText(
+                            "Best $bestScore pts • Peak ${bestCombo.coerceAtLeast(1)}x combo · Tap to beat it!",
+                            "Rekor $bestScore poin • Kombo ${bestCombo.coerceAtLeast(1)}x · Ketuk untuk pecahkan!"
+                        )
+                    } else {
+                        bText(
+                            "Rapid Hangul reflex challenge with Fever multipliers & +2s bonuses",
+                            "Tantangan refleks Hangul cepat dengan mode Fever & bonus waktu +2d"
+                        )
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = bText("Play 60s Seoul Blitz", "Main 60d Seoul Blitz"),
+                tint = gold,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun DailyAtelierQuestsCard(
+    quests: List<DailyAtelierQuest>,
+    completedCount: Int,
+    isSealClaimed: Boolean,
+    canClaimSeal: Boolean,
+    onQuestClick: (String) -> Unit,
+    onClaimSeal: () -> Unit
+) {
+    val extended = LocalBaeumColors.current
+    val primary = MaterialTheme.colorScheme.primary
+
+    BaeumGlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("home_daily_quests_card"),
+        style = BaeumGlassStyle.STANDARD,
+        accentGlowColor = if (canClaimSeal) extended.gold else primary
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = bText("DAILY ATELIER QUESTS · 오늘의 미션", "MISI HARIAN ATELIER · 오늘의 미션"),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        letterSpacing = 1.1.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = bText("$completedCount / ${quests.size} complete", "$completedCount / ${quests.size} selesai"),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .clip(HabitPillShape)
+                    .background((if (isSealClaimed) extended.mint else extended.gold).copy(alpha = 0.16f))
+                    .border(
+                        1.dp,
+                        (if (isSealClaimed) extended.mint else extended.gold).copy(alpha = 0.42f),
+                        HabitPillShape
+                    )
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.EmojiEvents,
+                    contentDescription = null,
+                    tint = if (isSealClaimed) extended.mint else extended.gold,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = if (isSealClaimed) bText("Sealed ✓", "Distempel ✓") else "+100 XP & +1",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = if (isSealClaimed) extended.mint else extended.gold
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            quests.forEach { quest ->
+                val done = quest.isCompleted
+                val accent = if (done) extended.mint else primary
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 52.dp)
+                        .clip(SparkOptionShape)
+                        .background(
+                            if (done) extended.mint.copy(alpha = 0.08f)
+                            else extended.elevatedSurface.copy(alpha = 0.55f)
+                        )
+                        .border(
+                            1.dp,
+                            if (done) extended.mint.copy(alpha = 0.35f) else extended.glassHighlightBorder,
+                            SparkOptionShape
+                        )
+                        .then(
+                            if (!done) Modifier.tactileClickable(pressedScale = 0.98f) { onQuestClick(quest.actionRoute) }
+                            else Modifier
+                        )
+                        .padding(horizontal = 13.dp, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.CheckCircle,
+                                contentDescription = null,
+                                tint = if (done) extended.mint else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = bText(quest.titleEn, quest.titleId),
+                                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = bText(quest.subtitleEn, quest.subtitleId),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Text(
+                            text = "${quest.current}/${quest.target}",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.ExtraBold),
+                            color = accent
+                        )
+                    }
+                    ProgressBarSlim(
+                        progress = quest.progressFraction,
+                        color = accent,
+                        height = 4.dp
+                    )
+                }
+            }
+        }
+
+        if (canClaimSeal) {
+            Spacer(modifier = Modifier.height(14.dp))
+            BaeumPrimaryButton(
+                text = bText("Stamp Daily Seal · +100 XP & +1 Shield", "Stempel Harian · +100 XP & +1 Perisai"),
+                onClick = onClaimSeal,
+                testTag = "home_claim_daily_seal_button"
+            )
+        }
+    }
+}
+

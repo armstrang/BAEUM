@@ -47,11 +47,14 @@ import com.example.data.local.CurriculumPathway
 import com.example.data.local.DailyStudyEntity
 import com.example.data.local.VocabEntity
 import com.example.data.repository.BaeumRepository
+import com.example.domain.engagement.DojangStamp
+import com.example.domain.engagement.HabitDashboardSnapshot
 import com.example.domain.scoring.LearnerReadinessProfile
 import com.example.ui.components.BaeumBrandHeader
 import com.example.ui.components.BaeumGlassCard
 import com.example.ui.components.BaeumGlassStyle
 import com.example.ui.components.CircularGoalRing
+import com.example.ui.components.DojangStampSeal
 import com.example.ui.components.ProgressBarSlim
 import com.example.ui.components.SeoulCard
 import com.example.ui.theme.BaeumMotion
@@ -72,6 +75,7 @@ fun AnalyticsScreen(
     speakingCount: Int,
     examCount: Int,
     readinessProfile: LearnerReadinessProfile? = null,
+    habitSnapshot: HabitDashboardSnapshot = HabitDashboardSnapshot(),
     onOpenSettings: () -> Unit,
     onRecommendedAction: () -> Unit
 ) {
@@ -435,8 +439,135 @@ fun AnalyticsScreen(
             }
         }
 
-        // Data-driven recommendation footer
+        // Seoul Atelier Mastery Rank & 12 Collectible Traditional Dojang Seal Stamps Vault
         StaggeredEntrance(index = 6) {
+            val rankProg = habitSnapshot.rankProgress
+            val curRank = rankProg.currentRank
+            val unlockedCount = habitSnapshot.unlockedStampIds.size
+            val totalStamps = habitSnapshot.allStamps.size
+            var selectedStamp by remember(habitSnapshot.allStamps) {
+                mutableStateOf<DojangStamp?>(
+                    habitSnapshot.allStamps.firstOrNull { it.id in habitSnapshot.unlockedStampIds }
+                        ?: habitSnapshot.allStamps.firstOrNull()
+                )
+            }
+            val stampRows = remember(habitSnapshot.allStamps) { habitSnapshot.allStamps.chunked(3) }
+
+            BaeumGlassCard(
+                modifier = Modifier.fillMaxWidth(),
+                style = BaeumGlassStyle.STANDARD,
+                accentGlowColor = extended.gold
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = bText("ATELIER RANK & DOJANG VAULT · 도장 컬렉션", "PERINGKAT & KOLEKSI STEMPEL · 도장 컬렉션"),
+                            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.1.sp, fontWeight = FontWeight.Bold),
+                            color = extended.gold
+                        )
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = "Lv.${curRank.level} ${curRank.titleKo} · ${bText(curRank.titleEn, curRank.titleId)}",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = bText(
+                                "${rankProg.totalXp} XP • Blitz Best ${habitSnapshot.blitzBestScore} • Peak ${habitSnapshot.bestComboEver}x",
+                                "${rankProg.totalXp} XP • Rekor Blitz ${habitSnapshot.blitzBestScore} • Kombo ${habitSnapshot.bestComboEver}x"
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(extended.gold.copy(alpha = 0.16f))
+                            .border(1.dp, extended.gold.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = "$unlockedCount / $totalStamps",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.ExtraBold),
+                            color = extended.gold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                ProgressBarSlim(progress = rankProg.progressFraction, color = extended.gold)
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    stampRows.forEach { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            row.forEach { stamp ->
+                                val unlocked = stamp.id in habitSnapshot.unlockedStampIds
+                                DojangStampSeal(
+                                    stamp = stamp,
+                                    unlocked = unlocked,
+                                    selected = selectedStamp?.id == stamp.id,
+                                    onClick = { selectedStamp = stamp },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            repeat(3 - row.size) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+
+                selectedStamp?.let { active ->
+                    val isUnlocked = active.id in habitSnapshot.unlockedStampIds
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(extended.elevatedSurface.copy(alpha = 0.72f))
+                            .border(
+                                1.dp,
+                                if (isUnlocked) extended.gold.copy(alpha = 0.42f) else extended.glassHighlightBorder,
+                                RoundedCornerShape(14.dp)
+                            )
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "${active.sealKo} · ${bText(active.titleEn, active.titleId)}",
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                color = if (isUnlocked) extended.gold else MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = bText(active.conditionEn, active.conditionId),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isUnlocked) bText("Stamped ✓", "Terbuka ✓") else bText("Locked", "Terkunci"),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = if (isUnlocked) extended.mint else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        // Data-driven recommendation footer
+        StaggeredEntrance(index = 7) {
             BaeumGlassCard(
                 modifier = Modifier.fillMaxWidth(),
                 style = BaeumGlassStyle.STANDARD,

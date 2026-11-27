@@ -7,6 +7,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.example.data.repository.DataStoreUserPreferencesRepository
 import com.example.data.repository.LearningStreakState
 import com.example.data.repository.UserPreferencesRepository
+import com.example.domain.engagement.EngagementProfileState
 import com.example.ui.theme.ThemeMode
 import kotlinx.coroutines.flow.Flow
 
@@ -38,7 +39,8 @@ data class UserSettings(
     val learningStreak: LearningStreakState = LearningStreakState(),
     val dailyReminderEnabled: Boolean = false,
     val dailyReminderHour: Int = 19,
-    val dailyReminderMinute: Int = 0
+    val dailyReminderMinute: Int = 0,
+    val engagement: EngagementProfileState = EngagementProfileState()
 )
 
 /**

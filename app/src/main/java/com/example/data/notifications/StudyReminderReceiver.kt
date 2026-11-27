@@ -44,6 +44,7 @@ class StudyReminderReceiver : BroadcastReceiver() {
                 val todayWords = db.dailyStudyDao().getByDay(todayKey)?.wordsReviewed ?: 0
                 val streak = settings.learningStreak.effectiveCurrentStreak(todayKey)
                 val isIndonesian = settings.translationLanguage.equals("ID", ignoreCase = true)
+                val sparkPending = settings.engagement.dailySparkCompletedDayKey != todayKey
 
                 StudyReminderScheduler.postStudyReminderNotification(
                     context = appContext,
@@ -51,7 +52,9 @@ class StudyReminderReceiver : BroadcastReceiver() {
                     todayWords = todayWords,
                     dailyGoal = settings.dailyGoalWords,
                     streakDays = streak,
-                    isIndonesian = isIndonesian
+                    isIndonesian = isIndonesian,
+                    streakShields = settings.engagement.streakShields,
+                    sparkPending = sparkPending
                 )
             } finally {
                 pendingResult.finish()

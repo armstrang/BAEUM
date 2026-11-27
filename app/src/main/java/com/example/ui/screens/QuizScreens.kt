@@ -70,6 +70,9 @@ import com.example.ui.components.BaeumPrimaryButton
 import com.example.ui.components.BaeumSecondaryButton
 import com.example.ui.components.BaeumTopBar
 import com.example.ui.components.CircularGoalRing
+import com.example.ui.components.ComboFlamePill
+import com.example.ui.components.FloatingXpBadge
+import com.example.ui.components.LuxuryConfettiOverlay
 import com.example.ui.components.ProgressBarSlim
 import com.example.ui.components.SeoulCard
 import com.example.ui.theme.BaeumMotion
@@ -264,7 +267,14 @@ fun ActiveQuizScreen(
     }
 
     val extended = LocalBaeumColors.current
+    var correctPopSeq by remember { mutableIntStateOf(0) }
+    LaunchedEffect(state.currentIndex, state.isChecked, state.isCorrect) {
+        if (state.isChecked && state.isCorrect) {
+            correctPopSeq += 1
+        }
+    }
 
+    androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -395,31 +405,41 @@ fun ActiveQuizScreen(
 
                 ProgressBarSlim(progress = (state.currentIndex + 1).toFloat() / state.questions.size)
 
-                // Live progress, streak & points strip
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = bText("Score: ${state.earnedPoints} pts", "Skor: ${state.earnedPoints} poin"),
-                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = if (state.currentStreak > 0) {
-                            bText("Streak: ${state.currentStreak}x", "Runtun: ${state.currentStreak}x")
+                // Live progress, animated Combo Flame & floating +XP strip
+                androidx.compose.foundation.layout.Box(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = bText("Score: ${state.earnedPoints} pts", "Skor: ${state.earnedPoints} poin"),
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        if (state.currentStreak >= 2) {
+                            ComboFlamePill(combo = state.currentStreak)
                         } else {
-                            bText("Accuracy: ${if (answeredCount > 0) "$runningAcc%" else "—"}", "Akurasi: ${if (answeredCount > 0) "$runningAcc%" else "—"}")
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (state.currentStreak >= 2) extended.mint else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = q.skillTag,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                            Text(
+                                text = bText("Accuracy: ${if (answeredCount > 0) "$runningAcc%" else "—"}", "Akurasi: ${if (answeredCount > 0) "$runningAcc%" else "—"}"),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            text = q.skillTag,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (correctPopSeq > 0) {
+                        FloatingXpBadge(
+                            label = if (state.currentStreak >= 3) "+12 XP · ${state.currentStreak}x!" else "+12 XP",
+                            eventSeq = correctPopSeq,
+                            accentColor = if (state.currentStreak >= 3) extended.gold else extended.mint,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
                 }
 
                 // Trigger crisp gentle shake on incorrect answer check
@@ -802,5 +822,11 @@ fun ActiveQuizScreen(
                 )
             }
         }
+    }
+    val finalScore = state.evaluation?.weightedMasteryScore
+        ?: ((state.correctCount.toFloat() / state.questions.size.coerceAtLeast(1)) * 100f).toInt()
+    if (state.isCompleted && finalScore >= 70) {
+        LuxuryConfettiOverlay(triggerKey = finalScore * 17 + state.correctCount)
+    }
     }
 }

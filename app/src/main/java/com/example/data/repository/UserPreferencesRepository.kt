@@ -15,6 +15,8 @@ import com.example.data.local.CurriculumPathway
 import com.example.data.local.RomanizationMode
 import com.example.data.local.UserSettings
 import com.example.data.local.baeumDataStore
+import com.example.domain.engagement.BaeumHabitEngine
+import com.example.domain.engagement.EngagementProfileState
 import com.example.ui.theme.ThemeMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -65,13 +67,15 @@ data class CurriculumPreferences(
 
 /**
  * Repository abstraction over Jetpack DataStore for reactive user preferences,
- * appearance settings, active Korean curriculum state, and learning streak tracking.
+ * appearance settings, active Korean curriculum state, learning streak tracking,
+ * and Seoul Atelier habit/engagement progression.
  */
 interface UserPreferencesRepository {
     val userSettingsFlow: Flow<UserSettings>
     val themePreferencesFlow: Flow<ThemePreferences>
     val curriculumPreferencesFlow: Flow<CurriculumPreferences>
     val learningStreakFlow: Flow<LearningStreakState>
+    val engagementProfileFlow: Flow<EngagementProfileState>
 
     // Theme & display settings
     suspend fun setThemeMode(mode: ThemeMode)
@@ -91,14 +95,30 @@ interface UserPreferencesRepository {
     suspend fun setFsrsRetention(retention: Double)
     suspend fun recordRecentScenario(scenarioId: String)
     suspend fun setDailyReminder(enabled: Boolean, hour: Int, minute: Int)
+    suspend fun setSoundEffectsEnabled(enabled: Boolean)
 
-    // Learning streak persistence & continuity
+    // Learning streak persistence & continuity (with Streak Shield protection)
     suspend fun recordStudyActivity(dayKey: String = DataStoreUserPreferencesRepository.todayDayKey()): LearningStreakState
     suspend fun evaluateStreakContinuity(todayDayKey: String = DataStoreUserPreferencesRepository.todayDayKey()): LearningStreakState
     suspend fun syncStreakFromDailyHistory(
         activeDayKeys: Set<String>,
         todayDayKey: String = DataStoreUserPreferencesRepository.todayDayKey()
     ): LearningStreakState
+
+    // Seoul Atelier habit, XP, Daily Spark, Daily Seal, Blitz & Dojang Stamps
+    suspend fun awardXp(delta: Int): Pair<Int, Int>
+    suspend fun grantStreakShield(count: Int = 1): Int
+    suspend fun recordDailySparkCompleted(
+        dayKey: String = DataStoreUserPreferencesRepository.todayDayKey(),
+        xpReward: Int = BaeumHabitEngine.DAILY_SPARK_XP
+    ): Boolean
+    suspend fun claimDailySealBonus(
+        dayKey: String = DataStoreUserPreferencesRepository.todayDayKey(),
+        bonusXp: Int = BaeumHabitEngine.DAILY_SEAL_BONUS_XP
+    ): Boolean
+    suspend fun recordBlitzResult(score: Int, maxCombo: Int): Pair<Boolean, Int>
+    suspend fun recordBestCombo(combo: Int)
+    suspend fun unlockStamps(stampIds: Set<String>): Set<String>
 
     suspend fun clearAllPreferences()
 }
@@ -137,6 +157,18 @@ class DataStoreUserPreferencesRepository(
         val DAILY_REMINDER_ENABLED = booleanPreferencesKey("daily_reminder_enabled")
         val DAILY_REMINDER_HOUR = intPreferencesKey("daily_reminder_hour")
         val DAILY_REMINDER_MINUTE = intPreferencesKey("daily_reminder_minute")
+
+        // Engagement, XP, Streak Shield, Daily Spark/Seal, Blitz & Dojang Stamps
+        val TOTAL_XP = intPreferencesKey("engagement_total_xp")
+        val STREAK_SHIELDS = intPreferencesKey("engagement_streak_shields")
+        val LAST_SHIELD_USED_DAY_KEY = stringPreferencesKey("engagement_last_shield_used_day")
+        val BLITZ_BEST_SCORE = intPreferencesKey("engagement_blitz_best_score")
+        val BLITZ_GAMES_PLAYED = intPreferencesKey("engagement_blitz_games_played")
+        val BEST_COMBO_EVER = intPreferencesKey("engagement_best_combo_ever")
+        val DAILY_SPARK_COMPLETED_DAY_KEY = stringPreferencesKey("engagement_daily_spark_day")
+        val DAILY_SEAL_CLAIMED_DAY_KEY = stringPreferencesKey("engagement_daily_seal_day")
+        val UNLOCKED_STAMP_IDS = stringPreferencesKey("engagement_unlocked_stamps")
+        val SOUND_EFFECTS_ENABLED = booleanPreferencesKey("engagement_sound_effects_enabled")
     }
 
     private val safePreferencesFlow: Flow<Preferences> = dataStore.data
@@ -175,6 +207,10 @@ class DataStoreUserPreferencesRepository(
 
     override val learningStreakFlow: Flow<LearningStreakState> = safePreferencesFlow
         .map { prefs -> mapStreakState(prefs) }
+        .distinctUntilChanged()
+
+    override val engagementProfileFlow: Flow<EngagementProfileState> = safePreferencesFlow
+        .map { prefs -> mapEngagementProfile(prefs) }
         .distinctUntilChanged()
 
     override suspend fun setThemeMode(mode: ThemeMode) {
@@ -254,12 +290,19 @@ class DataStoreUserPreferencesRepository(
         }
     }
 
+    override suspend fun setSoundEffectsEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.SOUND_EFFECTS_ENABLED] = enabled }
+    }
+
     override suspend fun recordStudyActivity(dayKey: String): LearningStreakState {
         var updated = LearningStreakState()
         dataStore.edit { prefs ->
             val prev = mapStreakState(prefs)
             val yesterday = previousDayKey(dayKey)
+            val twoDaysAgo = previousDayKey(yesterday)
+            val currentShields = (prefs[Keys.STREAK_SHIELDS] ?: 0).coerceIn(0, BaeumHabitEngine.MAX_STREAK_SHIELDS)
 
+            var earnedNewDay = false
             updated = when {
                 prev.lastStudyDayKey == dayKey -> {
                     val ensuredCurrent = prev.currentStreakDays.coerceAtLeast(1)
@@ -272,7 +315,25 @@ class DataStoreUserPreferencesRepository(
                 }
 
                 prev.lastStudyDayKey == yesterday -> {
+                    earnedNewDay = true
                     val nextCurrent = prev.currentStreakDays.coerceAtLeast(0) + 1
+                    LearningStreakState(
+                        currentStreakDays = nextCurrent,
+                        longestStreakDays = maxOf(prev.longestStreakDays, nextCurrent),
+                        lastStudyDayKey = dayKey,
+                        totalActiveDays = prev.totalActiveDays + 1
+                    )
+                }
+
+                // Auto-consume 1 Streak Shield when exactly 1 day was missed and streak was active
+                prev.currentStreakDays > 0 &&
+                    twoDaysAgo.isNotBlank() &&
+                    prev.lastStudyDayKey == twoDaysAgo &&
+                    currentShields > 0 -> {
+                    earnedNewDay = true
+                    prefs[Keys.STREAK_SHIELDS] = (currentShields - 1).coerceAtLeast(0)
+                    prefs[Keys.LAST_SHIELD_USED_DAY_KEY] = yesterday
+                    val nextCurrent = prev.currentStreakDays + 1
                     LearningStreakState(
                         currentStreakDays = nextCurrent,
                         longestStreakDays = maxOf(prev.longestStreakDays, nextCurrent),
@@ -288,6 +349,7 @@ class DataStoreUserPreferencesRepository(
 
                 else -> {
                     // First study day or streak restarted after a gap of >= 2 days
+                    earnedNewDay = true
                     LearningStreakState(
                         currentStreakDays = 1,
                         longestStreakDays = maxOf(prev.longestStreakDays, 1),
@@ -296,6 +358,13 @@ class DataStoreUserPreferencesRepository(
                     )
                 }
             }
+
+            // Milestone reward: earn +1 Streak Shield every 7 consecutive study days (up to MAX_STREAK_SHIELDS)
+            if (earnedNewDay && updated.currentStreakDays > 0 && updated.currentStreakDays % 7 == 0) {
+                val nowShields = (prefs[Keys.STREAK_SHIELDS] ?: 0).coerceAtLeast(0)
+                prefs[Keys.STREAK_SHIELDS] = (nowShields + 1).coerceAtMost(BaeumHabitEngine.MAX_STREAK_SHIELDS)
+            }
+
             writeStreakState(prefs, updated)
         }
         return updated
@@ -306,13 +375,22 @@ class DataStoreUserPreferencesRepository(
         dataStore.edit { prefs ->
             val prev = mapStreakState(prefs)
             val alive = prev.isAliveAsOf(todayDayKey)
-            updated = if (!alive && prev.currentStreakDays > 0) {
-                prev.copy(currentStreakDays = 0)
+            if (!alive && prev.currentStreakDays > 0) {
+                val yesterday = previousDayKey(todayDayKey)
+                val twoDaysAgo = previousDayKey(yesterday)
+                val shields = (prefs[Keys.STREAK_SHIELDS] ?: 0).coerceIn(0, BaeumHabitEngine.MAX_STREAK_SHIELDS)
+                if (twoDaysAgo.isNotBlank() && prev.lastStudyDayKey == twoDaysAgo && shields > 0) {
+                    // Automatically deploy 1 Streak Shield to save the streak across the single missed day!
+                    prefs[Keys.STREAK_SHIELDS] = shields - 1
+                    prefs[Keys.LAST_SHIELD_USED_DAY_KEY] = yesterday
+                    updated = prev.copy(lastStudyDayKey = yesterday)
+                    writeStreakState(prefs, updated)
+                } else {
+                    updated = prev.copy(currentStreakDays = 0)
+                    writeStreakState(prefs, updated)
+                }
             } else {
-                prev
-            }
-            if (updated != prev) {
-                writeStreakState(prefs, updated)
+                updated = prev
             }
         }
         return updated
@@ -372,6 +450,98 @@ class DataStoreUserPreferencesRepository(
         return updated
     }
 
+    override suspend fun awardXp(delta: Int): Pair<Int, Int> {
+        val safeDelta = delta.coerceAtLeast(0)
+        var oldXp = 0
+        var newXp = 0
+        dataStore.edit { prefs ->
+            oldXp = (prefs[Keys.TOTAL_XP] ?: 0).coerceAtLeast(0)
+            newXp = (oldXp + safeDelta).coerceAtLeast(oldXp)
+            prefs[Keys.TOTAL_XP] = newXp
+        }
+        return oldXp to newXp
+    }
+
+    override suspend fun grantStreakShield(count: Int): Int {
+        var nextShields = 0
+        dataStore.edit { prefs ->
+            val cur = (prefs[Keys.STREAK_SHIELDS] ?: 0).coerceAtLeast(0)
+            nextShields = (cur + count.coerceAtLeast(0)).coerceAtMost(BaeumHabitEngine.MAX_STREAK_SHIELDS)
+            prefs[Keys.STREAK_SHIELDS] = nextShields
+        }
+        return nextShields
+    }
+
+    override suspend fun recordDailySparkCompleted(dayKey: String, xpReward: Int): Boolean {
+        var newlyCompleted = false
+        dataStore.edit { prefs ->
+            if (prefs[Keys.DAILY_SPARK_COMPLETED_DAY_KEY] != dayKey) {
+                newlyCompleted = true
+                prefs[Keys.DAILY_SPARK_COMPLETED_DAY_KEY] = dayKey
+                val curXp = (prefs[Keys.TOTAL_XP] ?: 0).coerceAtLeast(0)
+                prefs[Keys.TOTAL_XP] = curXp + xpReward.coerceAtLeast(0)
+            }
+        }
+        return newlyCompleted
+    }
+
+    override suspend fun claimDailySealBonus(dayKey: String, bonusXp: Int): Boolean {
+        var newlyClaimed = false
+        dataStore.edit { prefs ->
+            if (prefs[Keys.DAILY_SEAL_CLAIMED_DAY_KEY] != dayKey) {
+                newlyClaimed = true
+                prefs[Keys.DAILY_SEAL_CLAIMED_DAY_KEY] = dayKey
+                val curXp = (prefs[Keys.TOTAL_XP] ?: 0).coerceAtLeast(0)
+                prefs[Keys.TOTAL_XP] = curXp + bonusXp.coerceAtLeast(0)
+                val curShields = (prefs[Keys.STREAK_SHIELDS] ?: 0).coerceAtLeast(0)
+                prefs[Keys.STREAK_SHIELDS] = (curShields + 1).coerceAtMost(BaeumHabitEngine.MAX_STREAK_SHIELDS)
+            }
+        }
+        return newlyClaimed
+    }
+
+    override suspend fun recordBlitzResult(score: Int, maxCombo: Int): Pair<Boolean, Int> {
+        var isNewRecord = false
+        var best = 0
+        dataStore.edit { prefs ->
+            val prevBest = (prefs[Keys.BLITZ_BEST_SCORE] ?: 0).coerceAtLeast(0)
+            val safeScore = score.coerceAtLeast(0)
+            isNewRecord = safeScore > 0 && safeScore > prevBest
+            best = maxOf(prevBest, safeScore)
+            prefs[Keys.BLITZ_BEST_SCORE] = best
+            prefs[Keys.BLITZ_GAMES_PLAYED] = (prefs[Keys.BLITZ_GAMES_PLAYED] ?: 0).coerceAtLeast(0) + 1
+            val prevCombo = (prefs[Keys.BEST_COMBO_EVER] ?: 0).coerceAtLeast(0)
+            if (maxCombo > prevCombo) {
+                prefs[Keys.BEST_COMBO_EVER] = maxCombo
+            }
+        }
+        return isNewRecord to best
+    }
+
+    override suspend fun recordBestCombo(combo: Int) {
+        if (combo <= 0) return
+        dataStore.edit { prefs ->
+            val prev = (prefs[Keys.BEST_COMBO_EVER] ?: 0).coerceAtLeast(0)
+            if (combo > prev) {
+                prefs[Keys.BEST_COMBO_EVER] = combo
+            }
+        }
+    }
+
+    override suspend fun unlockStamps(stampIds: Set<String>): Set<String> {
+        if (stampIds.isEmpty()) return emptySet()
+        var newlyUnlocked: Set<String> = emptySet()
+        dataStore.edit { prefs ->
+            val existing = parseStampIds(prefs[Keys.UNLOCKED_STAMP_IDS])
+            val diff = stampIds - existing
+            if (diff.isNotEmpty()) {
+                newlyUnlocked = diff
+                prefs[Keys.UNLOCKED_STAMP_IDS] = (existing + diff).sorted().joinToString(",")
+            }
+        }
+        return newlyUnlocked
+    }
+
     override suspend fun clearAllPreferences() {
         dataStore.edit { it.clear() }
     }
@@ -396,8 +566,27 @@ class DataStoreUserPreferencesRepository(
             learningStreak = mapStreakState(prefs),
             dailyReminderEnabled = prefs[Keys.DAILY_REMINDER_ENABLED] ?: false,
             dailyReminderHour = (prefs[Keys.DAILY_REMINDER_HOUR] ?: 19).coerceIn(0, 23),
-            dailyReminderMinute = (prefs[Keys.DAILY_REMINDER_MINUTE] ?: 0).coerceIn(0, 59)
+            dailyReminderMinute = (prefs[Keys.DAILY_REMINDER_MINUTE] ?: 0).coerceIn(0, 59),
+            engagement = mapEngagementProfile(prefs)
         )
+    }
+
+    private fun mapEngagementProfile(prefs: Preferences): EngagementProfileState = EngagementProfileState(
+        totalXp = (prefs[Keys.TOTAL_XP] ?: 0).coerceAtLeast(0),
+        streakShields = (prefs[Keys.STREAK_SHIELDS] ?: 0).coerceIn(0, BaeumHabitEngine.MAX_STREAK_SHIELDS),
+        lastShieldUsedDayKey = prefs[Keys.LAST_SHIELD_USED_DAY_KEY] ?: "",
+        blitzBestScore = (prefs[Keys.BLITZ_BEST_SCORE] ?: 0).coerceAtLeast(0),
+        blitzGamesPlayed = (prefs[Keys.BLITZ_GAMES_PLAYED] ?: 0).coerceAtLeast(0),
+        bestComboEver = (prefs[Keys.BEST_COMBO_EVER] ?: 0).coerceAtLeast(0),
+        dailySparkCompletedDayKey = prefs[Keys.DAILY_SPARK_COMPLETED_DAY_KEY] ?: "",
+        dailySealClaimedDayKey = prefs[Keys.DAILY_SEAL_CLAIMED_DAY_KEY] ?: "",
+        unlockedStampIds = parseStampIds(prefs[Keys.UNLOCKED_STAMP_IDS]),
+        soundEffectsEnabled = prefs[Keys.SOUND_EFFECTS_ENABLED] ?: true
+    )
+
+    private fun parseStampIds(raw: String?): Set<String> {
+        if (raw.isNullOrBlank()) return emptySet()
+        return raw.split(",").mapNotNull { it.trim().ifBlank { null } }.toSet()
     }
 
     private fun mapStreakState(prefs: Preferences): LearningStreakState {

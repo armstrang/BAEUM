@@ -3,6 +3,7 @@ package com.example.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.data.audio.BaeumSoundEffects
 import com.example.data.audio.KoreanAudioController
 import com.example.data.audio.SpeechCaptureState
 import com.example.data.audio.SpeechRecognitionState
@@ -18,6 +19,7 @@ import com.example.data.local.UserSettings
 import com.example.data.local.VocabEntity
 import com.example.data.repository.BaeumRepository
 import com.example.data.repository.CurriculumPreferences
+import com.example.data.repository.DataStoreUserPreferencesRepository
 import com.example.data.repository.DayForecastPoint
 import com.example.data.repository.LearningStreakState
 import com.example.data.repository.ThemePreferences
@@ -26,11 +28,18 @@ import com.example.data.seed.ExamPaperLength
 import com.example.data.seed.ExamType
 import com.example.data.seed.SpeakingDifficulty
 import com.example.data.seed.SpeakingScenario
+import com.example.domain.engagement.BaeumHabitEngine
+import com.example.domain.engagement.CelebrationBannerEvent
+import com.example.domain.engagement.CelebrationKind
+import com.example.domain.engagement.HabitDashboardSnapshot
+import com.example.domain.engagement.SeoulBlitzEngine
+import com.example.domain.engagement.SeoulBlitzState
 import com.example.domain.exam.ActiveExamSession
 import com.example.domain.exam.ExamEngine
 import com.example.domain.exam.ExamReport
 import com.example.domain.exam.ExamSessionMode
 import com.example.domain.fsrs.CardMemoryStage
+import com.example.domain.fsrs.FsrsRating
 import com.example.domain.quiz.ModeProgressStats
 import com.example.domain.quiz.QuizManager
 import com.example.domain.quiz.QuizMode
@@ -48,6 +57,8 @@ import com.example.domain.speaking.PronunciationDrillCategory
 import com.example.domain.speaking.PronunciationDrillItem
 import com.example.ui.theme.ThemeMode
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -57,6 +68,7 @@ import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 data class DashboardSummary(
@@ -96,6 +108,8 @@ class BaeumViewModel(
     private val reminderScheduler: (Boolean, Int, Int, Boolean) -> Unit = { _, _, _, _ -> },
     private val testReminderPoster: (Int, Int, Int, Int, Boolean) -> Boolean = { _, _, _, _, _ -> false }
 ) : ViewModel() {
+
+    val soundEffects: BaeumSoundEffects = BaeumSoundEffects()
 
     private val _isInitialized = MutableStateFlow(false)
     val isInitialized: StateFlow<Boolean> = _isInitialized.asStateFlow()
@@ -217,10 +231,74 @@ class BaeumViewModel(
             LearningScoringEngine.computeReadinessProfile(emptyList(), emptyList(), emptyList(), emptyList())
         )
 
+    val habitSnapshot: StateFlow<HabitDashboardSnapshot> = combine(
+        settings,
+        allVocab,
+        dailyStats,
+        quizRecords
+    ) { userSettings, vocab, stats, quizzes ->
+        val nowMs = System.currentTimeMillis()
+        val todayKey = BaeumRepository.localDayKey(nowMs)
+        val yesterdayKey = DataStoreUserPreferencesRepository.previousDayKey(todayKey)
+        val eng = userSettings.engagement
+        val todayStat = stats.firstOrNull { it.dayKey == todayKey }
+        val isSparkDone = eng.dailySparkCompletedDayKey == todayKey
+        val blitzToday = quizzes.any { it.dayKey == todayKey && it.mode == "Seoul Blitz" }
+        val quests = BaeumHabitEngine.buildDailyQuests(
+            todayStat = todayStat,
+            dailyGoalWords = userSettings.dailyGoalWords,
+            isSparkDoneToday = isSparkDone,
+            todayKey = todayKey,
+            blitzGamesPlayedToday = blitzToday
+        )
+        val completedQuests = quests.count { it.isCompleted }
+        val sealClaimed = eng.dailySealClaimedDayKey == todayKey
+
+        HabitDashboardSnapshot(
+            rankProgress = BaeumHabitEngine.computeRankProgress(eng.totalXp),
+            streakShields = eng.streakShields,
+            shieldSavedStreakRecently = eng.lastShieldUsedDayKey.isNotBlank() && eng.lastShieldUsedDayKey == yesterdayKey,
+            weeklyRhythm = BaeumHabitEngine.buildWeeklyRhythm(
+                dailyStats = stats,
+                todayEpochMs = nowMs,
+                shieldedDayKey = eng.lastShieldUsedDayKey
+            ),
+            dailySpark = BaeumHabitEngine.buildDailySeoulSpark(
+                allVocab = vocab,
+                activePathway = userSettings.activePathway,
+                translationLang = userSettings.translationLanguage,
+                dayKey = todayKey
+            ),
+            isDailySparkCompleted = isSparkDone,
+            dailyQuests = quests,
+            completedQuestsCount = completedQuests,
+            isDailySealClaimed = sealClaimed,
+            canClaimDailySeal = completedQuests >= quests.size && !sealClaimed,
+            blitzBestScore = eng.blitzBestScore,
+            blitzGamesPlayed = eng.blitzGamesPlayed,
+            bestComboEver = eng.bestComboEver,
+            unlockedStampIds = eng.unlockedStampIds,
+            soundEffectsEnabled = eng.soundEffectsEnabled
+        )
+    }
+        .conflate()
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, HabitDashboardSnapshot())
+
     // Active Session States
     val quizManager: QuizManager = QuizManager()
     val activeQuiz: StateFlow<QuizSessionState?> = quizManager.sessionState
     val quizModeProgress: StateFlow<Map<QuizMode, ModeProgressStats>> = quizManager.modeProgress
+
+    private val _blitzSession = MutableStateFlow<SeoulBlitzState?>(null)
+    val blitzSession: StateFlow<SeoulBlitzState?> = _blitzSession.asStateFlow()
+    private var blitzTimerJob: Job? = null
+
+    private val _celebrationEvent = MutableStateFlow<CelebrationBannerEvent?>(null)
+    val celebrationEvent: StateFlow<CelebrationBannerEvent?> = _celebrationEvent.asStateFlow()
+    private var celebrationDismissJob: Job? = null
+    private var observedRankLevel: Int? = null
+    private var stampObserverHydrated: Boolean = false
 
     private val _liveConversation = MutableStateFlow<LiveConversationState?>(null)
     val liveConversation: StateFlow<LiveConversationState?> = _liveConversation.asStateFlow()
@@ -266,7 +344,69 @@ class BaeumViewModel(
         viewModelScope.launch {
             settings.collect { s ->
                 audioController.updateSpeechRate(s.speechRate)
+                soundEffects.enabled = s.engagement.soundEffectsEnabled
+                val currentRank = BaeumHabitEngine.computeRankProgress(s.engagement.totalXp).currentRank
+                val prevLevel = observedRankLevel
+                if (prevLevel != null && currentRank.level > prevLevel) {
+                    soundEffects.playLevelUp()
+                    emitCelebration(
+                        CelebrationBannerEvent(
+                            kind = CelebrationKind.LEVEL_UP,
+                            titleEn = "Rank Up · Lv.${currentRank.level} ${currentRank.titleEn}!",
+                            titleId = "Naik Peringkat · Lv.${currentRank.level} ${currentRank.titleId}!",
+                            subtitleEn = "${currentRank.titleKo} — Your Seoul Atelier mastery grows.",
+                            subtitleId = "${currentRank.titleKo} — Penguasaan Seoul Atelier-mu meningkat!",
+                            badgeKo = currentRank.badgeGlyph,
+                            showConfetti = true
+                        )
+                    )
+                }
+                observedRankLevel = currentRank.level
             }
+        }
+        // Automatically detect and unlock earned Dojang Seal Stamps from real learner records
+        viewModelScope.launch {
+            combine(
+                settings,
+                dashboardSummary,
+                allVocab,
+                quizRecords,
+                combine(speakingSessions, examAttempts) { s, e -> s to e }
+            ) { s, dash, vocab, quizzes, (speaking, exams) ->
+                val reviewedCount = vocab.count { it.reps > 0 }
+                BaeumHabitEngine.evaluateEligibleStampIds(
+                    profile = s.engagement,
+                    currentStreak = dash.streakDays,
+                    longestStreak = dash.longestStreakDays,
+                    reviewedVocabCount = reviewedCount,
+                    quizRecords = quizzes,
+                    speakingSessions = speaking,
+                    examAttempts = exams
+                )
+            }
+                .conflate()
+                .flowOn(Dispatchers.Default)
+                .collect { eligible ->
+                    val newlyUnlocked = userPreferencesRepository.unlockStamps(eligible)
+                    if (stampObserverHydrated && newlyUnlocked.isNotEmpty()) {
+                        val stamp = BaeumHabitEngine.allStamps.firstOrNull { it.id in newlyUnlocked }
+                        if (stamp != null) {
+                            soundEffects.playStampUnlock()
+                            emitCelebration(
+                                CelebrationBannerEvent(
+                                    kind = CelebrationKind.STAMP_UNLOCK,
+                                    titleEn = "Seal Unlocked · ${stamp.titleEn}",
+                                    titleId = "Stempel Terbuka · ${stamp.titleId}",
+                                    subtitleEn = stamp.conditionEn,
+                                    subtitleId = stamp.conditionId,
+                                    badgeKo = stamp.sealKo,
+                                    showConfetti = true
+                                )
+                            )
+                        }
+                    }
+                    stampObserverHydrated = true
+                }
         }
         viewModelScope.launch {
             quizRecords.collect { records ->
@@ -358,7 +498,9 @@ class BaeumViewModel(
                             )
                         }
                         if (evaluation.passed) {
+                            soundEffects.playCorrect(3)
                             repository.recordStudySeconds(15)
+                            userPreferencesRepository.awardXp(BaeumHabitEngine.PRONUNCIATION_PASS_XP)
                         }
                     }
                     else -> {
@@ -390,6 +532,7 @@ class BaeumViewModel(
 
     fun onHostStop() {
         audioController.onHostStop()
+        blitzTimerJob?.cancel()
     }
 
     fun reportStatusMessage(message: String) {
@@ -398,6 +541,22 @@ class BaeumViewModel(
 
     fun clearStatusMessage() {
         _statusMessage.value = null
+    }
+
+    fun dismissCelebration() {
+        celebrationDismissJob?.cancel()
+        _celebrationEvent.value = null
+    }
+
+    private fun emitCelebration(event: CelebrationBannerEvent) {
+        celebrationDismissJob?.cancel()
+        _celebrationEvent.value = event
+        celebrationDismissJob = viewModelScope.launch {
+            delay(4200L)
+            if (_celebrationEvent.value?.id == event.id) {
+                _celebrationEvent.value = null
+            }
+        }
     }
 
     // ==================== ONBOARDING & USER PREFERENCES (DataStore Repository) ====================
@@ -445,6 +604,195 @@ class BaeumViewModel(
 
     fun setReducedMotion(enabled: Boolean) {
         viewModelScope.launch { userPreferencesRepository.setReducedMotion(enabled) }
+    }
+
+    fun setSoundEffectsEnabled(enabled: Boolean) {
+        soundEffects.enabled = enabled
+        viewModelScope.launch { userPreferencesRepository.setSoundEffectsEnabled(enabled) }
+        if (enabled) soundEffects.playCardFlip()
+    }
+
+    fun playCardFlipSound() {
+        soundEffects.playCardFlip()
+    }
+
+    fun playFlashcardRatingSound(rating: FsrsRating, nextCombo: Int) {
+        when (rating) {
+            FsrsRating.AGAIN -> soundEffects.playGentleMiss()
+            FsrsRating.HARD -> soundEffects.playCorrect(1)
+            FsrsRating.GOOD -> soundEffects.playCorrect(nextCombo.coerceAtLeast(1))
+            FsrsRating.EASY -> soundEffects.playCorrect((nextCombo + 1).coerceAtLeast(2))
+        }
+    }
+
+    // ==================== DAILY SEOUL SPARK, DAILY SEAL & 60s SEOUL BLITZ ====================
+    fun completeDailySpark(isCorrect: Boolean) {
+        if (!isCorrect) {
+            soundEffects.playGentleMiss()
+            return
+        }
+        val spark = habitSnapshot.value.dailySpark ?: return
+        val todayKey = BaeumRepository.localDayKey()
+        soundEffects.playStampUnlock()
+        viewModelScope.launch {
+            val newlyCompleted = userPreferencesRepository.recordDailySparkCompleted(
+                dayKey = todayKey,
+                xpReward = spark.xpReward
+            )
+            if (newlyCompleted) {
+                repository.recordStudySeconds(20)
+                userPreferencesRepository.recordStudyActivity(todayKey)
+                emitCelebration(
+                    CelebrationBannerEvent(
+                        kind = CelebrationKind.DAILY_SPARK,
+                        titleEn = "Daily Spark Lit · +${spark.xpReward} XP!",
+                        titleId = "Percikan Harian Menyala · +${spark.xpReward} XP!",
+                        subtitleEn = "${spark.hangul} (${spark.correctMeaning}) added to your momentum.",
+                        subtitleId = "${spark.hangul} (${spark.correctMeaning}) memicu momentum belajarmu.",
+                        badgeKo = "불꽃",
+                        xpDelta = spark.xpReward,
+                        showConfetti = true
+                    )
+                )
+            }
+        }
+    }
+
+    fun claimDailySeal() {
+        val snap = habitSnapshot.value
+        if (!snap.canClaimDailySeal) return
+        val todayKey = BaeumRepository.localDayKey()
+        soundEffects.playLevelUp()
+        viewModelScope.launch {
+            val claimed = userPreferencesRepository.claimDailySealBonus(
+                dayKey = todayKey,
+                bonusXp = BaeumHabitEngine.DAILY_SEAL_BONUS_XP
+            )
+            if (claimed) {
+                emitCelebration(
+                    CelebrationBannerEvent(
+                        kind = CelebrationKind.DAILY_SEAL,
+                        titleEn = "Daily Atelier Seal Stamped!",
+                        titleId = "Stempel Harian Atelier Tercapai!",
+                        subtitleEn = "+${BaeumHabitEngine.DAILY_SEAL_BONUS_XP} Bonus XP & +1 Streak Shield earned.",
+                        subtitleId = "+${BaeumHabitEngine.DAILY_SEAL_BONUS_XP} Bonus XP & +1 Perisai Runtutan diperoleh!",
+                        badgeKo = "도장",
+                        xpDelta = BaeumHabitEngine.DAILY_SEAL_BONUS_XP,
+                        showConfetti = true
+                    )
+                )
+            }
+        }
+    }
+
+    fun startSeoulBlitz() {
+        blitzTimerJob?.cancel()
+        val curSettings = settings.value
+        val initial = SeoulBlitzEngine.startSession(
+            allVocab = allVocab.value,
+            activePathway = curSettings.activePathway,
+            translationLang = curSettings.translationLanguage,
+            previousBestScore = curSettings.engagement.blitzBestScore
+        )
+        _blitzSession.value = initial
+        if (!initial.isFinished) {
+            soundEffects.playCardFlip()
+            blitzTimerJob = viewModelScope.launch {
+                while (isActive) {
+                    delay(1000L)
+                    val cur = _blitzSession.value ?: break
+                    if (cur.isFinished) break
+                    val ticked = SeoulBlitzEngine.tickSecond(cur)
+                    _blitzSession.value = ticked
+                    if (ticked.isFinished) {
+                        persistCompletedBlitz(ticked)
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    fun answerBlitzOption(selectedOption: String) {
+        val cur = _blitzSession.value ?: return
+        if (cur.isFinished) return
+        val activePrompt = cur.currentPrompt ?: return
+        val next = SeoulBlitzEngine.submitAnswer(
+            state = cur,
+            selectedOption = selectedOption,
+            allVocab = allVocab.value
+        )
+        _blitzSession.value = next
+
+        val wasCorrect = next.lastAnswerWasCorrect == true
+        if (wasCorrect) {
+            soundEffects.playCorrect(next.combo)
+        } else {
+            soundEffects.playGentleMiss()
+        }
+
+        viewModelScope.launch {
+            repository.recordQuizAnswerTelemetry(
+                vocabId = activePrompt.vocabId,
+                isCorrect = wasCorrect
+            )
+            if (next.combo >= 3) {
+                userPreferencesRepository.recordBestCombo(next.combo)
+            }
+        }
+    }
+
+    fun abandonSeoulBlitz() {
+        blitzTimerJob?.cancel()
+        blitzTimerJob = null
+        _blitzSession.value = null
+    }
+
+    private fun persistCompletedBlitz(finished: SeoulBlitzState) {
+        blitzTimerJob?.cancel()
+        blitzTimerJob = null
+        if (finished.answeredCount <= 0) return
+
+        if (finished.isNewRecord) {
+            soundEffects.playLevelUp()
+        } else {
+            soundEffects.playStampUnlock()
+        }
+
+        viewModelScope.launch {
+            val (isNewRecord, _) = userPreferencesRepository.recordBlitzResult(
+                score = finished.score,
+                maxCombo = finished.maxCombo
+            )
+            val xp = BaeumHabitEngine.computeBlitzXp(finished.score, isNewRecord)
+            userPreferencesRepository.awardXp(xp)
+            repository.saveQuizRecord(
+                mode = "Seoul Blitz",
+                curriculum = finished.activePathway.ifBlank { settings.value.activePathway },
+                totalQuestions = finished.answeredCount,
+                correctAnswers = finished.correctCount,
+                durationSec = finished.totalDurationSec + finished.timeBonusEarnedSec,
+                weakTopicNote = if (finished.missedWords.isNotEmpty()) {
+                    finished.missedWords.take(3).joinToString(", ") { it.hangul }
+                } else {
+                    "Clean 60s Blitz"
+                }
+            )
+            if (isNewRecord) {
+                emitCelebration(
+                    CelebrationBannerEvent(
+                        kind = CelebrationKind.NEW_BLITZ_RECORD,
+                        titleEn = "New Seoul Blitz Record · ${finished.score} pts!",
+                        titleId = "Rekor Baru Seoul Blitz · ${finished.score} poin!",
+                        subtitleEn = "Peak combo ${finished.maxCombo}x • +$xp XP earned.",
+                        subtitleId = "Kombo puncak ${finished.maxCombo}x • +$xp XP diperoleh.",
+                        badgeKo = "신기록",
+                        xpDelta = xp,
+                        showConfetti = true
+                    )
+                )
+            }
+        }
     }
 
     fun updateDailyReminder(enabled: Boolean, hour: Int, minute: Int) {
@@ -531,16 +879,34 @@ class BaeumViewModel(
 
     fun checkQuizAnswer() {
         val outcome = quizManager.submitCurrentAnswer() ?: return
+        val currentStreak = quizManager.sessionState.value?.currentStreak ?: 0
+        if (outcome.evaluation.isCorrect) {
+            soundEffects.playCorrect(currentStreak.coerceAtLeast(1))
+        } else {
+            soundEffects.playGentleMiss()
+        }
         viewModelScope.launch {
             repository.recordQuizAnswerTelemetry(
                 vocabId = outcome.question.vocabId,
                 isCorrect = outcome.evaluation.isCorrect
             )
+            if (currentStreak >= 3) {
+                userPreferencesRepository.recordBestCombo(currentStreak)
+            }
         }
     }
 
     fun nextQuizQuestion() {
+        val maxStreakBeforeComplete = quizManager.sessionState.value?.maxStreak ?: 0
         val completion = quizManager.advanceToNext() ?: return
+        val earnedXp = BaeumHabitEngine.computeQuizCompletionXp(
+            correctAnswers = completion.correctAnswers,
+            totalQuestions = completion.totalQuestions,
+            maxStreak = maxStreakBeforeComplete
+        )
+        if (completion.correctAnswers * 10 >= completion.totalQuestions * 7) {
+            soundEffects.playStampUnlock()
+        }
         viewModelScope.launch {
             repository.saveQuizRecord(
                 mode = completion.mode.title,
@@ -550,6 +916,10 @@ class BaeumViewModel(
                 durationSec = completion.durationSec.coerceAtLeast(10),
                 weakTopicNote = completion.weakTopicNote
             )
+            userPreferencesRepository.awardXp(earnedXp)
+            if (maxStreakBeforeComplete >= 3) {
+                userPreferencesRepository.recordBestCombo(maxStreakBeforeComplete)
+            }
         }
     }
 
@@ -728,7 +1098,10 @@ class BaeumViewModel(
                         dayKey = BaeumRepository.localDayKey(now)
                     )
                 )
+                val speakingXp = BaeumHabitEngine.SPEAKING_SESSION_BASE_XP + (assessment.totalScoreOutOf100 / 4)
+                userPreferencesRepository.awardXp(speakingXp)
             }
+            soundEffects.playStampUnlock()
             return true
         } else {
             nextState.currentPrompt?.let { audioController.speakKorean(it.promptKo) }
@@ -947,6 +1320,12 @@ class BaeumViewModel(
                     dayKey = BaeumRepository.localDayKey(now)
                 )
             )
+            val examXp = if (report.mode == ExamSessionMode.MOCK) {
+                BaeumHabitEngine.EXAM_MOCK_XP
+            } else {
+                BaeumHabitEngine.EXAM_PRACTICE_XP
+            }
+            userPreferencesRepository.awardXp(examXp)
         }
         return report
     }
@@ -970,12 +1349,17 @@ class BaeumViewModel(
     }
 
     fun recordWritingPracticeCompleted() {
+        soundEffects.playStampUnlock()
         viewModelScope.launch {
             repository.recordStudySeconds(45)
+            userPreferencesRepository.awardXp(BaeumHabitEngine.WRITING_PRACTICE_XP)
         }
     }
 
     override fun onCleared() {
+        blitzTimerJob?.cancel()
+        celebrationDismissJob?.cancel()
+        soundEffects.release()
         audioController.release()
         super.onCleared()
     }

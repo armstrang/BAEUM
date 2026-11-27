@@ -85,6 +85,9 @@ import com.example.ui.components.BaeumPrimaryButton
 import com.example.ui.components.BaeumSecondaryButton
 import com.example.ui.components.BaeumTopBar
 import com.example.ui.components.CircularGoalRing
+import com.example.ui.components.ComboFlamePill
+import com.example.ui.components.FloatingXpBadge
+import com.example.ui.components.LuxuryConfettiOverlay
 import com.example.ui.components.ProgressBarSlim
 import com.example.ui.components.SeoulCard
 import com.example.ui.components.SevenDayForecastChart
@@ -151,6 +154,7 @@ fun SmartFlashcardScreen(
         RomanizationMode.HIDDEN -> false
     }
 
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -256,6 +260,30 @@ fun SmartFlashcardScreen(
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.fillMaxWidth()
                             )
+                            if (session.sessionXpEarned > 0) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(extended.gold.copy(alpha = 0.18f))
+                                            .border(1.dp, extended.gold.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = "+${session.sessionXpEarned} XP",
+                                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.ExtraBold),
+                                            color = extended.gold
+                                        )
+                                    }
+                                    if (session.maxSessionCombo >= 2) {
+                                        ComboFlamePill(combo = session.maxSessionCombo)
+                                    }
+                                }
+                            }
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
                                 text = eval?.grade?.summary ?: if (session.reviewedCount > 0) {
@@ -312,7 +340,7 @@ fun SmartFlashcardScreen(
                                 )
                             }
                             Spacer(modifier = Modifier.height(22.dp))
-                            BaeumPrimaryButton(text = bText("Study another set", "Belajar set berikutnya"), onClick = onStartNewSession, testTag = "flashcard_study_more")
+                            BaeumPrimaryButton(text = bText("Keep Flow Going (Next Set)", "Lanjutkan Alur (Set Berikutnya)"), onClick = onStartNewSession, testTag = "flashcard_study_more")
                             Spacer(modifier = Modifier.height(10.dp))
                             BaeumSecondaryButton(text = bText("Back to Home", "Kembali ke Beranda"), onClick = onBack)
                         }
@@ -331,21 +359,38 @@ fun SmartFlashcardScreen(
                     dragOffsetX.snapTo(0f)
                 }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "${(session.currentIndex + 1).coerceAtMost(totalCards)} / $totalCards",
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = bText("${session.reviewedCount} reviewed", "${session.reviewedCount} diulas"),
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${(session.currentIndex + 1).coerceAtMost(totalCards)} / $totalCards",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (session.sessionCombo >= 2) {
+                            ComboFlamePill(combo = session.sessionCombo)
+                        }
+                        Text(
+                            text = if (session.sessionXpEarned > 0) {
+                                "+${session.sessionXpEarned} XP"
+                            } else {
+                                bText("${session.reviewedCount} reviewed", "${session.reviewedCount} diulas")
+                            },
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                            color = if (session.sessionXpEarned > 0) extended.gold else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    if (session.lastXpAwarded > 0 && session.xpEventSeq > 0) {
+                        FloatingXpBadge(
+                            label = "+${session.lastXpAwarded} XP",
+                            eventSeq = session.xpEventSeq,
+                            accentColor = extended.gold,
+                            modifier = Modifier.align(Alignment.CenterEnd)
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 ProgressBarSlim(progress = (session.currentIndex + 1).toFloat() / totalCards)
@@ -851,6 +896,10 @@ fun SmartFlashcardScreen(
                 }
             }
         }
+    }
+    if (session.isCompleted && session.reviewedCount > 0 && (session.evaluation?.recallRatePercent ?: 100) >= 75) {
+        LuxuryConfettiOverlay(triggerKey = session.reviewedCount * 13 + session.sessionXpEarned)
+    }
     }
 }
 

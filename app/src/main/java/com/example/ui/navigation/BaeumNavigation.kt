@@ -81,7 +81,9 @@ import com.example.data.local.RomanizationMode
 import com.example.data.seed.ExamType
 import com.example.data.seed.SpeakingDifficulty
 import com.example.domain.exam.ExamSessionMode
+import com.example.domain.fsrs.FsrsRating
 import com.example.domain.quiz.QuizMode
+import com.example.ui.components.GlobalCelebrationToast
 import com.example.ui.screens.ActiveExamScreen
 import com.example.ui.screens.ActiveQuizScreen
 import com.example.ui.screens.AnalyticsScreen
@@ -100,6 +102,7 @@ import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.PronunciationLabScreen
 import com.example.ui.screens.QuizCenterScreen
 import com.example.ui.screens.ReviewPlannerScreen
+import com.example.ui.screens.SeoulBlitzScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.SmartFlashcardScreen
 import com.example.ui.screens.SpeakingAssessmentScreen
@@ -136,6 +139,7 @@ object BaeumRoutes {
     const val REVIEW_PLANNER = "review_planner"
     const val QUIZ_CENTER = "quiz_center"
     const val ACTIVE_QUIZ = "active_quiz"
+    const val SEOUL_BLITZ = "seoul_blitz"
     const val GRAMMAR_STUDIO = "grammar_studio"
     const val SPEAK_DIFFICULTY = "speak_difficulty"
     const val LIVE_CONVERSATION = "live_conversation"
@@ -321,8 +325,10 @@ private fun BaeumMainShell(
                     ) {
                         composable(BaeumRoutes.HOME) {
                             val summary by viewModel.dashboardSummary.collectAsStateWithLifecycle()
+                            val habitSnapshot by viewModel.habitSnapshot.collectAsStateWithLifecycle()
                             HomeDashboardScreen(
                                 summary = summary,
+                                habitSnapshot = habitSnapshot,
                                 onOpenSettings = { navController.navigate(BaeumRoutes.SETTINGS) },
                                 onResumeLearning = {
                                     flashcardViewModel.startSession(curriculumFilter = settings.activePathway, dueOnly = false)
@@ -340,7 +346,28 @@ private fun BaeumMainShell(
                                     navController.navigate(BaeumRoutes.FLASHCARD)
                                 },
                                 onOpenQuizCenter = { navController.navigate(BaeumRoutes.QUIZ_CENTER) },
-                                onOpenGrammarStudio = { navController.navigate(BaeumRoutes.GRAMMAR_STUDIO) }
+                                onOpenGrammarStudio = { navController.navigate(BaeumRoutes.GRAMMAR_STUDIO) },
+                                onStartSeoulBlitz = {
+                                    viewModel.startSeoulBlitz()
+                                    navController.navigate(BaeumRoutes.SEOUL_BLITZ)
+                                },
+                                onCompleteDailySpark = { isCorrect -> viewModel.completeDailySpark(isCorrect) },
+                                onClaimDailySeal = { viewModel.claimDailySeal() },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onQuestAction = { route ->
+                                    when (route) {
+                                        BaeumRoutes.FLASHCARD -> {
+                                            flashcardViewModel.startSession(dueOnly = summary.dueTodayCount > 0)
+                                            navController.navigate(BaeumRoutes.FLASHCARD)
+                                        }
+                                        BaeumRoutes.SEOUL_BLITZ -> {
+                                            viewModel.startSeoulBlitz()
+                                            navController.navigate(BaeumRoutes.SEOUL_BLITZ)
+                                        }
+                                        BaeumRoutes.SPEAK -> navigateTopTab(BaeumRoutes.SPEAK)
+                                        else -> navController.navigate(BaeumRoutes.QUIZ_CENTER)
+                                    }
+                                }
                             )
                         }
 
@@ -403,6 +430,7 @@ private fun BaeumMainShell(
 
                         composable(BaeumRoutes.PROGRESS) {
                             val summary by viewModel.dashboardSummary.collectAsStateWithLifecycle()
+                            val habitSnapshot by viewModel.habitSnapshot.collectAsStateWithLifecycle()
                             val allVocab by viewModel.allVocab.collectAsStateWithLifecycle()
                             val dailyStats by viewModel.dailyStats.collectAsStateWithLifecycle()
                             val speakingSessions by viewModel.speakingSessions.collectAsStateWithLifecycle()
@@ -415,6 +443,7 @@ private fun BaeumMainShell(
                                 speakingCount = speakingSessions.size,
                                 examCount = examAttempts.size,
                                 readinessProfile = readinessProfile,
+                                habitSnapshot = habitSnapshot,
                                 onOpenSettings = { navController.navigate(BaeumRoutes.SETTINGS) },
                                 onRecommendedAction = {
                                     if (summary.dueTodayCount > 0) {
@@ -554,8 +583,19 @@ private fun BaeumMainShell(
                                 romanizationMode = settings.romanizationMode,
                                 translationLang = settings.translationLanguage,
                                 onBack = { navController.popBackStack() },
-                                onReveal = { flashcardViewModel.revealCard() },
-                                onRate = { flashcardViewModel.rateCurrentCard(it) },
+                                onReveal = {
+                                    viewModel.playCardFlipSound()
+                                    flashcardViewModel.revealCard()
+                                },
+                                onRate = { rating ->
+                                    val nextCombo = when (rating) {
+                                        FsrsRating.GOOD, FsrsRating.EASY -> flashcardSession.sessionCombo + 1
+                                        FsrsRating.HARD -> flashcardSession.sessionCombo
+                                        FsrsRating.AGAIN -> 0
+                                    }
+                                    viewModel.playFlashcardRatingSound(rating, nextCombo)
+                                    flashcardViewModel.rateCurrentCard(rating)
+                                },
                                 onUndo = { flashcardViewModel.undoLastRating() },
                                 onSpeakKorean = { viewModel.speakKorean(it) },
                                 onToggleRomanization = {
@@ -567,6 +607,18 @@ private fun BaeumMainShell(
                                     viewModel.setRomanizationMode(next)
                                 },
                                 onStartNewSession = { flashcardViewModel.startSession(dueOnly = false) }
+                            )
+                        }
+
+                        composable(BaeumRoutes.SEOUL_BLITZ) {
+                            val blitzState by viewModel.blitzSession.collectAsStateWithLifecycle()
+                            SeoulBlitzScreen(
+                                state = blitzState,
+                                onBack = { navController.popBackStack() },
+                                onStartOrReplay = { viewModel.startSeoulBlitz() },
+                                onSelectOption = { viewModel.answerBlitzOption(it) },
+                                onSpeakKorean = { viewModel.speakKorean(it) },
+                                onAbandon = { viewModel.abandonSeoulBlitz() }
                             )
                         }
 
@@ -778,6 +830,7 @@ private fun BaeumMainShell(
                                 onFsrsRetentionChange = { viewModel.setFsrsRetention(it) },
                                 onSpeechRateChange = { viewModel.setSpeechRate(it) },
                                 onReducedMotionChange = { viewModel.setReducedMotion(it) },
+                                onSoundEffectsChange = { viewModel.setSoundEffectsEnabled(it) },
                                 onDailyReminderChange = { enabled, hour, minute ->
                                     viewModel.updateDailyReminder(enabled, hour, minute)
                                 },
@@ -857,6 +910,12 @@ private fun BaeumMainShell(
                     )
                 }
             }
+
+            val celebrationEvent by viewModel.celebrationEvent.collectAsStateWithLifecycle()
+            GlobalCelebrationToast(
+                event = if (currentDest?.route == BaeumRoutes.ACTIVE_EXAM) null else celebrationEvent,
+                onDismiss = { viewModel.dismissCelebration() }
+            )
         }
     }
 }
