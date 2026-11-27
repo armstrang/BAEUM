@@ -16,8 +16,8 @@ android {
     applicationId = "com.armstrang.baeum"
     minSdk = 24
     targetSdk = 36
-    versionCode = 3
-    versionName = "0.1-beta-3"
+    versionCode = 4
+    versionName = "0.1-beta-4"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -43,8 +43,12 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+      ndk {
+        debugSymbolLevel = "FULL"
+      }
       // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in
       // AI Studio.
       signingConfig = signingConfigs.getByName("release")
